@@ -78,12 +78,14 @@ impl GameSlot {
     }
 
     /// Follows the window: its context is kept, and while `tab`, the centre's, is not the Game
-    /// tab a game that holds the mouse gives it back, since nothing there would free it.
+    /// tab and the game is not popped out, a game that holds the mouse gives it back, since
+    /// nothing there would free it.
     pub(crate) fn follow(&self, ctx: &Context, tab: CentreTab) {
         if self.ctx.borrow().is_none() {
             *self.ctx.borrow_mut() = Some(ctx.clone());
         }
         if tab != CentreTab::Game
+            && self.place.get() != GamePlace::Popped
             && let Ok(mut slot) = self.game.try_borrow_mut()
             && let Some(game) = slot.as_mut()
         {
@@ -91,10 +93,15 @@ impl GameSlot {
         }
     }
 
-    /// Whether the window shows the game now: the layout puts it in the Game tab, and the
-    /// window has a device to draw it on.
+    /// Whether the window shows the game now: the layout puts it in the Game tab or popped out
+    /// of it, and the window has a device to draw it on.
     pub(crate) fn shows(&self) -> bool {
-        self.place.get() == GamePlace::Tab && self.state.borrow().is_some()
+        self.place.get().in_process() && self.state.borrow().is_some()
+    }
+
+    /// Whether a game runs in this process now.
+    pub(crate) fn runs(&self) -> bool {
+        self.game.try_borrow().is_ok_and(|slot| slot.is_some())
     }
 
     /// Runs a frame of the game while its tab is not the one shown, drawn nowhere and given no

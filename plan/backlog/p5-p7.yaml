@@ -3202,13 +3202,13 @@ groups:
     - ENG-9
     depends: []
     summary: |
-      Asked for by Justin on 2026-11-22. The Game tab (ADR-0028) runs the game in the IDE's own window, so it is always on the IDE's Space, where the docked preview host's window, a process of its own, can open on another. Playing it full screen needs a Pop Out that moves the running game into a window of its own in the IDE's process, which goes full screen, and back. Prior art: Godot 4.4's embedded game view and its "Make Floating"; Unity's Game view, "Maximize On Play" and its full-screen play mode.
+      Asked for by Justin on 2026-11-22. The Game tab (ADR-0028) runs the game in the IDE's own window, so it is always on the IDE's Space, where the docked preview host's window, a process of its own, can open on another. Justin chose the Game tab as the default layout, as Unity, Roblox Studio and Godot play inside the editor, and asked for a pop-out that can fill the screen. Prior art: Godot 4.4's embedded game view and its floating Game workspace; Unity's Game view and "Play Maximized".
     deliverable:
-    - 'crates/qs-layout: where the embedded game is shown, in the Game tab or popped out, kept with the layout'
-    - 'crates/qs-workbench (or the layout''s commands): `preview.pop_out` and `preview.pop_in`, in the registry, so the toolbar, the palette, a key and the agent share them'
-    - 'apps/desktop: a Pop Out button on the Game tab; the game drawn in a second viewport of the IDE''s process that opens full screen (native full screen on macOS, borderless full screen on Windows and Linux); Escape, the window''s close button or Pop In returns it to the tab; the game keeps running through the move, its bridge and state unchanged'
+    - 'crates/qs-layout: the Game tab as the default place of the game; a third place, popped out, and how its window is shown (`GameScreen`), kept with the layout; `view.pop_out_game`, `view.pop_in_game` and `view.toggle_game_full_screen` in the registry, so the toolbar, the View menu, the palette and the agent share them'
+    - 'apps/desktop: Pop Out (or Pop In) and Full Screen beside the toolbar''s place of the game; the popped-out game drawn in a second viewport of the IDE''s process, full screen when the layout says so; closing that window puts the game back in the tab, and leaving full screen through the window''s own controls is followed; the game keeps running through each move'
+    - 'docs/design/design-doc.md: the Game tab as the default, and the pop-out'
     acceptance:
-    - 'A test: popping out and in through the commands changes where the layout shows the game and nothing else, and the choice is kept with the layout'
-    - 'A recorded run on the reference Mac: the game played in the Game tab, popped out to full screen, played, returned with Escape, its time, player and entities unchanged by the moves'
+    - 'A test: popping out and in and full screen through the commands change where the layout shows the game and nothing else, and are kept with the layout; the Game tab is the default'
+    - 'A recorded run on the reference Mac: the game played in the Game tab, popped out, made full screen, back to a window, closed back into the tab, still running through each move'
     verify:
-    - 'cargo nextest run -p qs-layout -p qs-workbench -p quakec-studio; the recorded run in the PR'
+    - 'cargo nextest run -p qs-layout -p quakec-studio; the recorded run in the PR'

@@ -36,6 +36,22 @@ pub enum Text {
     MapLayerSettingHelp,
     /// The game runs in this window's Game tab.
     PreviewInTab,
+    /// The toolbar while the game is popped out of the Game tab (L-73).
+    PreviewPoppedOut,
+    /// The toolbar's button that pops the game out of the Game tab.
+    PopOut,
+    /// The toolbar's button that puts a popped-out game back in the Game tab.
+    PopIn,
+    /// What Pop Out and Pop In do.
+    PopOutHint,
+    /// The toolbar's button that shows the game full screen.
+    FullScreen,
+    /// What Full Screen does.
+    FullScreenHint,
+    /// The Game tab while the game is popped out.
+    GamePoppedOut,
+    /// The popped-out game's window title.
+    PoppedGameTitle,
     /// The command search box's hint.
     SearchCommands,
     /// Why a thread could not be run again: it is gone.
@@ -1121,7 +1137,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 552] = [
+    pub const ALL: [Self; 560] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1134,6 +1150,14 @@ impl Text {
         Self::SymbolsOfProjectHelp,
         Self::MapLayerSettingHelp,
         Self::PreviewInTab,
+        Self::PreviewPoppedOut,
+        Self::PopOut,
+        Self::PopIn,
+        Self::PopOutHint,
+        Self::FullScreen,
+        Self::FullScreenHint,
+        Self::GamePoppedOut,
+        Self::PoppedGameTitle,
         Self::SearchCommands,
         Self::Project,
         Self::Entities,
@@ -1696,6 +1720,14 @@ impl Text {
             Self::SymbolsOfProjectHelp => "List every symbol of the project",
             Self::MapLayerSettingHelp => "Click to switch it for this layer",
             Self::PreviewInTab => "in the Game tab",
+            Self::PreviewPoppedOut => "popped out of the Game tab",
+            Self::PopOut => "Pop Out",
+            Self::PopIn => "Pop In",
+            Self::PopOutHint => "Play the game in a window of its own, or back in the Game tab",
+            Self::FullScreen => "Full Screen",
+            Self::FullScreenHint => "Fill the screen with the game; again for a window",
+            Self::GamePoppedOut => "The game is in its own window. Pop In brings it back here.",
+            Self::PoppedGameTitle => "QuakeC Studio game",
             Self::SearchCommands => "Search commands",
             Self::Project => "Project",
             Self::Entities => "Entities",
@@ -2443,6 +2475,9 @@ pub fn menu_title(id: &str) -> Option<&'static str> {
         "view.split_down" => "Split Down",
         "view.close_split" => "Close Split",
         "view.toggle_embedded_game" => "Game in a Tab",
+        "view.pop_out_game" => "Pop Out Game",
+        "view.pop_in_game" => "Pop In Game",
+        "view.toggle_game_full_screen" => "Game Full Screen",
         "view.focus_editor" => "Editor",
         "view.focus_left_panel" => "Left Panel",
         "view.focus_right_panel" => "Right Panel",

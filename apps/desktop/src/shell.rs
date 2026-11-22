@@ -25,9 +25,9 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, LineSuggestion, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    DockPanel, Docks, EditorRequest, FOCUS_COMMANDS, Focus, GO_TO_LINE, HasLayout, Layout,
-    MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams, ShowPanelParams, SoftWrap,
-    Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
+    DockPanel, Docks, EditorRequest, FOCUS_COMMANDS, Focus, GO_TO_LINE, GamePlace, GameScreen,
+    HasLayout, Layout, MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams,
+    ShowPanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
 use qs_map_edit::{MAP_GENERATE, opens_in_map_editor};
 use qs_render::{Camera, MapMesh};
@@ -149,6 +149,8 @@ impl HasLayout for Workspace {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Area {
     Toolbar,
+    /// The window a game popped out of the Game tab is drawn in (L-73).
+    PoppedGame,
     /// The notice below the toolbar while a reload waits (P3-10).
     ResetNotice,
     StatusBar,
@@ -251,6 +253,8 @@ impl FocusNow {
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
 /// How often the open map is backed up while it has unsaved edits, in seconds (P6-20).
 pub(crate) const MAP_BACKUP_INTERVAL: f64 = 60.0;
+/// The size of a popped-out game's window when it opens, in points: the preview host's own.
+const POPPED_GAME_SIZE: [f32; 2] = [1280.0, 800.0];
 
 /// What Play last played.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -828,6 +832,42 @@ impl Shell {
         }
     }
 
+    /// Draws a game popped out of the Game tab in a window of its own (L-73), a viewport of
+    /// this process, full screen when the layout says so. Closing the window puts the game back
+    /// in the tab; leaving full screen through the window's own controls is followed.
+    fn popped_game(&mut self, ctx: &egui::Context) {
+        let layout = self.layout();
+        if layout.game_place != GamePlace::Popped || !self.game.runs() {
+            return;
+        }
+        let full = layout.game_screen == GameScreen::Full;
+        let builder = egui::ViewportBuilder::default()
+            .with_title(Text::PoppedGameTitle.get())
+            .with_inner_size(POPPED_GAME_SIZE)
+            .with_fullscreen(full);
+        let game = self.game.clone();
+        let mut closed = false;
+        let mut shown_full = None;
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of(Area::PoppedGame),
+            builder,
+            |ctx, _| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        game.ui(ui);
+                    });
+                closed = ctx.input(|input| input.viewport().close_requested());
+                shown_full = ctx.input(|input| input.viewport().fullscreen);
+            },
+        );
+        if closed {
+            self.run_chosen(qs_layout::POP_IN_GAME);
+        } else if shown_full.is_some_and(|shown| shown != full) {
+            self.run_chosen(qs_layout::TOGGLE_GAME_FULL_SCREEN);
+        }
+    }
+
     /// Shows `mesh` in the map view from `camera`, and the view; false when the window has no
     /// wgpu device to draw it with.
     pub fn show_map(&mut self, mesh: &MapMesh, camera: Camera) -> bool {
@@ -1346,6 +1386,7 @@ impl Shell {
         }
         self.follow_stop();
         self.follow_game_place(ui.ctx());
+        self.popped_game(ui.ctx());
         // The Properties panel's boxes are for one pause of one edict, drawn or not.
         let preview = &self.session.context().preview;
         let selected = preview.entities().selected().map(|selected| selected.edict);
@@ -1600,9 +1641,17 @@ impl Shell {
         let mut open_guide = false;
         let mut export_asked = false;
         let mut control = None;
+        let mut layout_command = None;
         let preview = &self.session.context().preview;
         let state = preview.state();
-        let docked = if preview.is_embedded() {
+        let place = self.session.context().layout.game_place;
+        // Where a game runs, or a Play would start one: in this window when the layout puts it
+        // here and the window has a device to draw on, else in the preview host's window.
+        let here =
+            preview.is_embedded() || (preview.state() == PlayState::Stopped && self.game.shows());
+        let docked = if here && place == GamePlace::Popped {
+            Text::PreviewPoppedOut
+        } else if here {
             Text::PreviewInTab
         } else if preview.docks() {
             Text::PreviewDocked
@@ -1625,6 +1674,28 @@ impl Shell {
                             .small()
                             .color(theme.color(Token::TextMuted)),
                     );
+                    // L-73: the game in this process pops out of the Game tab, and fills the
+                    // screen.
+                    if here {
+                        let (text, id) = if place == GamePlace::Popped {
+                            (Text::PopIn, qs_layout::POP_IN_GAME)
+                        } else {
+                            (Text::PopOut, qs_layout::POP_OUT_GAME)
+                        };
+                        let pop = Button::new(RichText::new(text.get()).small()).frame(false);
+                        if ui.add(pop).on_hover_text(Text::PopOutHint.get()).clicked() {
+                            layout_command = Some(id);
+                        }
+                        let full =
+                            Button::new(RichText::new(Text::FullScreen.get()).small()).frame(false);
+                        if ui
+                            .add(full)
+                            .on_hover_text(Text::FullScreenHint.get())
+                            .clicked()
+                        {
+                            layout_command = Some(qs_layout::TOGGLE_GAME_FULL_SCREEN);
+                        }
+                    }
                     if let Some(shown) = &shown {
                         let (status, colour) = match shown {
                             ToolbarStatus::Ok(status) => (status, theme.color(Token::StatusOk)),
@@ -1699,6 +1770,9 @@ impl Shell {
         }
         if let Some(id) = control {
             self.control(id);
+        }
+        if let Some(id) = layout_command {
+            self.run_chosen(id);
         }
     }
 
@@ -2939,7 +3013,8 @@ impl Shell {
             self.search_tab(ui);
             return;
         }
-        if self.centre_tab == CentreTab::Game && self.game.ui(ui) {
+        let popped = self.layout().game_place == GamePlace::Popped;
+        if self.centre_tab == CentreTab::Game && !popped && self.game.ui(ui) {
             return;
         }
         if self.centre_tab == CentreTab::Editor && self.session.context().workbench.root().is_none()
@@ -2949,6 +3024,9 @@ impl Shell {
         }
         let (fill, message) = match self.centre_tab {
             CentreTab::Editor => (Token::SurfaceEditor, Text::NoFileOpen),
+            CentreTab::Game if popped && self.game.runs() => {
+                (Token::SurfaceViewport, Text::GamePoppedOut)
+            }
             CentreTab::Game => (Token::SurfaceViewport, Text::GameStopped),
             CentreTab::Map => (Token::SurfaceViewport, Text::NoMap),
             CentreTab::Search => (Token::SurfaceEditor, Text::NoSearchMatch),
