@@ -436,7 +436,7 @@ impl Checker<'_> {
             let message = format!("Assignment to constant {}", lhs.label());
             self.env.report(Code::W0241, span, message);
         }
-        self.store_mismatch(&stored, &lhs, &target, span)?;
+        self.store_mismatch(&stored, &lhs.place(), &target, span)?;
         let packed = self
             .narrow_bitfield(&lhs, span)
             .unwrap_or_else(|| lhs.clone());
@@ -833,10 +833,10 @@ impl Checker<'_> {
     /// or a parent's is the target's by `typecmp_lax`, or one is a `variant` or the value a
     /// `void*` or `variant*` stored into a pointer, a number is converted to the target's type and
     /// anything else is the warning "type mismatch: A NAME to B TARGET".
-    fn store_mismatch(
+    pub(super) fn store_mismatch(
         &mut self,
         value: &Value,
-        lhs: &Value,
+        place: &str,
         target: &Type,
         span: Span,
     ) -> Result<(), Fatal> {
@@ -861,7 +861,7 @@ impl Checker<'_> {
             self.env.type_name(&value.ty),
             value.label(),
             self.env.type_name(target),
-            lhs.place()
+            place
         );
         self.env.report(Code::W0240, span, message);
         Ok(())
@@ -874,7 +874,7 @@ impl Checker<'_> {
     /// (`QCC_SupplyConversion(QCC_PR_GenerateLogicalTruth(source, "cannot convert to
     /// boolean"), dest->cast->parentclass->type, true)`). A value the cast already made a
     /// number of the truth value's parent is compared again here, as FTEQCC compares it.
-    fn store_converted(&mut self, value: Value, target: &Type, span: Span) -> Checked {
+    pub(super) fn store_converted(&mut self, value: Value, target: &Type, span: Span) -> Checked {
         if value.known().is_some_and(Constant::null) {
             return Ok(value);
         }
@@ -1050,7 +1050,7 @@ impl Checker<'_> {
         } else {
             operand.ty.clone()
         };
-        self.store_mismatch(&updated, operand, &target, span)?;
+        self.store_mismatch(&updated, &operand.place(), &target, span)?;
         // FTEF-6.15: a step of a bitfield or a packed element is not followed.
         if operand.packs() && !self.global {
             self.followed = false;

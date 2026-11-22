@@ -433,18 +433,17 @@ impl Checker<'_> {
             self.layout.push(Step::Other, None, line, None);
             let value = self.value(s.value())?;
             // FTEF-18.7: the value is stored to the `ret*` local, made here when no `return`
-            // before made it, as an assignment stores to a definition
-            // (`QCC_StoreSRefToRef (QCC_PR_BuildRef (&r, REF_GLOBAL, pr_scope->returndef, ...),
-            // e, false, false)`); the body's end then returns the local (FTE-18.10).
+            // before made it, as an assignment stores to a definition of the return type
+            // (`QCC_StoreSRefToRef (QCC_PR_BuildRef (&r, REF_GLOBAL, pr_scope->returndef,
+            // nullsref, pr_scope->type->aux_type, ...), e, false, false)`), with no cast: a
+            // value of another type warns as a store does and is stored as it is (FTEF-34.1);
+            // the body's end then returns the local (FTE-18.10).
             self.ret_local = true;
             if value.ty == Type::Unknown || ret == Type::Unknown {
                 return Ok(());
             }
-            let value = if self.etype_of(&value.ty) == self.etype_of(&ret) || value.null() {
-                value
-            } else {
-                self.cast_to(&value, &ret, span)?
-            };
+            self.store_mismatch(&value, ir::Name::RET_LOCAL, &ret, span)?;
+            let value = self.store_converted(value, &ret, span)?;
             self.store_returned(&value, &ret, span);
             return Ok(());
         }

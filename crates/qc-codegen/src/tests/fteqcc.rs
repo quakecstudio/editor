@@ -6484,11 +6484,17 @@ fn a_local_structs_braces_store_each_member() {
 // return type or folded into the statement that made it, and does not return; a bare
 // `return;` and the body's end then return the local (FTE-18.10). The opcodes are the pinned
 // FTEQCC's for these bodies (`-Tid`), recorded on 2026-11-21
+// spec FTEF-34.1: `return = e;` stores a value of another type with no cast
 #[test]
 fn return_equals_stores_the_value_the_function_returns() {
-    use qc_progs::Op::{AddF, MulF, Return, StoreF, StoreV};
+    use qc_progs::Op::{AddF, MulF, Return, StoreEnt, StoreF, StoreS, StoreV};
     let progs = compile_fteqcc(
-        "float(float x) d_pick = { return = 4; return; };\n\
+        "entity world;\n\
+         float(float x) d_pick = { return = 4; return; };\n\
+         float() d_str = { local string s; s = \"a\"; return = s; };\n\
+         float() d_wide = { local vector v; v = '1 2 3'; return = v; };\n\
+         vector() d_narrow = { local float f; f = 2; return = f; };\n\
+         float() d_ent = { local entity e; e = world; return = e; return; };\n\
          float(float x) d_end = { return = x + 1; };\n\
          vector() d_vec = { return = '1 2 3'; return; };\n\
          float(float x) d_twice = { return = 1; if (x) return = x * 2; };\n\
@@ -6504,6 +6510,11 @@ fn return_equals_stores_the_value_the_function_returns() {
     assert_eq!(ops("d_pick"), numbers([StoreF, Return, Return]));
     assert_eq!(ops("d_end"), numbers([AddF, Return]));
     assert_eq!(ops("d_vec"), numbers([StoreV, Return, Return]));
+    // FTEF-34.1: a value of another type is stored with no cast, by the return type's store.
+    assert_eq!(ops("d_str"), numbers([StoreS, StoreF, Return]));
+    assert_eq!(ops("d_wide"), numbers([StoreV, StoreF, Return]));
+    assert_eq!(ops("d_narrow"), numbers([StoreF, StoreV, Return]));
+    assert_eq!(ops("d_ent"), numbers([StoreEnt, StoreF, Return, Return]));
     let if_not = u32::from(Opcode::IfNot as u16);
     let [store, mul, ret] = numbers([StoreF, MulF, Return])[..] else {
         panic!("three opcodes");

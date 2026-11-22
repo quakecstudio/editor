@@ -872,7 +872,7 @@ impl<'a> Compiler<'a> {
         }
         let place = self
             .program
-            .generated("ret*", ty.clone(), type_words(self.index, &ty))
+            .generated(ir::Name::RET_LOCAL, ty.clone(), type_words(self.index, &ty))
             .at(span)?;
         self.ret_local = Some(place);
         self.locals_end = self.program.next_global().at(span)?;
