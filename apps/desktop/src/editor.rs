@@ -288,6 +288,22 @@ impl Editor {
         })
     }
 
+    /// Makes a suggested edit the workbench has made already in the editor's own text:
+    /// the bytes from `start` to `end` become `new`, as one step of the editor's undo, so
+    /// Cmd+Z takes it back and the typing before it stays undoable (P4-11). The text is the
+    /// workbench's, so nothing is sent.
+    pub(crate) fn take_edit(&mut self, start: usize, end: usize, new: &str) {
+        let state = self.view.state_mut();
+        let selection = Selection {
+            anchor: state.buffer().position(start),
+            head: state.buffer().position(end),
+        };
+        state.set_selections(&[selection]);
+        state.insert(new);
+        self.sent = state.revision();
+        self.seen.0 = self.sent;
+    }
+
     /// The byte offset of the primary caret.
     pub(crate) fn caret_offset(&self) -> usize {
         let state = self.view.state();
@@ -389,13 +405,17 @@ impl Editor {
             }
         }
         let escape = KeyboardShortcut::new(Modifiers::NONE, Key::Escape);
-        // P4-11: with a suggested edit shown and no popup over it, Tab takes it and Escape
-        // drops it; with none, Tab is the view's.
-        if self.popup.is_none() && self.view.suggestion().is_some() {
+        // P4-11: with a suggested edit on a line that is drawn, Tab takes it, unless the
+        // completion list has taken Tab above, and Escape drops it, unless it closes a popup
+        // or the find bar below. Escape is left for the view too: in vim's insert mode it
+        // also leaves the mode. With no suggestion in sight both keys are the view's.
+        let line = self.view.suggestion().map(|suggestion| suggestion.line);
+        if line.is_some_and(|line| self.view.shows_line(line)) {
             if pressed(ui, &KeyboardShortcut::new(Modifiers::NONE, Key::Tab)) {
                 requests.push(Request::AcceptNext);
             }
-            if self.find.is_none() && pressed(ui, &escape) {
+            let closes_another = self.popup.is_some() || self.find.is_some();
+            if !closes_another && ui.input(|input| input.key_pressed(Key::Escape)) {
                 requests.push(Request::DismissNext);
             }
         }

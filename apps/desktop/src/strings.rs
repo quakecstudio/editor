@@ -329,6 +329,8 @@ pub enum Text {
     NextEditAccept,
     /// After the count of suggested edits left.
     NextEditLeft,
+    /// Before the line number of a suggested edit that is out of sight.
+    NextEditLine,
     /// The Properties panel's link to the selected entity's spawn function.
     OpenSpawnFunction,
     /// The toolbar after a selection or a field's edit failed.
@@ -1117,7 +1119,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 550] = [
+    pub const ALL: [Self; 551] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1211,6 +1213,7 @@ impl Text {
         Self::ReadOnlyWhilePlaying,
         Self::NextEditAccept,
         Self::NextEditLeft,
+        Self::NextEditLine,
         Self::OpenSpawnFunction,
         Self::EditFailed,
         Self::SentOnResume,
@@ -1778,6 +1781,7 @@ impl Text {
             Self::ReadOnlyWhilePlaying => "Read only while playing. Pause to edit.",
             Self::NextEditAccept => "Tab to accept",
             Self::NextEditLeft => "left",
+            Self::NextEditLine => "line",
             Self::OpenSpawnFunction => "Open its spawn function",
             Self::EditFailed => "The game did not take the change; see the log",
             Self::SentOnResume => "edited, sent to the game on Resume",

@@ -329,6 +329,147 @@ fn tab_walks_through_the_uses_of_a_retyped_field() {
     assert!(app(&harness).shell().workbench().next_edit().is_none());
 }
 
+/// A project whose `defs.qc` declares the field `charge`, uses it on the next line, and
+/// again `gap` lines further down, open with `defs.qc` in the editor.
+fn charged(name: &str, gap: usize) -> (PathBuf, H) {
+    let dir =
+        std::env::temp_dir().join(format!("quakec-studio-next-{name}-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("progs.src"), "progs.dat\ndefs.qc\n").unwrap();
+    let text = format!(
+        "entity self;\n.float health;\nvoid end_sys_fields;\n.float charge;\n\
+         void() tick = {{ self.charge = 0; }};\n{}void() later = {{ self.charge = 1; }};\n",
+        "\n".repeat(gap)
+    );
+    std::fs::write(dir.join("defs.qc"), text).unwrap();
+    let harness = harness_in(&dir, "defs.qc");
+    (dir, harness)
+}
+
+/// Deletes the last letter of the declared `charge`, which suggests its uses.
+fn retype_charge(harness: &mut H) {
+    caret_at(harness, "charge", 0, 6);
+    press(harness, Modifiers::NONE, Key::Backspace);
+    harness.run();
+    assert!(editor(harness).view.suggestion().is_some());
+}
+
+// No spec statement: P4-11: a suggestion taken in the open file is the editor's own edit:
+// Cmd+Z takes it back, and then the typing before it
+#[test]
+fn a_suggestion_taken_in_the_open_file_is_undone_by_the_editor() {
+    let (dir, mut harness) = charged("undo", 2);
+    retype_charge(&mut harness);
+    press(&mut harness, Modifiers::NONE, Key::Tab);
+    harness.run();
+    assert!(
+        text(&harness).contains("self.charg = 0;"),
+        "{}",
+        text(&harness)
+    );
+    press(&mut harness, Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(text(&harness).contains(".float charg;"));
+    assert!(text(&harness).contains("self.charge = 0;"));
+    press(&mut harness, Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(text(&harness).contains(".float charge;"));
+    let _gone = std::fs::remove_dir_all(dir);
+}
+
+// No spec statement: P4-11: a place out of sight is suggested where the name was typed,
+// with its line, and Tab goes to it; with no suggestion on a line that is drawn Tab and
+// Escape are the editor's own
+#[test]
+fn a_place_out_of_sight_is_suggested_where_the_name_is() {
+    let (dir, mut harness) = charged("far", 400);
+    retype_charge(&mut harness);
+    press(&mut harness, Modifiers::NONE, Key::Tab);
+    harness.run();
+    let shown = editor(&harness).view.suggestion().unwrap().clone();
+    assert_eq!(shown.line, 3, "{}", shown.text);
+    assert!(
+        shown
+            .text
+            .ends_with(&format!("{} 406", Text::NextEditLine.get())),
+        "{}",
+        shown.text
+    );
+    // Scrolled so neither the name nor the place is drawn, Tab is a tab.
+    editor_mut(&mut harness).view.scroll_to(100);
+    harness.run();
+    let before = text(&harness);
+    press(&mut harness, Modifiers::NONE, Key::Tab);
+    harness.run();
+    assert!(text(&harness).contains("self.charge = 1;"));
+    assert_ne!(text(&harness), before);
+
+    let (other, mut harness) = charged("near", 400);
+    retype_charge(&mut harness);
+    press(&mut harness, Modifiers::NONE, Key::Tab);
+    press(&mut harness, Modifiers::NONE, Key::Tab);
+    harness.run();
+    assert!(text(&harness).contains("self.charg = 1;"));
+    assert_eq!(editor(&harness).view.state().primary().head.line, 405);
+    let _gone = std::fs::remove_dir_all(dir);
+    let _gone = std::fs::remove_dir_all(other);
+}
+
+// No spec statement: P4-11: a popup that takes no Tab, a note or a hover, does not keep Tab
+// from the suggestion, and Escape then closes the popup and leaves the suggestion
+#[test]
+fn a_note_over_the_editor_leaves_tab_to_the_suggestion() {
+    let (dir, mut harness) = charged("popup", 2);
+    retype_charge(&mut harness);
+    editor_mut(&mut harness).popup = Some(Popup::Note(Text::RenameFailed));
+    press(&mut harness, Modifiers::NONE, Key::Escape);
+    harness.run();
+    assert_eq!(popup(&harness), None);
+    assert!(editor(&harness).view.suggestion().is_some());
+    editor_mut(&mut harness).popup = Some(Popup::Note(Text::RenameFailed));
+    press(&mut harness, Modifiers::NONE, Key::Tab);
+    harness.run();
+    assert!(
+        text(&harness).contains("self.charg = 0;"),
+        "{}",
+        text(&harness)
+    );
+    let _gone = std::fs::remove_dir_all(dir);
+}
+
+// No spec statement: P4-11, P4-37: in Vim's insert mode Escape drops the suggestions and
+// leaves the mode too, so the next key is a command
+#[test]
+fn escape_in_vims_insert_mode_also_leaves_it() {
+    let (dir, mut harness) = charged("vim", 2);
+    let settings = dir.join("settings.toml");
+    std::fs::write(&settings, "[editor]\nkey_mode = \"vim\"\n").unwrap();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell_mut()
+        .set_settings_file(settings);
+    harness.run();
+    caret_at(&mut harness, "charge", 0, 6);
+    harness.event(Event::Text("i".to_owned()));
+    harness.run();
+    press(&mut harness, Modifiers::NONE, Key::Backspace);
+    harness.run();
+    assert!(text(&harness).contains(".float charg;"));
+    assert!(editor(&harness).view.suggestion().is_some());
+    press(&mut harness, Modifiers::NONE, Key::Escape);
+    harness.run();
+    assert!(editor(&harness).view.suggestion().is_none());
+    // `x` in normal mode deletes a character; in insert mode it would be typed.
+    let before = text(&harness);
+    harness.event(Event::Text("x".to_owned()));
+    harness.run();
+    assert_eq!(text(&harness).len() + 1, before.len());
+    let _gone = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn a_refused_rename_says_so() {
     let mut harness = harness("src/weapons.qc");

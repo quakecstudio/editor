@@ -524,6 +524,32 @@ fn a_folded_region_hides_its_middle_lines_and_a_caret_in_it_unfolds_it() {
     );
 }
 
+// No spec statement: P4-11: the lines the view draws are the ones scrolled to and in no
+// closed fold, which is where a suggestion can be seen
+#[test]
+fn the_view_says_which_lines_it_draws() {
+    let text = (0..200)
+        .map(|n| format!("line {n}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut harness = Harness::new(&text);
+    harness.frame(Vec::new(), &Plain);
+    assert!(harness.view.shows_line(0) && harness.view.shows_line(3));
+    assert!(!harness.view.shows_line(199));
+    harness
+        .view
+        .folds_mut()
+        .set_regions([FoldRegion { start: 1, end: 4 }]);
+    assert!(harness.view.folds_mut().fold_at(1));
+    harness.frame(Vec::new(), &Plain);
+    assert!(harness.view.shows_line(1) && harness.view.shows_line(4));
+    assert!(!harness.view.shows_line(2) && !harness.view.shows_line(3));
+    harness.view.scroll_to(150);
+    harness.frame(Vec::new(), &Plain);
+    assert!(harness.view.shows_line(150) && !harness.view.shows_line(149));
+    assert!(!harness.view.shows_line(0));
+}
+
 // No spec statement: P4-32: a click on a fold's mark in the gutter folds and unfolds it, and
 // is no breakpoint click
 #[test]

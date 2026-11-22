@@ -329,6 +329,17 @@ impl EditorView {
         self.suggestion = suggestion;
     }
 
+    /// Whether `line` is one of the rows the view draws: scrolled to, and in no closed
+    /// fold.
+    pub fn shows_line(&mut self, line: usize) -> bool {
+        let first = self
+            .first_line
+            .min(self.state.buffer().line_count().saturating_sub(1));
+        self.rows(first, self.visible)
+            .iter()
+            .any(|row| matches!(row, Row::Line { line: shown, .. } if *shown == line))
+    }
+
     /// The suggestion shown, if one is.
     #[must_use]
     pub const fn suggestion(&self) -> Option<&LineSuggestion> {

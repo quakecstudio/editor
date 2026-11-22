@@ -2529,9 +2529,17 @@ impl Shell {
     /// Makes the next suggested edit and puts the caret after it, in whichever file it is
     /// (P4-11).
     fn accept_next_edit(&mut self) {
+        let next = self.session.context().workbench.next_edit();
         let done: Option<NextEditDone> =
             self.run(ACCEPT_NEXT_EDIT, &serde_json::json!({})).flatten();
         if let Some(done) = done {
+            // A place in the open file is changed in the editor's own text, as its edit.
+            if let (Some(next), Some(editor)) = (next, self.features.editors.editor.as_mut())
+                && next.path == editor.path
+                && next.path == done.path
+            {
+                editor.take_edit(next.start, next.end, &next.new);
+            }
             self.jump(Jump {
                 path: done.path,
                 offset: done.offset,
@@ -3320,23 +3328,27 @@ const BECOMES: char = '\u{2192}';
 const AND: char = '\u{b7}';
 
 /// The suggested edit `next` as `editor` shows it (P4-11): at the end of the line of the
-/// next place when that is in the editor's file, else of the name typed over, else of the
-/// caret; the old name and the new, the file of a place in another one, and how many are
-/// left when more than this one.
-fn next_edit_line(next: &NextEdit, editor: &Editor) -> LineSuggestion {
+/// next place when that is in the editor's file and in sight, else of the name typed over,
+/// else of the caret; the old name and the new, the file of a place in another one or the
+/// line of one out of sight, and how many are left when more than this one.
+fn next_edit_line(next: &NextEdit, editor: &mut Editor) -> LineSuggestion {
     let buffer = editor.view.state().buffer();
     let here = next.path == editor.path;
-    let line = if here {
-        buffer.position(next.start).line
-    } else if next.typed_path == editor.path {
+    let place = buffer.position(next.start).line;
+    let elsewhere = if next.typed_path == editor.path {
         buffer.position(next.typed_end).line
     } else {
         editor.view.state().primary().head.line
     };
+    let in_sight = here && editor.view.shows_line(place);
+    let line = if in_sight { place } else { elsewhere };
     let mut text = format!("{} {BECOMES} {}", next.old, next.new);
     let file = next.path.file_name().map(|name| name.to_string_lossy());
     if let Some(file) = file.filter(|_| !here) {
         text = format!("{text} {AND} {file}");
+    } else if !in_sight {
+        let number = place.saturating_add(1);
+        text = format!("{text} {AND} {} {number}", Text::NextEditLine.get());
     }
     if next.left > 1 {
         text = format!("{text} {AND} {} {}", next.left, Text::NextEditLeft.get());

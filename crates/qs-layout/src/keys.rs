@@ -1141,7 +1141,7 @@ pub const UNKEYED: [(&str, Unkeyed); 184] = [
     ("edit.accept", Unkeyed::Typed),
     ("edit.accept_next", Unkeyed::Window),
     ("edit.dismiss_next", Unkeyed::Window),
-    ("edit.next", Unkeyed::Window),
+    ("edit.next", Unkeyed::Query),
     ("edit.stage_change", Unkeyed::Typed),
     ("edit.reject", Unkeyed::Typed),
     ("edit.staged", Unkeyed::Query),
