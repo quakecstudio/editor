@@ -5,13 +5,20 @@
 //! function's or a global's, implies the same change at every other declaration and use of
 //! it; each of those is a suggestion, taken one at a time.
 //!
+//! The places are the rename's own (`qc-ide`'s `AnalysisHost::rename`), asked of the text
+//! as it was before the name was typed over: a vector's components go with it, and a name
+//! the rename refuses, the engine's, one that would change what the program means, or one
+//! a macro writes, is suggested nowhere. Suggestions last only as long as the text they
+//! were made from: any change that is not the editor's typing in the name, or the taking
+//! of a suggestion, drops them.
+//!
 //! The model followed is the refactoring an editor offers when a declaration's name is
 //! edited in place (JetBrains' "rename usages" hint, Zed's and VS Code's Tab through the
 //! next edit): nothing is changed until it is accepted, and each acceptance is one change.
 
 use std::path::{Path, PathBuf};
 
-use qc_ide::{FileRange, Symbol};
+use qc_ide::{Rename, Symbol};
 use qc_project::Loader;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -28,12 +35,26 @@ pub const ACCEPT_NEXT_EDIT: &str = "edit.accept_next";
 /// The id of the command that drops the suggestions.
 pub const DISMISS_NEXT_EDIT: &str = "edit.dismiss_next";
 
-/// One place a suggestion changes: the old name's bytes in a file.
+/// One place a suggestion changes: the bytes of a file that say the old name, or a
+/// component of it, and what they are given.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Site {
     path: PathBuf,
     start: usize,
     end: usize,
+    old: String,
+    new: String,
+}
+
+/// What the rename says of the name as it is typed now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Sites {
+    /// It has not been asked since the name last changed.
+    Unsettled,
+    /// It refuses the name, or the name is the old one, or no name.
+    Refused,
+    /// The places left, in the order they are suggested.
+    Offered(Vec<Site>),
 }
 
 /// A name being typed over at its first declaration, and the places that still say the old
@@ -44,11 +65,14 @@ struct Pending {
     path: PathBuf,
     start: usize,
     end: usize,
+    /// The file's text before the name was typed over, which the rename is asked of.
+    origin: Vec<u8>,
     /// The name before it was typed over, and as it is now.
     old: String,
     new: String,
-    /// The places left, in the order they are suggested.
-    sites: Vec<Site>,
+    sites: Sites,
+    /// How many suggestions have been taken: the name they were given is then the name.
+    taken: usize,
 }
 
 /// The suggestions an edit left.
@@ -159,9 +183,61 @@ impl Pending {
         is_name(self.new.as_bytes()) && self.new != self.old
     }
 
+    /// The places left.
+    fn left(&self) -> &[Site] {
+        match &self.sites {
+            Sites::Offered(sites) => sites,
+            Sites::Unsettled | Sites::Refused => &[],
+        }
+    }
+
+    /// The places `rename`, made of the text before the name was typed over, changes
+    /// beside the typed name itself, where they are now: the file being typed in first,
+    /// top to bottom, then the others by path.
+    fn sites_of(&self, rename: Rename) -> Vec<Site> {
+        let origin_end = self.start.saturating_add(self.old.len());
+        let (mut own, mut others) = (Vec::new(), Vec::new());
+        for file in rename.edits {
+            let typed_in = file.path == self.path;
+            for (span, new) in file.edits {
+                if typed_in && span.start == self.start {
+                    continue;
+                }
+                // A component's place says the old name and its suffix (QC-11.7).
+                let suffix = new.strip_prefix(self.new.as_str()).unwrap_or_default();
+                let old = format!("{}{suffix}", self.old);
+                let (start, end) = if typed_in {
+                    (
+                        moved(span.start, origin_end, self.end),
+                        moved(span.end, origin_end, self.end),
+                    )
+                } else {
+                    (span.start, span.end)
+                };
+                let site = Site {
+                    path: file.path.clone(),
+                    start,
+                    end,
+                    old,
+                    new,
+                };
+                if typed_in {
+                    own.push(site);
+                } else {
+                    others.push(site);
+                }
+            }
+        }
+        own.extend(others);
+        own
+    }
+
     /// Moves what follows a change of `path` with it.
     fn follow(&mut self, path: &Path, old_end: usize, new_end: usize) {
-        for site in self.sites.iter_mut().filter(|site| site.path == path) {
+        let Sites::Offered(sites) = &mut self.sites else {
+            return;
+        };
+        for site in sites.iter_mut().filter(|site| site.path == path) {
             site.start = moved(site.start, old_end, new_end);
             site.end = moved(site.end, old_end, new_end);
         }
@@ -170,17 +246,11 @@ impl Pending {
 
 impl NextEdits {
     /// Takes an edit of `path` in the editor, from `before` to `after`: typing on in the
-    /// name being typed over keeps its suggestions, with the name as it is now; any other
-    /// edit drops them, and one in the name `symbols` says is first declared there starts
-    /// them, `references` giving every declaration and use of the name at a byte, or
-    /// nothing for a name that cannot be renamed.
-    fn typed(
-        &mut self,
-        path: &Path,
-        (before, after): (&[u8], &[u8]),
-        symbols: &[Symbol],
-        references: &mut dyn FnMut(usize) -> Option<Vec<FileRange>>,
-    ) {
+    /// name being typed over keeps it, with the name as it is now and its places to be
+    /// asked again, unless a suggestion has been taken, which the name then belongs to;
+    /// any other edit drops the suggestions, and one in the name `symbols` says is first
+    /// declared there starts them.
+    fn typed(&mut self, path: &Path, (before, after): (&[u8], &[u8]), symbols: &[Symbol]) {
         let (start, old_end, new_end) = changed(before, after);
         if start == old_end && start == new_end {
             return;
@@ -191,25 +261,25 @@ impl NextEdits {
             && old_end <= pending.end
         {
             pending.end = moved(pending.end, old_end, new_end);
-            pending.follow(path, old_end, new_end);
             // A byte that is no name's ends the name: the suggestions go with it.
             let name = after.get(pending.start..pending.end);
-            if let Some(name) = name.filter(|name| name.iter().all(|b| is_name_byte(*b))) {
+            if let Some(name) = name.filter(|name| name.iter().all(|b| is_name_byte(*b)))
+                && pending.taken == 0
+            {
                 pending.new = String::from_utf8_lossy(name).into_owned();
+                pending.sites = Sites::Unsettled;
                 self.pending = Some(pending);
             }
             return;
         }
-        self.pending = self.started(path, (before, after), symbols, references);
+        self.pending = Self::started(path, (before, after), symbols);
     }
 
     /// The suggestions an edit starts, when it is in the name a symbol is first declared by.
     fn started(
-        &self,
         path: &Path,
         (before, after): (&[u8], &[u8]),
         symbols: &[Symbol],
-        references: &mut dyn FnMut(usize) -> Option<Vec<FileRange>>,
     ) -> Option<Pending> {
         let (start, old_end, new_end) = changed(before, after);
         let (first, last) = name_around(before, start, old_end)?;
@@ -227,30 +297,21 @@ impl NextEdits {
         if !new.iter().all(|byte| is_name_byte(*byte)) {
             return None;
         }
-        let mut sites: Vec<Site> = references(first)?
-            .into_iter()
-            .filter(|range| !(range.path == path && range.span.start == first))
-            .map(|range| Site {
-                path: range.path,
-                start: range.span.start,
-                end: range.span.end,
-            })
-            .collect();
-        if sites.is_empty() {
-            return None;
-        }
-        // The file being typed in first, top to bottom, then the others by path.
-        sites.sort_by_cached_key(|site| (site.path != path, site.path.clone(), site.start));
-        let mut pending = Pending {
+        Some(Pending {
             path: path.to_path_buf(),
             start: first,
             end,
+            origin: before.to_vec(),
             old: String::from_utf8_lossy(old).into_owned(),
             new: String::from_utf8_lossy(new).into_owned(),
-            sites,
-        };
-        pending.follow(path, old_end, new_end);
-        Some(pending)
+            sites: Sites::Unsettled,
+            taken: 0,
+        })
+    }
+
+    /// Drops the suggestions: the text they were made from has changed under them.
+    pub(crate) fn forget(&mut self) {
+        self.pending = None;
     }
 }
 
@@ -259,84 +320,123 @@ impl<L: Loader> Workbench<L> {
     /// suggestions it implies (UI-7). The symbols are the last check's: an edit made before
     /// the check of the one before it is back starts none.
     pub(crate) fn note_typed(&mut self, path: &Path, before: &[u8], after: &[u8]) {
-        let (next, host) = (&mut self.next_edits, &mut self.host);
-        // A name `symbol.rename` refuses, the engine's own, is not suggested either.
-        next.typed(path, (before, after), &self.symbols, &mut |offset| {
-            host.prepare_rename(path, offset).ok()?;
-            Some(host.references(path, offset, true))
-        });
+        self.next_edits.typed(path, (before, after), &self.symbols);
     }
 
-    /// The next suggestion, when an edit left one.
+    /// Asks the rename for the places of the name as it is typed now, once for each name:
+    /// when the editor's edit has been checked, and before a suggestion is answered or
+    /// taken. The rename is asked of the file as it was before the name was typed over, the
+    /// one text it can read the name's uses from; the file's text now is put back after.
+    pub(crate) fn settle_next_edit(&mut self) {
+        let Some(pending) = self.next_edits.pending.as_mut() else {
+            return;
+        };
+        if pending.sites != Sites::Unsettled {
+            return;
+        }
+        if !pending.offered() {
+            pending.sites = Sites::Refused;
+            return;
+        }
+        let Some(now) = self.host.text(&pending.path) else {
+            self.next_edits.forget();
+            return;
+        };
+        if let Err(error) = self.host.set_overlay(&pending.path, &pending.origin) {
+            tracing::debug!(%error, "the text before a name was typed over");
+            self.next_edits.forget();
+            return;
+        }
+        let renamed = self.host.rename(&pending.path, pending.start, &pending.new);
+        if let Err(error) = self.host.set_overlay(&pending.path, &now) {
+            tracing::warn!(%error, "the text after a name was typed over was not put back");
+            self.next_edits.forget();
+            return;
+        }
+        match renamed.map(|rename| pending.sites_of(rename)) {
+            Ok(sites) if !sites.is_empty() => pending.sites = Sites::Offered(sites),
+            Ok(_) => self.next_edits.forget(),
+            Err(error) => {
+                tracing::debug!(%error, "no suggestions for the name as typed");
+                pending.sites = Sites::Refused;
+            }
+        }
+    }
+
+    /// The next suggestion, when an edit left one the rename allows.
     #[must_use]
     pub fn next_edit(&self) -> Option<NextEdit> {
-        let pending = self.next_edits.pending.as_ref().filter(|p| p.offered())?;
-        let site = pending.sites.first()?;
+        let pending = self.next_edits.pending.as_ref()?;
+        let left = pending.left();
+        let site = left.first()?;
         Some(NextEdit {
-            old: pending.old.clone(),
-            new: pending.new.clone(),
+            old: site.old.clone(),
+            new: site.new.clone(),
             typed_path: pending.path.clone(),
             typed_end: pending.end,
             path: site.path.clone(),
             start: site.start,
             end: site.end,
-            left: pending.sites.len(),
+            left: left.len(),
         })
     }
 
     /// Drops the suggestions.
     pub fn dismiss_next_edit(&mut self) {
-        self.next_edits.pending = None;
+        self.next_edits.forget();
     }
 
     /// Makes the next suggestion's change in its file's text, in the editor's text of it and
-    /// unsaved, and leaves the rest. A place that no longer says the old name, its file
-    /// edited since, is passed over. `None` when no suggestion is left.
+    /// unsaved, and leaves the rest. `None` when no suggestion is left.
     ///
     /// # Errors
     ///
     /// [`WorkbenchError::Project`] when the file is a project file whose new text does not
     /// open.
     pub fn accept_next_edit(&mut self) -> Result<Option<Accepted>, WorkbenchError> {
-        loop {
-            let Some(pending) = self.next_edits.pending.as_mut().filter(|p| p.offered()) else {
-                return Ok(None);
-            };
-            if pending.sites.is_empty() {
-                self.next_edits.pending = None;
-                return Ok(None);
-            }
-            let site = pending.sites.remove(0);
-            let (old, new) = (pending.old.clone(), pending.new.clone());
-            let Some(before) = self.host.text(&site.path) else {
-                continue;
-            };
-            if before.get(site.start..site.end) != Some(old.as_bytes()) {
-                continue;
-            }
-            let mut after = before.clone();
-            after.splice(site.start..site.end, new.bytes());
-            let new_end = site.start.saturating_add(new.len());
-            self.set_text(&site.path, after.clone(), Source::Elsewhere)?;
-            // The name typed over is where it is first declared, so no place is before it in
-            // its own file, and it stays where it is.
-            let left = self.next_edits.pending.as_mut().map_or(0, |pending| {
-                pending.follow(&site.path, site.end, new_end);
-                pending.sites.len()
-            });
-            if left == 0 {
-                self.next_edits.pending = None;
-            }
-            return Ok(Some(Accepted {
-                change: Change {
-                    path: site.path,
-                    before,
-                    after,
-                },
-                offset: new_end,
-                left,
-            }));
+        self.settle_next_edit();
+        // The text set here is the suggestion's own, which drops no suggestion.
+        let Some(mut pending) = self.next_edits.pending.take() else {
+            return Ok(None);
+        };
+        let Sites::Offered(sites) = &mut pending.sites else {
+            self.next_edits.pending = Some(pending);
+            return Ok(None);
+        };
+        if sites.is_empty() {
+            return Ok(None);
         }
+        let site = sites.remove(0);
+        let left = sites.len();
+        // Every change of a text drops the suggestions, so the place says the old name; one
+        // that does not is no place to change.
+        let Some(before) = self
+            .host
+            .text(&site.path)
+            .filter(|text| text.get(site.start..site.end) == Some(site.old.as_bytes()))
+        else {
+            return Ok(None);
+        };
+        let mut after = before.clone();
+        after.splice(site.start..site.end, site.new.bytes());
+        let new_end = site.start.saturating_add(site.new.len());
+        self.set_text(&site.path, after.clone(), Source::Elsewhere)?;
+        // The name typed over is where it is first declared, so no place is before it in
+        // its own file, and it stays where it is.
+        pending.follow(&site.path, site.end, new_end);
+        pending.taken = pending.taken.saturating_add(1);
+        if left > 0 {
+            self.next_edits.pending = Some(pending);
+        }
+        Ok(Some(Accepted {
+            change: Change {
+                path: site.path,
+                before,
+                after,
+            },
+            offset: new_end,
+            left,
+        }))
     }
 }
 
@@ -369,7 +469,9 @@ impl<C: HasWorkbench + 'static> Command<C> for Next {
         context: &mut C,
         NoParams {}: NoParams,
     ) -> Result<Outcome<Option<NextEdit>, C>, Self::Error> {
-        Ok(Outcome::unchanged(context.workbench().next_edit()))
+        let workbench = context.workbench();
+        workbench.settle_next_edit();
+        Ok(Outcome::unchanged(workbench.next_edit()))
     }
 }
 

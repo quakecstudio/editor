@@ -448,6 +448,8 @@ impl<L: Loader> Workbench<L> {
         }
         self.problems = checked.problems;
         self.symbols = checked.symbols;
+        // The edit has been checked: the typing has paused long enough to ask the rename.
+        self.settle_next_edit();
         if let (Some(open), Some(file)) = (self.open.as_mut(), checked.file)
             && open.path == file.path
         {
@@ -498,6 +500,7 @@ impl<L: Loader> Workbench<L> {
         self.tabs.clear();
         self.history.clear();
         self.unsaved.clear();
+        self.next_edits.forget();
         Ok(())
     }
 

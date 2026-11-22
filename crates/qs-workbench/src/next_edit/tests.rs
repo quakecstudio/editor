@@ -15,7 +15,9 @@ use qs_commands::{Registry, Session};
 use serde_json::json;
 
 use super::{ACCEPT_NEXT_EDIT, DISMISS_NEXT_EDIT, NEXT_EDIT, NextEdit, changed, name_around};
-use crate::{Config, OPEN_PROJECT, READ_FILE, RENAME, UPDATE_FILE, Workbench, register};
+use crate::{
+    Config, FORMAT_FILE, OPEN_PROJECT, READ_FILE, RENAME, UPDATE_FILE, Workbench, register,
+};
 
 const ROOT: &str = "/p";
 
@@ -206,8 +208,7 @@ fn suggestions_wait_for_a_name_and_go_with_another_edit() {
 }
 
 // No spec statement: P4-11: a name typed over at a use, a name declared nowhere else, and
-// a field the engine finds by its place, which symbol.rename refuses, suggest nothing; a
-// place that no longer says the old name is passed over
+// a field the engine finds by its place, which symbol.rename refuses, suggest nothing
 #[test]
 fn only_a_declaration_that_may_be_renamed_suggests() {
     let mut session = session();
@@ -219,30 +220,202 @@ fn only_a_declaration_that_may_be_renamed_suggests() {
     let mut session = self::session();
     type_text(&mut session, "more.qc", &MORE.replace("more", "mor"));
     assert_eq!(next(&mut session), None, "nothing else says it");
+}
 
-    // A rename moves the places of more.qc before they are taken: they no longer say the
-    // old name where they were, and are passed over for the next that does.
-    let mut session = self::session();
+/// A session over a project of one file, `defs.qc`, holding `text`.
+fn session_of(text: &str) -> Session<Workbench<MemoryLoader>> {
+    let mut loader = MemoryLoader::new();
+    loader.insert(path("progs.src"), b"progs.dat\ndefs.qc\n".to_vec());
+    loader.insert(path("defs.qc"), text.as_bytes().to_vec());
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    let mut session = Session::new(Workbench::new(loader, Config::default()), registry);
+    session
+        .execute(OPEN_PROJECT, json!({ "path": ROOT }))
+        .unwrap();
+    session
+}
+
+/// Takes every suggestion left.
+fn take_all(session: &mut Session<Workbench<MemoryLoader>>) -> usize {
+    let mut taken = 0;
+    while session
+        .execute(ACCEPT_NEXT_EDIT, json!({}))
+        .unwrap()
+        .is_object()
+    {
+        taken += 1;
+    }
+    taken
+}
+
+// No spec statement: P4-11: the places are symbol.rename's: a vector's components are
+// suggested with it, each keeping its suffix (QC-11.7), so taking every suggestion leaves
+// the program the rename would
+#[test]
+fn a_vector_is_suggested_with_its_components() {
+    const VECTOR: &str = "entity self;\n.vector dest1;\n\
+        void() go = { self.dest1 = '0 0 0'; self.dest1_z = 4; self.dest1_x = self.dest1_z; };\n";
+    let mut session = session_of(VECTOR);
     type_text(
         &mut session,
         "defs.qc",
-        &DEFS.replacen("charge", "power", 1),
+        &VECTOR.replacen("dest1", "dest_a", 1),
     );
+    let first = next(&mut session).unwrap();
+    assert_eq!(
+        (first.old.as_str(), first.new.as_str(), first.left),
+        ("dest1", "dest_a", 4)
+    );
+    session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
+    let second = next(&mut session).unwrap();
+    assert_eq!(
+        (second.old.as_str(), second.new.as_str(), second.left),
+        ("dest1_z", "dest_a_z", 3)
+    );
+    assert_eq!(take_all(&mut session), 3);
+    assert_eq!(
+        text_of(&mut session, "defs.qc"),
+        VECTOR.replace("dest1", "dest_a")
+    );
+}
+
+// No spec statement: P4-11: a name symbol.rename refuses is suggested nowhere: one that is
+// another definition's, so the uses would mean something else, and a keyword where a use
+// would be read as one; typing on to a name it allows suggests again
+#[test]
+fn a_name_the_rename_refuses_is_not_suggested() {
+    let mut session = session();
+    let at = DEFS.find("charge").unwrap();
+    let with = |name: &str| format!("{}{name}{}", &DEFS[..at], &DEFS[at + 6..]);
+    for name in ["speed", "health"] {
+        type_text(&mut session, "defs.qc", &with(name));
+        assert_eq!(next(&mut session), None, "{name}");
+        assert_eq!(
+            session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap(),
+            json!(null),
+            "{name}"
+        );
+    }
+    assert_eq!(text_of(&mut session, "world.qc"), WORLD);
+    type_text(&mut session, "defs.qc", &with("speeds"));
+    assert_eq!(next(&mut session).map(|next| next.left), Some(5));
+
+    // A global a statement starts with, where `while` would start a loop.
+    const GLOBAL: &str = "float a;\nvoid() f = { a = 1; };\n";
+    let mut session = session_of(GLOBAL);
+    type_text(&mut session, "defs.qc", &GLOBAL.replacen("a;", "while;", 1));
+    assert_eq!(next(&mut session), None);
+    type_text(
+        &mut session,
+        "defs.qc",
+        &GLOBAL.replacen("a;", "whiles;", 1),
+    );
+    assert_eq!(next(&mut session).map(|next| next.left), Some(1));
+}
+
+// No spec statement: P4-11: a name a macro writes at one of its uses, which symbol.rename
+// refuses, is suggested nowhere, so no count names a place Tab cannot change
+#[test]
+fn a_name_used_through_a_macro_is_not_suggested() {
+    const MACRO: &str = "entity self;\n.float charge;\n#define CHARGE self.charge\n\
+        void() tick = { CHARGE = 0; self.charge = 1; };\n";
+    let mut session = session_of(MACRO);
+    type_text(
+        &mut session,
+        "defs.qc",
+        &MACRO.replacen("charge", "power", 1),
+    );
+    assert_eq!(next(&mut session), None);
+}
+
+// No spec statement: P4-11: suggestions last as long as the text they were made from: a
+// rename, a formatting, an undo, and another project opened each drop them, so none is
+// made in a text that has moved under it
+#[test]
+fn a_change_from_elsewhere_drops_the_suggestions() {
+    let typed = DEFS.replacen("charge", "power", 1);
+    let start = || {
+        let mut session = session();
+        type_text(&mut session, "defs.qc", &typed);
+        assert_eq!(next(&mut session).map(|next| next.left), Some(5));
+        session
+    };
+
+    let mut session = start();
     let renamed =
         json!({ "path": path("more.qc"), "offset": MORE.find("more").unwrap(), "name": "extras" });
     session.execute(RENAME, renamed).unwrap();
-    let done = session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
-    assert_eq!(
-        (&done["path"], &done["left"]),
-        (&json!(path("defs.qc")), &json!(4))
+    assert_eq!(next(&mut session), None, "a rename");
+    assert_eq!(take_all(&mut session), 0);
+
+    // world.qc with white space the formatter removes, before the name is typed over.
+    let mut session = self::session();
+    type_text(
+        &mut session,
+        "world.qc",
+        &format!("{}   \n", WORLD.trim_end()),
     );
-    let done = session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
-    assert_eq!(
-        (&done["path"], &done["left"]),
-        (&json!(path("world.qc")), &json!(0))
-    );
-    assert_eq!(
-        text_of(&mut session, "more.qc"),
-        MORE.replace("more", "extras")
-    );
+    type_text(&mut session, "defs.qc", &typed);
+    assert_eq!(next(&mut session).map(|next| next.left), Some(5));
+    let formatted = session
+        .execute(FORMAT_FILE, json!({ "path": path("world.qc") }))
+        .unwrap();
+    assert_eq!(formatted, json!({ "changed": true }));
+    assert_eq!(next(&mut session), None, "a formatting");
+
+    // The first use taken and taken back: the uses after it in more.qc are where they
+    // were, and none is suggested where it no longer is.
+    let mut session = start();
+    session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
+    session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
+    assert_eq!(next(&mut session).map(|next| next.left), Some(3));
+    session.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(text_of(&mut session, "more.qc"), MORE);
+    assert_eq!(next(&mut session), None, "an undo");
+    assert_eq!(take_all(&mut session), 0);
+
+    let mut session = start();
+    session
+        .execute(OPEN_PROJECT, json!({ "path": ROOT }))
+        .unwrap();
+    assert_eq!(next(&mut session), None, "a project opened");
+}
+
+// No spec statement: P4-11: once a suggestion is taken the name is the one it was given:
+// typing in the declared name again drops the rest, so no two uses are given two names
+#[test]
+fn typing_in_the_name_after_a_suggestion_is_taken_drops_the_rest() {
+    let mut session = session();
+    let typed = DEFS.replacen("charge", "power", 1);
+    type_text(&mut session, "defs.qc", &typed);
+    session.execute(ACCEPT_NEXT_EDIT, json!({})).unwrap();
+    assert_eq!(next(&mut session).map(|next| next.left), Some(4));
+    let now = text_of(&mut session, "defs.qc");
+    type_text(&mut session, "defs.qc", &now.replacen("power", "powers", 1));
+    assert_eq!(next(&mut session), None);
+    assert_eq!(text_of(&mut session, "more.qc"), MORE);
+}
+
+// No spec statement: P4-11, P3-35: with the check off the frame no key waits for the
+// rename: the name's places are asked for when the check of the edit is back
+#[test]
+fn the_places_are_asked_for_when_the_edit_is_checked() {
+    let mut loader = MemoryLoader::new();
+    for (name, text) in [
+        ("progs.src", "progs.dat\ndefs.qc\nworld.qc\n"),
+        ("defs.qc", DEFS),
+        ("world.qc", WORLD),
+    ] {
+        loader.insert(path(name), text.as_bytes().to_vec());
+    }
+    let mut workbench = Workbench::checked_in_background(loader, Config::default());
+    workbench.open_project(Path::new(ROOT)).unwrap();
+    let typed = DEFS.replacen("charge", "power", 1);
+    workbench
+        .update(&path("defs.qc"), typed.into_bytes())
+        .unwrap();
+    assert_eq!(workbench.next_edit(), None);
+    assert!(workbench.wait_checked());
+    assert_eq!(workbench.next_edit().map(|next| next.left), Some(2));
 }

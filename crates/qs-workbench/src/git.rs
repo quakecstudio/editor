@@ -332,6 +332,8 @@ impl<L: qc_project::Loader> Workbench<L> {
             }
         }
         self.host.reload().map_err(WorkbenchError::Project)?;
+        // The files are not the ones the suggestions were made from.
+        self.next_edits.forget();
         self.tree = tree(&self.host.files(), &root);
         self.problems = problems(&mut self.host);
         self.symbols = self.host.workspace_symbols();

@@ -117,7 +117,13 @@ impl<L: Loader> Workbench<L> {
         if let Some(before) = self.host.text(&path) {
             self.note_typed(&path, &before, &text);
         }
-        self.set_text(&path, text, Source::Editor)
+        self.set_text(&path, text, Source::Editor)?;
+        // With a background check the name's places are asked for when the edit's check is
+        // back (`Workbench::apply`), so no key waits for them.
+        if self.checker.is_none() {
+            self.settle_next_edit();
+        }
+        Ok(())
     }
 
     /// Takes `text` as the text of `path`, from `source`.
@@ -128,9 +134,12 @@ impl<L: Loader> Workbench<L> {
         source: Source,
     ) -> Result<(), WorkbenchError> {
         let path = normalize(path);
-        if source == Source::Editor {
+        match source {
             // The editor's text takes the place of any staged hunks of the file (P4-04).
-            self.staged.forget(&path);
+            Source::Editor => self.staged.forget(&path),
+            // A text from elsewhere, a rename's, an undo's, a formatter's or a restored
+            // checkpoint's, is not the one the suggestions were made from.
+            Source::Elsewhere => self.next_edits.forget(),
         }
         self.host
             .set_overlay(&path, &text)
