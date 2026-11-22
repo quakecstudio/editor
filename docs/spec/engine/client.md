@@ -421,8 +421,9 @@ CLIENT-1 to CLIENT-7 say, with QuakeSpasm's one addition for 15, Nehahra's alpha
 `Quake/cl_demo.c`, `CL_ClearSignons`, `CL_StopPlayback`, `CL_WriteDemoMessage`,
 `CL_GetDemoMessage`, `CL_GetMessage`, `CL_Stop_f`, `CL_Record_f`, `CL_PlayDemo_f`,
 `CL_FinishTimeDemo`, `CL_TimeDemo_f`; `Quake/cl_main.c`, `CL_Disconnect`, `CL_LerpPoint`,
-`CL_RelinkEntities`; `Quake/host_cmd.c`, `Host_Pause_f`, `Host_Map_f`, `Host_Restart_f`, `Host_Changelevel_f`;
-`Quake/cmd.c`,
+`CL_RelinkEntities`; `Quake/host_cmd.c`, `Host_Pause_f`, `Host_Map_f`, `Host_Restart_f`, `Host_Changelevel_f`,
+`Host_Startdemos_f`, `Host_Demos_f`, `Host_Stopdemo_f`; `Quake/cl_main.c`, `CL_NextDemo`;
+`Quake/host.c`, `Host_EndGame`; `Quake/client.h`; `Quake/cmd.c`,
 `Cmd_ForwardToServer`; `Quake/quakedef.h`. A demo is the messages a client read, so it is in
 whichever of the three protocols the server wrote (NET-6, CLIENT-9), under
 [ADR-0026](../../adr/0026-preview-host-later-engine-improvements.md). Implemented by
@@ -529,11 +530,36 @@ statement below says "the preview host" the behaviour is ours, with its reason.
   while it holds, "`if (cls.demopaused) return 0;`". Any other command the console forwards
   to the server while a demo plays is dropped, "`if (cls.demoplayback) return; // not really
   connected`" (`Cmd_ForwardToServer`).
+- **CLIENT-10.11** `Host_Startdemos_f`, `startdemos <demoname>...`: the words after the
+  command are the loop's demos, at most `MAX_DEMOS`, with "`Max %i demos in demoloop`" when
+  there are more, then "`%i demo(s) in loop`"; each name is kept to `MAX_DEMONAME` less one
+  bytes (`q_strlcpy (cls.demos[i-1], Cmd_Argv(i), sizeof(cls.demos[0]));`), and a name past
+  the words given keeps what it was. The loop starts only with no server running, "`if
+  (!sv.active && cls.demonum != -1 && !cls.demoplayback)`", and else is stopped, "`cls.demonum
+  = -1;`". The preview host's server always runs, so `startdemos`, which `quake.rc` runs at
+  start, lists the demos and starts none: the host starts on its map.
+- **CLIENT-10.12** `Host_Demos_f`, `demos`: "`if (cls.demonum == -1) cls.demonum = 1;`", so
+  a loop that was not running starts at its second demo; the client disconnects; then
+  `CL_NextDemo` plays the loop's next demo. `CL_NextDemo` does nothing with no loop running;
+  where the next name is empty, or the number is `MAX_DEMOS`, it goes round to the first,
+  "`if (!cls.demos[cls.demonum][0] || cls.demonum == MAX_DEMOS)`", and with no first name
+  prints "`No demos listed with startdemos`" and stops the loop; else it runs `playdemo` of
+  the name and moves on, "`cls.demonum++;`". When a demo of a running loop ends it is
+  followed by the next, but not a timedemo: "`if (cls.demonum != -1 && !cls.timedemo)
+  CL_NextDemo ();`" (`Host_EndGame`). A demo that does not open or is invalid stops the loop
+  (CLIENT-10.8: "`cls.demonum = -1; // stop demo loop`"), and so does `map`, "stop demo loop
+  in case this fails". The preview host keeps the map played before the loop's first demo
+  and starts it again when the loop ends.
+- **CLIENT-10.13** `Host_Stopdemo_f`, `stopdemo`: "`if (!cls.demoplayback) return;
+  CL_StopPlayback (); CL_Disconnect ();`". In the preview host the map played before the
+  demo starts again.
 
 ### Constants
 
 | Name | Value | Source |
 | --- | --- | --- |
+| `MAX_DEMOS` | 8 | `Quake/client.h`: "`#define MAX_DEMOS 8`" |
+| `MAX_DEMONAME` | 16 | `Quake/client.h`: "`#define MAX_DEMONAME 16`" |
 | `MAX_MSGLEN` | 64000 | `Quake/quakedef.h`: "`#define MAX_MSGLEN 64000 // max length of a reliable message //ericw -- was 32000`" |
 | Signon stage a recording needs | 2 | `Quake/cl_demo.c`, `CL_Record_f`: "`if (cls.signon < 2)`" |
 | Signon stage a recording started late writes | 3 | `Quake/cl_demo.c`, `CL_Record_f`: "`MSG_WriteByte (&net_message, 3);`" |
@@ -541,6 +567,5 @@ statement below says "the preview host" the behaviour is ours, with its reason.
 
 ### Not covered
 
-The demo loop (`startdemos`, `demos`, `stopdemo`, `cls.demonum` and `CL_NextDemo`) and the
-console's completion of demo names (`DemoList_Rebuild`) are outside the commands this section
-describes.
+The console's completion of demo names (`DemoList_Rebuild`, `Quake/host_cmd.c`) is the
+console's (CON), and is not part of this section.

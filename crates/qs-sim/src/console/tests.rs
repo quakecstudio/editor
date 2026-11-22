@@ -415,8 +415,8 @@ fn path_prints_the_search_path() {
     );
 }
 
-// spec PHYS-13.8: where the preview host's console differs from id's on purpose: the Exe line,
-// a negative edict, map with no name, kick, and the demo and remote-server commands
+// spec PHYS-13.9: where the preview host's console differs from id's on purpose: the Exe line,
+// a negative edict, map with no name, kick, and the remote-server commands
 #[test]
 fn the_deliberate_differences_from_ids_host() {
     let mut run = connected();
@@ -428,9 +428,6 @@ fn the_deliberate_differences_from_ids_host() {
     assert!(console(&mut run, "map; kick player\n").is_empty());
     assert_eq!(run.world.take_host_command(), None);
     for name in [
-        "demos",
-        "startdemos",
-        "stopdemo",
         "connect",
         "reconnect",
         "changelevel2",
@@ -539,6 +536,13 @@ fn the_clients_commands_go_to_the_client() {
             "timedemo run",
             ClientCommand::TimeDemo(words("timedemo run")),
         ),
+        // CLIENT-10.11 to CLIENT-10.13: the demo loop's.
+        (
+            "startdemos a b",
+            ClientCommand::StartDemos(words("startdemos a b")),
+        ),
+        ("demos", ClientCommand::DemoLoop),
+        ("stopdemo", ClientCommand::StopPlayback),
     ] {
         assert!(console(&mut run, &format!("{line}\n")).is_empty());
         assert_eq!(run.world.take_client_commands(), [command], "{line}");

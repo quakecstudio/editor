@@ -1170,7 +1170,7 @@ impl Viewer {
         let mut host = DemoHost {
             args: &self.args,
             game: &mut self.game,
-            client: &self.client,
+            client: &mut self.client,
             read: &|name| describer.read(name),
         };
         self.demos.command(command, &mut host);
@@ -1224,12 +1224,17 @@ impl Viewer {
                     self.input.set_impulse(n);
                     self.dest
                 }
-                ClientCommand::Record(_) | ClientCommand::StopDemo => {
+                ClientCommand::Record(_)
+                | ClientCommand::StopDemo
+                | ClientCommand::StartDemos(_)
+                | ClientCommand::StopPlayback => {
                     self.demo_command(&command);
                     self.dest
                 }
                 // "get rid of the menu and/or console".
-                ClientCommand::PlayDemo(_) | ClientCommand::TimeDemo(_) => {
+                ClientCommand::PlayDemo(_)
+                | ClientCommand::TimeDemo(_)
+                | ClientCommand::DemoLoop => {
                     self.demo_command(&command);
                     KeyDest::Game
                 }

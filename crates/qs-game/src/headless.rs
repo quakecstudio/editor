@@ -477,12 +477,15 @@ impl Headless {
                 ClientCommand::Record(_)
                 | ClientCommand::StopDemo
                 | ClientCommand::PlayDemo(_)
-                | ClientCommand::TimeDemo(_) => {
+                | ClientCommand::TimeDemo(_)
+                | ClientCommand::StartDemos(_)
+                | ClientCommand::DemoLoop
+                | ClientCommand::StopPlayback => {
                     let describer = &self.describer;
                     let mut host = DemoHost {
                         args,
                         game: &mut self.game,
-                        client: &self.client,
+                        client: &mut self.client,
                         read: &|name| describer.read(name),
                     };
                     self.demos.command(&command, &mut host);

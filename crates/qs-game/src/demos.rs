@@ -6,7 +6,8 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_demo.c, CL_StopPlayback, CL_Stop_f, CL_Record_f, CL_PlayDemo_f, CL_FinishTimeDemo, CL_TimeDemo_f
-// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/host_cmd.c, Host_Pause_f, Host_Restart_f, Host_Changelevel_f
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/host_cmd.c, Host_Pause_f, Host_Restart_f, Host_Changelevel_f, Host_Startdemos_f, Host_Demos_f, Host_Stopdemo_f
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_main.c, CL_NextDemo
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cmd.c, Cmd_ForwardToServer
 
 //! The host's demo commands (CLIENT-10): `record`, `stop`, `playdemo` and `timedemo`, over
@@ -35,6 +36,13 @@ const RECORD_MAP: usize = 2;
 const RECORD_TRACK: usize = 3;
 /// The words of `playdemo` and `timedemo`: the command and a name.
 const PLAY_WORDS: usize = 2;
+/// `MAX_DEMOS` of `client.h`: the demos a loop holds (CLIENT-10.11).
+const MAX_DEMOS: usize = 8;
+/// The bytes of a loop's demo name kept: `MAX_DEMONAME` of `client.h`, 16, less the NUL.
+const MAX_DEMO_NAME: usize = 15;
+/// Where `demos` starts a loop that is not running: "`if (cls.demonum == -1) cls.demonum =
+/// 1;`".
+const LOOP_START: usize = 1;
 /// The command that holds a playing demo.
 const PAUSE: &[u8] = b"pause";
 /// The extension a demo's name is given when it has another or none.
@@ -93,13 +101,19 @@ pub(crate) struct Demos {
     forcetrack: i32,
     waiting: Option<Waiting>,
     playing: Option<Playing>,
+    /// `cls.demos`: the names `startdemos` gave, an empty one where there is none.
+    listed: [String; MAX_DEMOS],
+    /// `cls.demonum`: the demo of the loop to play next, none when no loop runs.
+    next: Option<usize>,
+    /// The map to go back to after a loop's demos, kept from one demo to the next.
+    resume: Option<String>,
 }
 
 /// What the demo commands work on.
 pub(crate) struct DemoHost<'a> {
     pub(crate) args: &'a Args,
     pub(crate) game: &'a mut Game,
-    pub(crate) client: &'a Client,
+    pub(crate) client: &'a mut Client,
     /// A file of the game's search path by name.
     pub(crate) read: &'a dyn Fn(&str) -> Option<Vec<u8>>,
 }
@@ -132,6 +146,9 @@ impl Demos {
             forcetrack: qs_client::DEMO_NO_TRACK,
             waiting: None,
             playing: None,
+            listed: [const { String::new() }; MAX_DEMOS],
+            next: None,
+            resume: None,
         }
     }
 
@@ -171,6 +188,9 @@ impl Demos {
             ClientCommand::StopDemo => self.stop(host.game, host.client),
             ClientCommand::PlayDemo(words) => self.play(words, DemoPace::Timed, host),
             ClientCommand::TimeDemo(words) => self.play(words, DemoPace::EveryFrame, host),
+            ClientCommand::StartDemos(words) => self.start_demos(words, host.game),
+            ClientCommand::DemoLoop => self.demo_loop(host),
+            ClientCommand::StopPlayback => self.stop_playback(host),
             ClientCommand::ToggleConsole
             | ClientCommand::Clear
             | ClientCommand::ToggleMenu
@@ -299,9 +319,11 @@ impl Demos {
             return;
         }
         // "disconnect from server": a demo being played stops, one being recorded ends.
-        let back = match self.playing.take() {
-            Some(playing) => playing.back,
-            None => {
+        // The map to go back to is the one before the first of a loop's demos.
+        let back = match (self.playing.take(), self.resume.take()) {
+            (Some(playing), _) => playing.back,
+            (None, Some(back)) => back,
+            (None, None) => {
                 if self.recorder.recording() {
                     self.stop(host.game, host.client);
                 }
@@ -315,6 +337,8 @@ impl Demos {
         let Some(bytes) = (host.read)(&name) else {
             host.game
                 .console_line(&format!("ERROR: couldn't open {name}\n"));
+            // "stop demo loop".
+            self.next = None;
             self.back_to(&back, host.game);
             return;
         };
@@ -323,6 +347,8 @@ impl Demos {
             Err(DemoError::Invalid | DemoError::Read | DemoError::TooLong) => {
                 host.game
                     .console_line(&format!("ERROR: demo \"{name}\" is invalid\n"));
+                // "stop demo loop".
+                self.next = None;
                 self.back_to(&back, host.game);
                 return;
             }
@@ -330,6 +356,7 @@ impl Demos {
         let Some(map) = demo.map() else {
             host.game
                 .console_line(&format!("ERROR: demo \"{name}\" names no map\n"));
+            self.next = None;
             self.back_to(&back, host.game);
             return;
         };
@@ -387,6 +414,9 @@ impl Demos {
             .as_ref()
             .is_some_and(|playing| playing.stage == Stage::Loading);
         if connection == Connection::New && !loading {
+            // `Host_Map_f`: "stop demo loop in case this fails".
+            self.next = None;
+            self.resume = None;
             self.playing = None;
             if self.recorder.recording() {
                 self.stop(game, client);
@@ -496,7 +526,85 @@ impl Demos {
                 "{frames} frames {seconds:5.1} seconds {rate:5.1} fps\n"
             ));
         }
+        // `Host_EndGame`: "`if (cls.demonum != -1 && !cls.timedemo) CL_NextDemo ();`".
+        if playing.pace == DemoPace::Timed
+            && let Some(name) = self.next_demo(game)
+        {
+            self.resume = Some(playing.back);
+            game.world_mut().console(&format!("playdemo {name}\n"));
+            return;
+        }
         game.world_mut().console(&format!("map {}\n", playing.back));
+    }
+
+    /// `Host_Startdemos_f`: the loop's demos are the words after the command, at most
+    /// [`MAX_DEMOS`], each kept to [`MAX_DEMO_NAME`] bytes; a name past the words given keeps
+    /// what it was. The host's server is always running, so no loop starts: "`if (!sv.active
+    /// && ...) ... else cls.demonum = -1;`".
+    ///
+    /// Implements CLIENT-10.11.
+    fn start_demos(&mut self, words: &[Vec<u8>], game: &mut Game) {
+        let given = words.len().saturating_sub(1);
+        if given > MAX_DEMOS {
+            game.console_line(&format!("Max {MAX_DEMOS} demos in demoloop\n"));
+        }
+        let count = given.min(MAX_DEMOS);
+        game.console_line(&format!("{count} demo(s) in loop\n"));
+        for (slot, name) in self.listed.iter_mut().zip(words.iter().skip(1)) {
+            let kept = name.get(..MAX_DEMO_NAME).unwrap_or(name);
+            *slot = String::from_utf8_lossy(kept).into_owned();
+        }
+        self.next = None;
+    }
+
+    /// `CL_NextDemo`: the name of the loop's next demo, the loop moved on past it; none
+    /// when no loop runs, or when none is listed, which is said and ends the loop.
+    ///
+    /// Implements CLIENT-10.12.
+    fn next_demo(&mut self, game: &mut Game) -> Option<String> {
+        let mut next = self.next?;
+        if self.listed.get(next).is_none_or(String::is_empty) {
+            next = 0;
+        }
+        let Some(name) = self.listed.get(next).filter(|name| !name.is_empty()) else {
+            game.console_line("No demos listed with startdemos\n");
+            self.next = None;
+            return None;
+        };
+        self.next = Some(next.saturating_add(1));
+        Some(name.clone())
+    }
+
+    /// `Host_Demos_f`: the loop starts, at its second demo when it was not running, or goes
+    /// on to its next demo, the one playing stopped.
+    ///
+    /// Implements CLIENT-10.12.
+    fn demo_loop(&mut self, host: &mut DemoHost<'_>) {
+        if self.next.is_none() {
+            self.next = Some(LOOP_START);
+        }
+        match self.next_demo(host.game) {
+            Some(name) => {
+                let words = [b"playdemo".to_vec(), name.into_bytes()];
+                self.play(&words, DemoPace::Timed, host);
+            }
+            // `CL_Disconnect`: a demo being played stops.
+            None => self.stop_playback(host),
+        }
+    }
+
+    /// `Host_Stopdemo_f`: a demo being played stops, "`if (!cls.demoplayback) return;`", and
+    /// the map played before it starts again.
+    ///
+    /// Implements CLIENT-10.13.
+    fn stop_playback(&mut self, host: &mut DemoHost<'_>) {
+        let Some(playing) = self.playing.take() else {
+            return;
+        };
+        host.client.stop_playback();
+        host.game
+            .world_mut()
+            .console(&format!("map {}\n", playing.back));
     }
 }
 

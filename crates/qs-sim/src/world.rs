@@ -305,6 +305,13 @@ pub enum ClientCommand {
     PlayDemo(Vec<Vec<u8>>),
     /// `timedemo <demoname>`, `CL_TimeDemo_f`, with the command's words (CLIENT-10.9).
     TimeDemo(Vec<Vec<u8>>),
+    /// `startdemos <demoname>...`, `Host_Startdemos_f`, with the command's words
+    /// (CLIENT-10.11).
+    StartDemos(Vec<Vec<u8>>),
+    /// `demos`, `Host_Demos_f` (CLIENT-10.12).
+    DemoLoop,
+    /// `stopdemo`, `Host_Stopdemo_f` (CLIENT-10.13).
+    StopPlayback,
 }
 
 impl ClientCommand {

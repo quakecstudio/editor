@@ -60,5 +60,6 @@ the host carries out, saving to `<basedir>/<game>/<name>.sav`. `record <name> [<
 and `stop` record a demo to `<basedir>/<game>/<name>.dem`, and `playdemo <name>` and
 `timedemo <name>` play one from the game's files, in whichever protocol it was recorded
 (CLIENT-10): the demo's map is loaded, the demo plays over it with the server standing still,
-and the map played before starts again when it ends. `pause` holds a playing demo. The commands' conformance tests
+and the map played before starts again when it ends. `pause` holds a playing demo, `stopdemo`
+stops it, and `startdemos <name>...` and `demos` list and play a loop of them. The commands' conformance tests
 are in `crates/qs-game/src/game/tests.rs`.

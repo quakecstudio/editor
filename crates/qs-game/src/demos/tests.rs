@@ -115,7 +115,7 @@ impl Host {
             let mut host = DemoHost {
                 args: &self.args,
                 game: &mut self.game,
-                client: &self.client,
+                client: &mut self.client,
                 read: &|name| std::fs::read(dir.join(name)).ok(),
             };
             self.demos.command(&command, &mut host);
@@ -625,7 +625,7 @@ fn a_demo_that_does_not_start_goes_back_to_the_map_before() {
         let mut demo_host = DemoHost {
             args: &host.args,
             game: &mut host.game,
-            client: &host.client,
+            client: &mut host.client,
             read: &|_| None,
         };
         host.demos.command(&command, &mut demo_host);
@@ -643,4 +643,135 @@ fn a_demo_that_does_not_start_goes_back_to_the_map_before() {
         Some(HostAction::Level(level)) => assert_eq!(level.map, "elsewhere"),
         other => panic!("{:?}", other.is_some()),
     }
+}
+
+impl Host {
+    /// Loads the map a demo command asked for and lets the demo play over it.
+    fn starts_playing(&mut self) {
+        assert_eq!(self.asked(), Some(("test".to_owned(), Connection::New)));
+        self.demos
+            .before_level(Connection::New, &mut self.game, &self.client);
+        self.demos
+            .after_level(Some(&mut self.client), &mut self.game);
+        assert!(self.demos.playing());
+    }
+
+    /// Plays the demo to its end.
+    fn plays_out(&mut self) {
+        let mut frames = 0_u32;
+        while self.demos.playing() {
+            self.frame(0.0).unwrap();
+            frames = frames.saturating_add(1);
+            assert!(frames < 100, "the demo does not end");
+        }
+    }
+}
+
+// spec CLIENT-10.11: `startdemos` lists at most eight demos, each name kept to fifteen
+// bytes, says how many, and starts no loop while the host's server runs
+#[test]
+fn startdemos_lists_the_loops_demos() {
+    let mut host = Host::connected("list");
+    assert_eq!(host.say("startdemos one two"), ["2 demo(s) in loop\n"]);
+    assert_eq!(host.demos.listed[..3], ["one", "two", ""]);
+    assert_eq!(host.demos.next, None);
+    assert!(!host.demos.playing());
+    assert_eq!(host.asked(), None);
+    // A name past the words given keeps what it was.
+    assert_eq!(
+        host.say("startdemos a_name_of_twenty_byte"),
+        ["1 demo(s) in loop\n"]
+    );
+    assert_eq!(host.demos.listed[..3], ["a_name_of_twent", "two", ""]);
+    assert_eq!(
+        host.say("startdemos 1 2 3 4 5 6 7 8 9"),
+        ["Max 8 demos in demoloop\n", "8 demo(s) in loop\n"]
+    );
+    assert_eq!(host.demos.listed[7], "8");
+    assert_eq!(host.say("startdemos"), ["0 demo(s) in loop\n"]);
+    assert_eq!(host.demos.listed[0], "1");
+}
+
+// spec CLIENT-10.12: `demos` starts the loop at its second demo, each demo that ends is
+// followed by the next, the list going round, and the map played before the first is kept
+// to go back to; with no demo listed it says so
+#[test]
+fn demos_plays_the_loop_round() {
+    let mut host = Host::connected("loop");
+    assert_eq!(host.say("demos"), ["No demos listed with startdemos\n"]);
+    assert_eq!(host.demos.next, None);
+    host.recorded("one", 2);
+    host.recorded("two", 2);
+    host.say("startdemos one two");
+    assert_eq!(host.say("demos"), ["Playing demo from two.dem.\n"]);
+    host.starts_playing();
+    host.demos.playing.as_mut().unwrap().back = "before".to_owned();
+    host.plays_out();
+    // The list's third name is empty: the loop goes round to the first.
+    assert_eq!(host.say(""), ["Playing demo from one.dem.\n"]);
+    host.starts_playing();
+    assert_eq!(host.demos.playing.as_ref().unwrap().back, "before");
+    host.plays_out();
+    assert_eq!(host.say(""), ["Playing demo from two.dem.\n"]);
+    host.starts_playing();
+    // `demos` while one plays goes on to the next.
+    assert_eq!(host.say("demos"), ["Playing demo from one.dem.\n"]);
+    assert_eq!(host.demos.playing.as_ref().unwrap().back, "before");
+}
+
+// spec CLIENT-10.12: a timed demo is followed by none, a demo that does not open ends the
+// loop, and so does a new game
+#[test]
+fn what_ends_the_loop() {
+    let mut host = Host::connected("ends");
+    host.recorded("one", 2);
+    host.say("startdemos one one");
+    host.say("demos");
+    host.starts_playing();
+    host.say("timedemo one");
+    host.starts_playing();
+    host.plays_out();
+    let said = host.printed();
+    assert!(said[0].ends_with("fps\n"), "{said:?}");
+    assert_eq!(host.say(""), Vec::<String>::new(), "no demo follows");
+
+    let mut host = Host::connected("ends-open");
+    host.say("startdemos none");
+    assert_eq!(
+        host.say("demos"),
+        [
+            "Playing demo from none.dem.\n",
+            "ERROR: couldn't open none.dem\n"
+        ]
+    );
+    assert_eq!(host.demos.next, None);
+
+    let mut host = Host::connected("ends-map");
+    host.recorded("one", 2);
+    host.say("startdemos one one");
+    host.say("demos");
+    host.starts_playing();
+    assert!(host.demos.next.is_some());
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    assert_eq!(host.demos.next, None);
+    assert!(!host.demos.playing());
+}
+
+// spec CLIENT-10.13: `stopdemo` stops a demo being played, and the map played before
+// starts again; with none playing it does nothing
+#[test]
+fn stopdemo_stops_a_playing_demo() {
+    let mut host = Host::connected("stopdemo");
+    assert_eq!(host.say("stopdemo"), Vec::<String>::new());
+    assert_eq!(host.asked(), None);
+    host.recorded("one", 4);
+    host.say("playdemo one");
+    host.starts_playing();
+    host.frame(0.0).unwrap();
+    assert!(host.client.demo_playing());
+    assert_eq!(host.say("stopdemo"), Vec::<String>::new());
+    assert!(!host.demos.playing());
+    assert!(!host.client.demo_playing());
+    assert_eq!(host.asked(), Some(("test".to_owned(), Connection::New)));
 }
