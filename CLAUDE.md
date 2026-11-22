@@ -120,6 +120,7 @@ cargo xtask engines [--check]             # regenerate (or check) the engine-tar
 cargo xtask compiler-diff [--fast]       # the compiler differential's CI subset: qcc against qc-codegen on id 1.01, 32 rounds
 cargo xtask format-corpus [--vanilla] <codebase>...  # formatting twice is formatting once, and each module compiles to the same progs.dat (P4-34)
 cargo xtask entity-corpus [--write] [--maps <game dir>] <codebase>...  # entity definitions against docs/spec/vectors/entities/, and every map classname defined (P5-03)
+cargo xtask next-edit-corpus <codebase>...  # a field retyped where it is declared is suggested at every use, and each suggestion taken (P4-11)
 cargo xtask compiler-diff --full <codebase>  # 128 rounds over one codebase (id-1.01, a rerelease codebase or a corpus mod); up to an hour each, so run them one at a time or in parallel
 cargo xtask compiler-diff --functions <codebase>...  # each function of an FTEQCC codebase cut into a program of its own and called alone (DIFF-15)
 cargo xtask compiler-diff --functions <codebase> --shard k/n  # every n-th group from the k-th; --merge <executed.tsv>... holds the shards together to the bar (DIFF-15.10)

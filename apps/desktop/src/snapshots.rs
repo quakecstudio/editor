@@ -155,6 +155,21 @@ fn scripts() -> Vec<Script> {
                 ),
             ],
         },
+        // P4-11, mockup 01: a field retyped where it is declared, and the next edit it
+        // implies at the end of the line, with the pill that says which key takes it.
+        Script {
+            name: "next-edit",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": fixture() })),
+                Step::Run(
+                    "file.open",
+                    json!({ "path": fixture().join("defs.qc"), "offset": 186 }),
+                ),
+                Step::Run(qs_layout::FOCUS_EDITOR, json!({})),
+                Step::Key(Modifiers::NONE, Key::Backspace),
+                Step::Type("d"),
+            ],
+        },
         Script {
             name: "search",
             steps: vec![
