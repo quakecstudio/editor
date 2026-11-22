@@ -78,3 +78,11 @@ step.
   `screenshot`, writing the PNG beside the scenario as `<scenario>-<name>.png`. The image is
   the map seen from where the player was, in the host's own world; with no host, the result
   keeps each screenshot's eye and writes no image.
+- **SCN-2.7** Before a scenario plays, `scenario.run` and a scenario test (QCT-3.1) put what
+  a game on its map reads of the project where the game reads it, the mod's folder under
+  the project's `build`, as Play does: the map's BSP when the project compiled it, the one
+  beside the map open in the editor when that map has the scenario's map's name, else the
+  one in the project's `maps`, with its `.lit` and `.ent`, when none is there or an older
+  one; then the project's other files a game reads. A map the project did not compile is
+  the game's own. So a scenario on a level made in the project plays that level, and plays
+  the open map's newest compile.

@@ -195,16 +195,21 @@ fn scenario_tests_are_found_and_skipped_without_a_game() {
 // spec QCT-3.1, QCT-3.2: with a game folder given, each scenario is played over its files with
 // the project's built program; one whose map the game lacks, or whose text does not read,
 // fails saying why
+// spec SCN-2.7: a map the project compiled is put where the game reads maps first, so it is
+// the one played
 #[test]
 fn scenario_tests_play_over_the_game_given() {
     let spec = ProjectSpec {
         code: String::new(),
         scenarios: vec![
             ("tests/missing_map.scenario", "map nomap\nframes 1\n"),
+            ("tests/own.scenario", "map own\nframes 1\n"),
             ("tests/unreadable.scenario", "frobnicate\n"),
         ],
     };
     let (root, mut workbench) = project("scenarios-game", &spec);
+    std::fs::create_dir_all(root.join("maps")).unwrap();
+    std::fs::write(root.join("maps/own.bsp"), b"the project's own, and no BSP").unwrap();
     let game = root.join("game");
     std::fs::create_dir_all(game.join("id1")).unwrap();
     // The full game, so a mod may run over it (FS-4.2): id's pop table in gfx/pop.lmp.
@@ -223,6 +228,7 @@ fn scenario_tests_play_over_the_game_given() {
         verdicts(&run),
         [
             ("tests/missing_map.scenario", Verdict::Failed),
+            ("tests/own.scenario", Verdict::Failed),
             ("tests/unreadable.scenario", Verdict::Failed),
         ]
     );
@@ -232,7 +238,9 @@ fn scenario_tests_play_over_the_game_given() {
         "the program was found and the map was looked for: {}",
         message(0)
     );
-    assert!(message(1).starts_with("line 1"), "{}", message(1));
+    // The project's own map was found and read: it fails as no BSP, not as missing.
+    assert!(!message(1).contains("search path"), "{}", message(1));
+    assert!(message(2).starts_with("line 1"), "{}", message(2));
     assert!(!run.passed);
 }
 
