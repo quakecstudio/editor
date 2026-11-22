@@ -22,7 +22,7 @@ use eframe::egui_wgpu::RenderState;
 use qs_commands::remote::Host;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
 use qs_editor_view::{
-    Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
+    Fixable, KeyMode, LineNote, LineSuggestion, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
     DockPanel, Docks, EditorRequest, FOCUS_COMMANDS, Focus, GO_TO_LINE, HasLayout, Layout,
@@ -39,6 +39,7 @@ use qs_workbench::game_files::GameFiles;
 use qs_workbench::ids::ActionIndex;
 use qs_workbench::map_compile::{MAP_PLAY_FROM_HERE, PlayFromHereParams};
 use qs_workbench::map_profile::MAP_RUN_PROFILE;
+use qs_workbench::next_edit::{ACCEPT_NEXT_EDIT, DISMISS_NEXT_EDIT, NextEdit, NextEditDone};
 use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams, PathsOpened, TAKE_OPENED_PATHS};
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
@@ -2525,6 +2526,27 @@ impl Shell {
         self.handle(requests);
     }
 
+    /// Makes the next suggested edit and puts the caret after it, in whichever file it is
+    /// (P4-11).
+    fn accept_next_edit(&mut self) {
+        let next = self.session.context().workbench.next_edit();
+        let done: Option<NextEditDone> =
+            self.run(ACCEPT_NEXT_EDIT, &serde_json::json!({})).flatten();
+        if let Some(done) = done {
+            // A place in the open file is changed in the editor's own text, as its edit.
+            if let (Some(next), Some(editor)) = (next, self.features.editors.editor.as_mut())
+                && next.path == editor.path
+                && next.path == done.path
+            {
+                editor.take_edit(next.start, next.end, &next.new);
+            }
+            self.jump(Jump {
+                path: done.path,
+                offset: done.offset,
+            });
+        }
+    }
+
     /// Runs what the editor asked for, each through its command, after sending the editor's
     /// unsent text so every answer is about the text on screen.
     fn handle(&mut self, requests: Vec<Request>) {
@@ -2651,6 +2673,14 @@ impl Shell {
                     let _: Option<serde_json::Value> =
                         self.run(FORMAT_FILE, &SaveFileParams { path });
                     self.sync_editor();
+                    None
+                }
+                Request::AcceptNext => {
+                    self.accept_next_edit();
+                    None
+                }
+                Request::DismissNext => {
+                    let _: Option<()> = self.run(DISMISS_NEXT_EDIT, &serde_json::json!({}));
                     None
                 }
                 Request::Explain { selection, lines } => {
@@ -2864,6 +2894,11 @@ impl Shell {
             editor
                 .view
                 .set_notes(line_notes(&context.workbench, editor));
+            let suggestion = context
+                .workbench
+                .next_edit()
+                .map(|next| next_edit_line(&next, editor));
+            editor.view.set_suggestion(suggestion);
             let requests = editor.show(ui, theme, &theme.view_style());
             let mut requests = requests;
             if let Some(line) = editor.view.take_note_click() {
@@ -3285,6 +3320,44 @@ fn line_notes(workbench: &Workbench<FsLoader>, editor: &Editor) -> Vec<LineNote>
             }
         })
         .collect()
+}
+
+/// The arrow between a suggested edit's old name and its new one, and the dot between its
+/// parts.
+const BECOMES: char = '\u{2192}';
+const AND: char = '\u{b7}';
+
+/// The suggested edit `next` as `editor` shows it (P4-11): at the end of the line of the
+/// next place when that is in the editor's file and in sight, else of the name typed over,
+/// else of the caret; the old name and the new, the file of a place in another one or the
+/// line of one out of sight, and how many are left when more than this one.
+fn next_edit_line(next: &NextEdit, editor: &mut Editor) -> LineSuggestion {
+    let buffer = editor.view.state().buffer();
+    let here = next.path == editor.path;
+    let place = buffer.position(next.start).line;
+    let elsewhere = if next.typed_path == editor.path {
+        buffer.position(next.typed_end).line
+    } else {
+        editor.view.state().primary().head.line
+    };
+    let in_sight = here && editor.view.shows_line(place);
+    let line = if in_sight { place } else { elsewhere };
+    let mut text = format!("{} {BECOMES} {}", next.old, next.new);
+    let file = next.path.file_name().map(|name| name.to_string_lossy());
+    if let Some(file) = file.filter(|_| !here) {
+        text = format!("{text} {AND} {file}");
+    } else if !in_sight {
+        let number = place.saturating_add(1);
+        text = format!("{text} {AND} {} {number}", Text::NextEditLine.get());
+    }
+    if next.left > 1 {
+        text = format!("{text} {AND} {} {}", next.left, Text::NextEditLeft.get());
+    }
+    LineSuggestion {
+        line,
+        text,
+        accept: Text::NextEditAccept.get().to_owned(),
+    }
 }
 
 /// An inlay hint's text: the parameter's name and a colon, as rust-analyzer shows them.

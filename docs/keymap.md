@@ -158,6 +158,9 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `code.fix` | needs a value | Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved. |
 | `commands.list` | answers a question | Lists every command with its id, summary and parameter schema. |
 | `edit.accept` | needs a value | Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided. |
+| `edit.accept_next` | run by the window | Makes the next suggested edit, giving the next place that says the old name the new one, in the editor's text of its file; nothing is saved. Tab in the code editor runs it. |
+| `edit.dismiss_next` | run by the window | Drops the suggested edits. Escape in the code editor runs it. |
+| `edit.next` | answers a question | Answers the next edit the last one implies: after a field's, a function's or a global's name is typed over where it is first declared, the next place that still says the old name, and how many are left. |
 | `edit.stage_change` | needs a value | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
 | `edit.reject` | needs a value | Rejects staged hunks: the lines they replaced come back, byte for byte. |
 | `edit.staged` | answers a question | Lists the staged hunks waiting to be accepted or rejected. |
