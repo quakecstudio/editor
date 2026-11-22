@@ -748,15 +748,21 @@ fn a_compiled_map_is_put_where_the_game_reads_it() {
     );
 }
 
-// spec BRIDGE-3.1, BRIDGE-3.3: a game stopped at a run error answers the error's message with
-// where it stopped; one stopped at a breakpoint after it gives no message
+// spec BRIDGE-3.1, BRIDGE-3.3: a game stopped at a run error answers the error's message and the
+// stack its qc/error carried with where it stopped; one stopped at a breakpoint after it gives
+// no message
 #[test]
 fn a_run_error_stop_carries_its_message() {
     let mut game = preview(None, None);
     let location = json!({ "function": "StartFrame", "file": "world.qc", "line": 358 });
+    let caller = json!({ "function": "main", "file": "world.qc", "line": 12, "index": 1 });
     game.take_event(
         "qc/error",
-        &json!({ "message": "assignment to world entity" }),
+        &json!({
+            "message": "assignment to world entity",
+            "location": location,
+            "stack": [location, caller],
+        }),
     );
     game.take_event(
         "state/changed",
@@ -769,6 +775,8 @@ fn a_run_error_stop_carries_its_message() {
         stopped.message.as_deref(),
         Some("assignment to world entity")
     );
+    let functions: Vec<&str> = stopped.stack.iter().map(|l| l.function.as_str()).collect();
+    assert_eq!(functions, ["StartFrame", "main"]);
     let answer = serde_json::to_value(PreviewStatus::of(&game)).unwrap();
     assert_eq!(answer["stopped"]["message"], "assignment to world entity");
     game.take_event("state/changed", &json!({ "state": "playing" }));

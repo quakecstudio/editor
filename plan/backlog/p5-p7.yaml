@@ -3148,3 +3148,67 @@ groups:
     - 'Tests: a refused breakpoint toggled three times is refused each time and the list stays empty; with no game a line with no statement is refused and one with a statement is added and taken away'
     verify:
     - 'cargo nextest run -p qs-workbench'
+  - key: L-71
+    title: 'A game stopped at a run error answers no stack'
+    labels:
+    - L5-commands
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - ENG-4
+    - AGT-1
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 in the follow-up playtest of v2026.11.2 (#1122). After a run error `preview.poll` answers the message but no stack: the workbench reads only `qc/error`'s message, and the `inspect stack` it sends at the pause is answered from a breakpoint's or a step's stop, so `[]`.
+    environment: |
+      macOS 27.2 (Apple silicon), main 6c72910e, release build, `quakec-ide mcp <project> --game <install>`
+    deliverable:
+    - 'crates/qs-workbench/src/preview.rs: `qc/error`''s stack kept, and not asked for again at the pause a run error makes'
+    acceptance:
+    - 'A test: after `qc/error` with a stack and the pause, `preview.poll` answers that stack'
+    verify:
+    - 'cargo nextest run -p qs-workbench'
+  - key: L-72
+    title: 'The toolbar shows a host that does not answer as playing'
+    labels:
+    - L7-ui
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - ENG-1
+    - PRIN-7
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 in the follow-up playtest of v2026.11.2 (#1123). While the host is not answering the status bar says so, but the toolbar beside the play controls still shows a green dot and the game it was playing.
+    environment: |
+      macOS 27.2 (Apple silicon), main 6c72910e, release build of quakec-studio, driven with `quakec-ide mcp --connect`
+    deliverable:
+    - 'apps/desktop/src/shell.rs: the toolbar says a host that does not answer is not answering, as a failure'
+    acceptance:
+    - 'A test: the toolbar''s status for a host that does not answer is "Preview host not answering", shown as a failure'
+    verify:
+    - 'cargo nextest run -p quakec-studio'
+  - key: L-73
+    title: 'Pop the game out of the Game tab into a full-screen window'
+    labels:
+    - L7-ui
+    - area:preview
+    - type:feature
+    size: M
+    reqs:
+    - ENG-10
+    - ENG-9
+    depends: []
+    summary: |
+      Asked for by Justin on 2026-11-22. The Game tab (ADR-0028) runs the game in the IDE's own window, so it is always on the IDE's Space, where the docked preview host's window, a process of its own, can open on another. Playing it full screen needs a Pop Out that moves the running game into a window of its own in the IDE's process, which goes full screen, and back. Prior art: Godot 4.4's embedded game view and its "Make Floating"; Unity's Game view, "Maximize On Play" and its full-screen play mode.
+    deliverable:
+    - 'crates/qs-layout: where the embedded game is shown, in the Game tab or popped out, kept with the layout'
+    - 'crates/qs-workbench (or the layout''s commands): `preview.pop_out` and `preview.pop_in`, in the registry, so the toolbar, the palette, a key and the agent share them'
+    - 'apps/desktop: a Pop Out button on the Game tab; the game drawn in a second viewport of the IDE''s process that opens full screen (native full screen on macOS, borderless full screen on Windows and Linux); Escape, the window''s close button or Pop In returns it to the tab; the game keeps running through the move, its bridge and state unchanged'
+    acceptance:
+    - 'A test: popping out and in through the commands changes where the layout shows the game and nothing else, and the choice is kept with the layout'
+    - 'A recorded run on the reference Mac: the game played in the Game tab, popped out to full screen, played, returned with Escape, its time, player and entities unchanged by the moves'
+    verify:
+    - 'cargo nextest run -p qs-layout -p qs-workbench -p quakec-studio; the recorded run in the PR'

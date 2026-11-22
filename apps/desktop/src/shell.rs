@@ -1609,11 +1609,7 @@ impl Shell {
         } else {
             Text::PreviewOwnWindow
         };
-        let failed = self.preview_error.is_some();
-        let status = self
-            .preview_error
-            .clone()
-            .or_else(|| preview.status().map(str::to_owned));
+        let shown = toolbar_status(state, self.preview_error.as_deref(), preview.status());
         egui::Panel::top(Id::new(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
@@ -1629,8 +1625,8 @@ impl Shell {
                             .small()
                             .color(theme.color(Token::TextMuted)),
                     );
-                    if let Some(status) = &status {
-                        let colour = if failed {
+                    if let Some((status, failed)) = &shown {
+                        let colour = if *failed {
                             theme.color(Token::StatusError)
                         } else {
                             theme.color(Token::StatusOk)
@@ -3384,6 +3380,25 @@ pub(crate) fn line_index(line: u32) -> usize {
     usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
 }
 
+/// What the toolbar says of the game beside its play controls, and whether it is a failure: the
+/// last error a control met, else that a host which does not answer is not answering, else the
+/// play loop's own `status`; `None` when there is nothing to say.
+fn toolbar_status(
+    state: PlayState,
+    error: Option<&str>,
+    status: Option<&str>,
+) -> Option<(String, bool)> {
+    if let Some(error) = error {
+        return Some((error.to_owned(), true));
+    }
+    match state {
+        PlayState::NotAnswering => Some((Text::PreviewNotAnswering.get().to_owned(), true)),
+        PlayState::Stopped | PlayState::Playing | PlayState::Paused => {
+            status.map(|status| (status.to_owned(), false))
+        }
+    }
+}
+
 /// The toolbar's play controls for the game's `state`: the command a click chose, if any.
 /// Play starts a stopped game and stops a running one; Pause pauses it and shows it paused;
 /// Resume takes Play's place while paused; Step and Restart map need a running game.
@@ -3529,5 +3544,34 @@ impl std::error::Error for ShellError {
             Self::Params(error) => Some(error),
             Self::Command(error) => Some(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod toolbar_tests {
+    use qs_workbench::PlayState;
+
+    use super::toolbar_status;
+    use crate::strings::Text;
+
+    // No spec statement: L-72: a host that does not answer is shown as a failure beside the play
+    // controls, not as the game it was playing; an error a control met comes first
+    #[test]
+    fn a_host_that_does_not_answer_is_shown_as_failing() {
+        let playing = Some(Text::PreviewRunning.get());
+        let error = Text::ReloadFailed.get();
+        assert_eq!(
+            toolbar_status(PlayState::Playing, None, playing),
+            Some((Text::PreviewRunning.get().to_owned(), false))
+        );
+        assert_eq!(
+            toolbar_status(PlayState::NotAnswering, None, playing),
+            Some((Text::PreviewNotAnswering.get().to_owned(), true))
+        );
+        assert_eq!(
+            toolbar_status(PlayState::NotAnswering, Some(error), playing),
+            Some((error.to_owned(), true))
+        );
+        assert_eq!(toolbar_status(PlayState::Stopped, None, None), None);
     }
 }
