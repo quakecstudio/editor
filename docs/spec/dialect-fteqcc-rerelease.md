@@ -583,6 +583,22 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
   assignment of one copies it by its size (FTEF-2.13). An assignment `a = b;` of struct
   values is FTE-14.6's. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_GenerateInitializerType`.
+- **FTE-14.10** A local struct's or union's braces, `P p = { a, b };`, are read by
+  `QCC_PR_ParseInitializerType_Internal` ("structs go recursive") a member at a time: each
+  value is its member's, in the members' order, or with `{ .name = value, ... }` the member
+  named ("designated initialisers"), and is stored to the member's words by
+  `QCC_PR_GenerateInitializerType` as FTE-14.9 says, the local being neither constant nor
+  static. A member's own braces are read as its type's: a struct's or a union's so, a
+  vector's as three floats ("vectors can be treated as an array of 3 floats"), an array's
+  as its elements'. Each member is marked at its word, `isinited[def.ofs] |= ...`, and then
+  "anything not already set needs to be filled with a default value": each member at a word
+  not marked is stored `QCC_MakeIntConst(0)` by its own type, once, so a union's other
+  members are not stored, and of an array member only the first element is. So `struct Out {
+  float a; struct In in; vector v; float xs[2]; }` with `Out o = { 1 };` is `STORE_F`, two
+  `STORE_FLD` for the two words of `in` on the standard target, `STORE_V` and one `STORE_F`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`,
+  `QCC_PR_GenerateInitializerType`.
 
 ## FTE-15 `enum`
 

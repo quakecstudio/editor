@@ -28,6 +28,24 @@ use crate::check::reference::word_type;
 use crate::check::truth::{Test, is_truth};
 use crate::check::{Constness, Fold, Reference, Sym, Value, ValueUse};
 use crate::ir;
+
+/// One part of an initialiser's braces: a value, or braces of its own.
+enum Part {
+    /// An expression.
+    Value(ast::Expr),
+    /// `{ ... }`.
+    Braces(ast::AggregateInit),
+}
+
+impl Part {
+    /// The part `node` of some braces is, none for a node that is neither.
+    fn of(node: SyntaxNode) -> Option<Self> {
+        match ast::AggregateInit::cast(node.clone()) {
+            Some(braces) => Some(Self::Braces(braces)),
+            None => ast::Expr::cast(node).map(Self::Value),
+        }
+    }
+}
 use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
 use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
@@ -1045,6 +1063,11 @@ impl Checker<'_> {
         Ok(copy.or(loaded))
     }
 
+    /// Whether `ty` is a struct or a union.
+    fn aggregate_type(&self, ty: &Type) -> bool {
+        matches!(self.etype(ty), Some(Etype::Struct | Etype::Union))
+    }
+
     /// FTE-13.1: `vector v = {x, y, z};` of a local not `static`, each element read and
     /// stored to its component in turn by `STORE_F`, as `QCC_PR_ParseInitializerType` stores an
     /// aggregate's elements; any other aggregate is not followed.
@@ -1081,6 +1104,10 @@ impl Checker<'_> {
                 self.followed = false;
             }
             return Ok(());
+        }
+        let ty = self.env.local_type(start);
+        if let Some(ty) = ty.filter(|ty| !array && self.aggregate_type(ty)) {
+            return self.struct_aggregate(aggregate, (local, 0), &ty);
         }
         if !vector || elements.len() != qc_types::PROGS_VECTOR_SLOTS {
             self.followed = false;
@@ -1693,22 +1720,153 @@ impl Checker<'_> {
         let span = declarator.syntax().span();
         for (at, element) in (0_u32..).zip(elements) {
             let value = self.value(Some(element.clone()))?;
-            // An element of another type is converted as it is stored, which the body does not
-            // follow; the check reports one no cast takes.
-            if self.etype(&value.ty) != self.etype(&ty) {
+            let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
+            self.store_part(&value, to, &ty, span);
+        }
+        Ok(())
+    }
+
+    /// One value of a local's braces stored to the words `to` of the local, of type `ty`: by
+    /// the `STORE_*` of [`Checker::initialiser_steps`], as a local's initialiser is (FTE-14.9),
+    /// or folded into the statement that made it (FTEF-29.13). A value of another type is
+    /// converted as it is stored, which the body does not follow; the check reports one no
+    /// cast takes.
+    fn store_part(&mut self, value: &Value, to: Option<ir::Name>, ty: &Type, span: Span) {
+        if self.etype(&value.ty) != self.etype(ty) {
+            self.followed = false;
+        }
+        let wider = self.generated.last().is_some_and(|last| {
+            let made = opcodes::row(last.op).map(|row| row.types[2].etype());
+            made.map_or(1, Etype::words) > self.etype(ty).map_or(1, Etype::words)
+        });
+        if value.temp.is_some() && value.temp == self.last_temp && !wider {
+            self.fold_into(value, to);
+        } else {
+            self.store_initialiser((value, self.name_of(value)), to, ty, span);
+        }
+        self.read_returned(value);
+        self.last_temp = None;
+    }
+
+    /// A local struct's or union's braces, as `QCC_PR_ParseInitializerType` reads them
+    /// (FTE-14.10), stored from the word `base` of `local`: each part is its member's, in the
+    /// members' order or the one a `.name =` gives it, a value read and stored to the member's
+    /// words and a member's own braces read as its type's; then each member at a word no
+    /// part was stored at is stored a zero, so a union's other members are not. Braces of
+    /// more parts than members, and a value for a member that is an array, are not followed.
+    fn struct_aggregate(
+        &mut self,
+        aggregate: &ast::AggregateInit,
+        (local, base): (Option<crate::DefId>, u32),
+        ty: &Type,
+    ) -> Result<(), Fatal> {
+        let Some(members) = self.env.members(ty) else {
+            self.followed = false;
+            return Ok(());
+        };
+        let names = aggregate.designated_names();
+        let span = aggregate.syntax().span();
+        let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
+        // `isinited`: the words a part has been stored at, a union's members sharing one.
+        let mut set: Vec<u32> = Vec::new();
+        for (place, part) in aggregate.syntax().children().enumerate() {
+            let at = match names.get(place) {
+                Some(name) => members.iter().position(|member| member.name == *name),
+                None if names.is_empty() => Some(place),
+                None => None,
+            };
+            let member = at.and_then(|at| members.get(at));
+            match (member, Part::of(part)) {
+                (Some(member), Some(Part::Value(element))) if member.count == 1 => {
+                    let value = self.value(Some(element))?;
+                    set.push(member.word);
+                    self.store_part(&value, word(member.word), &member.ty, span);
+                }
+                (Some(member), Some(Part::Braces(braces))) => {
+                    set.push(member.word);
+                    let at = base.saturating_add(member.word);
+                    self.member_braces(&braces, (local, at), member)?;
+                }
+                // A part with no member is still read, for what the check reports of it.
+                (_, Some(Part::Value(element))) => {
+                    self.value(Some(element))?;
+                    self.followed = false;
+                }
+                (None, _) | (_, None) => self.followed = false,
+            }
+        }
+        // "anything not already set needs to be filled with a default value."
+        let zero = Value::constant(Constant::int(0));
+        for member in &members {
+            if !set.contains(&member.word) {
+                set.push(member.word);
+                // One store of the member's type, an array's too: FTEQCC's fill gives
+                // `QCC_PR_GenerateInitializerType` the member's type and no array size, so of
+                // an array only the first element is stored.
+                self.store_initialiser((&zero, None), word(member.word), &member.ty, span);
+            }
+        }
+        self.last_temp = None;
+        Ok(())
+    }
+
+    /// The braces of one member of a struct's braces, stored from the word `base` of
+    /// `local`: a struct's or a union's are its own members' ([`Checker::struct_aggregate`]),
+    /// a vector's its three floats, each stored by `STORE_F` (FTE-13.1), and an array's its
+    /// elements, each a value or braces of the element's type. Any other is not followed.
+    fn member_braces(
+        &mut self,
+        braces: &ast::AggregateInit,
+        (local, base): (Option<crate::DefId>, u32),
+        member: &crate::MemberShape,
+    ) -> Result<(), Fatal> {
+        let span = braces.syntax().span();
+        let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
+        let parts: Vec<Option<Part>> = braces.syntax().children().map(Part::of).collect();
+        if member.count > 1 {
+            let words = self.env.layout(&member.ty).map_or(1, |layout| layout.words);
+            let element = crate::MemberShape {
+                count: 1,
+                ..member.clone()
+            };
+            if parts.len() > usize::try_from(member.count).unwrap_or(usize::MAX) {
                 self.followed = false;
             }
-            let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
-            let wider = self.generated.last().is_some_and(|last| {
-                let made = opcodes::row(last.op).map(|row| row.types[2].etype());
-                made.map_or(1, Etype::words) > self.etype(&ty).map_or(1, Etype::words)
-            });
-            if value.temp.is_some() && value.temp == self.last_temp && !wider {
-                self.fold_into(&value, to);
-            } else {
-                // FTE-14.9: each element is stored as a local's initialiser is.
-                self.store_initialiser((&value, self.name_of(&value)), to, &ty, span);
+            for (at, part) in (0..member.count).zip(parts) {
+                let at = at.saturating_mul(words);
+                match part {
+                    Some(Part::Value(value)) => {
+                        let value = self.value(Some(value))?;
+                        self.store_part(&value, word(at), &member.ty, span);
+                    }
+                    Some(Part::Braces(inner)) => {
+                        let at = base.saturating_add(at);
+                        self.member_braces(&inner, (local, at), &element)?;
+                    }
+                    None => self.followed = false,
+                }
             }
+            return Ok(());
+        }
+        if self.aggregate_type(&member.ty) {
+            return self.struct_aggregate(braces, (local, base), &member.ty);
+        }
+        let vector = self.etype(&member.ty) == Some(Etype::Vector);
+        if !vector || parts.len() != qc_types::PROGS_VECTOR_SLOTS {
+            self.followed = false;
+            return Ok(());
+        }
+        for (at, part) in (0_u32..).zip(parts) {
+            let Some(Part::Value(element)) = part else {
+                self.followed = false;
+                continue;
+            };
+            let value = self.value(Some(element))?;
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(&value),
+                b: word(at),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
             self.read_returned(&value);
             self.last_temp = None;
         }

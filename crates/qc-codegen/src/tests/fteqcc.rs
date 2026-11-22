@@ -6421,6 +6421,65 @@ fn a_locals_initialiser_is_stored_by_threes_a_pair_and_a_word() {
     );
 }
 
+// spec FTE-14.10: a local struct's braces store each value to its member in turn, by the
+// store of the member's type, in the members' order or the one a `.name =` gives; then each
+// member no value was stored at is stored a zero, a union's other members not, and of an
+// array member only its first element. The opcodes are the pinned FTEQCC's for these bodies
+// (`-Tid`), recorded on 2026-11-21
+#[test]
+fn a_local_structs_braces_store_each_member() {
+    use qc_progs::Op::{AddF, Call0, StoreF, StoreFld, StoreS, StoreV};
+    let progs = compile_fteqcc(
+        "struct In { float x; float y; };\n\
+         struct Out { float a; struct In in; vector v; float xs[2]; };\n\
+         struct Pair { float a; vector b; string s; };\n\
+         struct Two { float a; float b; };\n\
+         union U { float a; float b; };\n\
+         float() two = { return 2; };\n\
+         void() d_two = { struct Two p = { 1, 2 }; };\n\
+         void() d_mixed = { struct Pair p = { 1, '0 0 1', \"x\" }; };\n\
+         void() d_designated = { struct Pair q = { .s = \"y\" }; };\n\
+         void() d_values = { float n = 3; struct Two p = { n + 1, two() }; struct Two q = { 5 }; };\n\
+         void() d_union = { union U u = { 3 }; };\n\
+         void() d_nested = { float n = 9; struct Out o = { 1, { 2, 3 }, { 4, 5, n }, { 7, 8 } }; };\n\
+         void() d_partial = { struct Out o = { 1 }; };\n",
+    )
+    .unwrap()
+    .progs;
+    let ops = |name: &str| -> Vec<u32> {
+        let mut ops: Vec<u32> = body(&progs, name).iter().map(|s| s.op).collect();
+        ops.pop();
+        ops
+    };
+    assert_eq!(ops("d_two"), numbers([StoreF, StoreF]));
+    assert_eq!(ops("d_mixed"), numbers([StoreF, StoreV, StoreS]));
+    assert_eq!(ops("d_designated"), numbers([StoreS, StoreF, StoreV]));
+    assert_eq!(
+        ops("d_values"),
+        numbers([StoreF, AddF, Call0, StoreF, StoreF, StoreF])
+    );
+    assert_eq!(ops("d_union"), numbers([StoreF]));
+    assert_eq!(ops("d_nested"), numbers([StoreF; 9]));
+    assert_eq!(
+        ops("d_partial"),
+        numbers([StoreF, StoreFld, StoreFld, StoreV, StoreF])
+    );
+    // Each value goes to its member's own words.
+    let p = body(&progs, "d_two");
+    assert_eq!(p[1].b, p[0].b + 1);
+    let mixed = body(&progs, "d_mixed");
+    assert_eq!((mixed[1].b, mixed[2].b), (mixed[0].b + 1, mixed[0].b + 4));
+    let named = body(&progs, "d_designated");
+    assert_eq!((named[1].b, named[2].b), (named[0].b - 4, named[0].b - 3));
+    let nested = body(&progs, "d_nested");
+    let first = nested[1].b;
+    let stored: Vec<i32> = nested[1..9].iter().map(|s| s.b).collect();
+    assert_eq!(stored, (first..first + 8).collect::<Vec<i32>>());
+    // The sum is folded into the member, and the call's value stored from the return global.
+    let values = body(&progs, "d_values");
+    assert_eq!(values[1].c + 1, values[3].b);
+}
+
 // spec FTEF-27.20: on a target without `OP_STORE_I64` a 64-bit integer is stored by
 // `OP_STORE_FLD` of each of its two words, a constant 0 from the 64-bit zero's, to a definition
 // and to an element at a constant index alike

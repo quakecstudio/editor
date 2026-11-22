@@ -420,6 +420,13 @@ impl Resolver<'_> {
         })
     }
 
+    /// The members of the struct or union `ty` names that start at a word, its parent's
+    /// first, when the model lays it out (FTEF-6.13).
+    pub(in crate::resolve) fn members(&self, ty: &Type) -> Option<Vec<MemberShape>> {
+        self.struct_shape(ty, MAX_CLASS_DEPTH)
+            .map(|shape| shape.members)
+    }
+
     /// The layout of the struct or union `ty` names, when the model lays it out.
     fn struct_shape(&self, ty: &Type, depth: usize) -> Option<StructShape> {
         let depth = depth.checked_sub(1)?;
