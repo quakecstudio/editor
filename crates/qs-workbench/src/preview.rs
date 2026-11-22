@@ -15,8 +15,9 @@ use qc_engines::Engine;
 use qc_ide::ModuleBuild;
 use qc_project::Loader;
 use qs_engine::{
-    Client, ClientError, EmbeddedHost, EntityTarget, ErrorCode, Flavour, InspectWhat, LaunchError,
-    LaunchSpec, RunRootError, StepKind, WindowPlacement, locate_host, prepare_run_root,
+    Applied, Client, ClientError, EmbeddedHost, EntityTarget, ErrorCode, Flavour, InspectWhat,
+    LaunchError, LaunchSpec, RunRootError, StepKind, WindowPlacement, locate_host,
+    prepare_run_root,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -614,15 +615,16 @@ impl Preview {
             field: field.to_owned(),
             kind,
         })?;
-        let answer = self.live_client()?.set_field(edict.into(), field, &value)?;
-        // BRIDGE-4.4: while paused the host holds the edit until it resumes.
-        if answer.get("applied").and_then(Value::as_str) == Some("on_resume") {
-            self.pending
-                .push((edict.get(), field.to_owned(), text.trim().to_owned()));
-            return Ok(Applied::OnResume);
+        let applied = self.live_client()?.set_field(edict.into(), field, &value)?;
+        match applied {
+            // BRIDGE-4.4: while paused the host holds the edit until it resumes.
+            Applied::OnResume => {
+                self.pending
+                    .push((edict.get(), field.to_owned(), text.trim().to_owned()))
+            }
+            Applied::Now => self.select(edict)?,
         }
-        self.select(edict)?;
-        Ok(Applied::Now)
+        Ok(applied)
     }
 
     /// Whether the game runs, is paused or is stopped.
@@ -788,7 +790,6 @@ impl Preview {
     pub fn resume(&mut self) -> Result<(), PreviewError> {
         self.live_client()?.resume()?;
         self.state = PlayState::Playing;
-        self.pending.clear();
         self.debugger.resumed();
         match self.entities.selected().map(|s| s.edict) {
             Some(edict) => self.select(edict),
@@ -1002,11 +1003,15 @@ impl Preview {
     /// (BRIDGE-4.14), the player where they stand, then put where the played BSP is; said in the
     /// console. It is dropped when the game has left its map, when the map's entities were edited
     /// in the game since it started, which moves their places, or when another compile was
-    /// written over the played BSP; it is tried again while the game is stopped at a statement.
+    /// written over the played BSP. While the game is stopped at a statement, which the host
+    /// refuses a swap in (BRIDGE-4.14), it waits, and is tried once the game goes on.
     fn swap_full_build(&mut self) {
         let Some(build) = self.full_build.as_ref() else {
             return;
         };
+        if self.debugger.stopped().is_some() {
+            return;
+        }
         let live = self.live.as_ref();
         let on_map = live
             .and_then(|live| live.map.as_deref())
@@ -1282,6 +1287,9 @@ impl Preview {
             PlayState::Playing
         };
         if !paused {
+            // BRIDGE-4.4: running again, the host has applied the edits it held; a resume that
+            // stopped again in the frame it replayed holds them still.
+            self.pending.clear();
             self.debugger.resumed();
             return;
         }
@@ -1975,16 +1983,6 @@ impl<C: HasPreview + 'static> Command<C> for PickCommand {
             preview, hit,
         )))
     }
-}
-
-/// When a field set takes effect, as the host answers (BRIDGE-4.4).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Applied {
-    /// Before the next server frame: the game was running.
-    Now,
-    /// When the game resumes: it is paused, and reads the old value until then.
-    OnResume,
 }
 
 /// What `preview.set_field` answers: the selected edict, and when the value takes effect.

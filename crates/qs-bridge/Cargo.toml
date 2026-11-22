@@ -11,6 +11,9 @@ publish.workspace = true
 [dependencies]
 # Each command's parameters are checked against its schema before it runs (BRIDGE-4.2).
 jsonschema = { workspace = true }
+# `Applied`, the one type the host writes and the IDE reads and shows in its commands' schemas.
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
 [dev-dependencies]

@@ -377,6 +377,16 @@ fn edits_held_until_resume_are_shown() {
         (Edict::new(3), "health", "6")
     );
     assert_eq!(game.pending(Edict::new(4), "health"), None);
+    // A resume that stops again in the frame it replays holds them still; running, the host
+    // has applied them.
+    game.take_event(
+        "state/changed",
+        &json!({ "state": "paused", "reason": "breakpoint",
+        "location": { "function": "f", "file": "a.qc", "line": 2 } }),
+    );
+    assert_eq!(PreviewStatus::of(&game).held.len(), 3);
+    game.take_event("state/changed", &json!({ "state": "running" }));
+    assert!(PreviewStatus::of(&game).held.is_empty());
     assert_eq!(game.pending(Edict::new(3), "armor"), None);
 }
 

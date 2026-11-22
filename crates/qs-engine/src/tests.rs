@@ -301,6 +301,12 @@ impl Host for Fake {
     }
 
     fn call(&mut self, _id: &Id, method: &str, params: &Value) -> Answer {
+        // BRIDGE-4.4: `field/set` says when it applies, here only for the edit the test sends.
+        let set =
+            json!({ "edict": 5, "field": "health", "value": { "type": "float", "value": 50.0 } });
+        if method == "field/set" && *params == set {
+            return Answer::Now(Ok(json!({ "applied": "on_resume" })));
+        }
         Answer::Now(Ok(json!({ "method": method, "params": params })))
     }
 
@@ -379,9 +385,16 @@ fn the_client_speaks_the_bridge() {
             &json!({ "type": "float", "value": 50.0 }),
         )
         .unwrap();
-    assert_eq!(
-        set["params"],
-        json!({ "edict": 5, "field": "health", "value": { "type": "float", "value": 50.0 } })
+    assert_eq!(set, crate::Applied::OnResume);
+    // An answer that says neither is no answer to field/set.
+    let unsaid = client.set_field(
+        qc_edict::EdictNumber::new(6),
+        "health",
+        &json!({ "type": "float", "value": 50.0 }),
+    );
+    assert!(
+        matches!(unsaid, Err(ClientError::Unreadable("field/set"))),
+        "{unsaid:?}"
     );
     let evaluated = client.evaluate("self.health").unwrap();
     assert_eq!(evaluated["params"], json!({ "expression": "self.health" }));
@@ -409,7 +422,7 @@ fn the_client_speaks_the_bridge() {
     );
     // Each answer, initialize's too, came after an event, kept in order.
     let events = client.take_events();
-    assert_eq!(events.len(), 8);
+    assert_eq!(events.len(), 9);
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));

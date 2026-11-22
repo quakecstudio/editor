@@ -38,8 +38,8 @@ const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
 const STOPPED: &str = "stopped-in-frame";
 
 /// A host that records each request it is sent and answers `entity/spawn` with edict 9; it
-/// refuses a `map/swap` of a BSP under a folder named for [`STOPPED`], as id's host refuses
-/// one while a frame is stopped at a statement (BRIDGE-4.6).
+/// refuses a `map/swap` of a BSP under a folder named for [`STOPPED`], as the host refuses
+/// one while a frame is stopped at a statement (BRIDGE-4.14).
 struct Recording(Seen);
 
 impl Host for Recording {
@@ -353,8 +353,9 @@ fn a_full_build_is_swapped_into_the_running_game() {
     );
 }
 
-// spec BRIDGE-4.6: a full compile the host refuses while the game is stopped at a statement is
-// kept for another try, and the game plays on: the refusal is an answer, not a closed host
+// spec BRIDGE-4.14: a full compile the host refuses while the game is stopped at a statement is
+// kept for another try, and the game plays on: the refusal is an answer, not a closed host; while
+// the debugger knows the game is stopped it is not tried
 #[test]
 fn a_full_build_refused_while_stopped_in_a_frame_is_kept() {
     let dir = Scratch::new(STOPPED);
@@ -383,6 +384,19 @@ fn a_full_build_refused_while_stopped_in_a_frame_is_kept() {
     let sent = std::mem::take(&mut *seen.lock().unwrap());
     let methods: Vec<&str> = sent.iter().map(|(method, _)| method.as_str()).collect();
     assert_eq!(methods, ["map/swap", "map/swap"]);
+    assert!(preview.full_build.is_some());
+    // Stopped at a breakpoint, a poll sends nothing until the game goes on.
+    preview.take_event(
+        "state/changed",
+        &json!({ "state": "paused", "reason": "breakpoint",
+        "location": { "function": "f", "file": "a.qc", "line": 1 } }),
+    );
+    preview.poll();
+    let sent = std::mem::take(&mut *seen.lock().unwrap());
+    assert!(
+        sent.iter().all(|(method, _)| method != "map/swap"),
+        "no swap while stopped: {sent:?}"
+    );
     assert!(preview.full_build.is_some());
 }
 

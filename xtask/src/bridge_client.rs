@@ -11,7 +11,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use qs_engine::{
-    Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, prepare_run_root,
+    Applied, Client, ClientError, EntityTarget, ErrorCode, Flavour, InspectWhat, LaunchSpec,
+    StepKind, prepare_run_root,
 };
 use qs_map_edit::{EntityIndex, LiveChange};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
@@ -278,7 +279,7 @@ fn suite(
     // BRIDGE-6.2: a method the host does not know is answered with -32601 (method not found).
     let unknown = client.request("entity/teleport", json!({}));
     expect(
-        matches!(&unknown, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::MethodNotFound),
+        refused_with(&unknown, ErrorCode::MethodNotFound),
         "an unknown method is answered as not found",
     )?;
     steps.push("an unknown method is refused".to_owned());
@@ -310,7 +311,7 @@ fn suite(
     // BRIDGE-4.5: a breakpoint at a line no statement is on is refused.
     let missing = client.request("breakpoint/set", json!({ "file": "nosuch.qc", "line": 1 }));
     expect(
-        matches!(&missing, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::NoSuchBreakpoint),
+        refused_with(&missing, ErrorCode::NoSuchBreakpoint),
         "a breakpoint at no statement is refused",
     )?;
     steps.push("breakpoint/set".to_owned());
@@ -388,7 +389,7 @@ fn suite(
         )
         .map_err(|e| format!("entity/edit: {e}"))?;
     expect(
-        edit == json!({ "applied": "now" }),
+        Applied::of_result(&edit) == Some(Applied::Now),
         "running, entity/edit applies now",
     )?;
     let edited = client
@@ -558,10 +559,7 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     let held = client
         .set_field(Edict::new(monster).into(), "health", &health)
         .map_err(|e| format!("field/set: {e}"))?;
-    expect(
-        held == json!({ "applied": "on_resume" }),
-        "paused, field/set waits",
-    )?;
+    expect(held == Applied::OnResume, "paused, field/set waits")?;
     let waiting = client
         .inspect(InspectWhat::Edict(Edict::new(monster).into()))
         .map_err(|e| e.to_string())?;
@@ -589,10 +587,7 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     let set = client
         .set_field(Edict::new(monster).into(), "health", &health)
         .map_err(|e| format!("field/set: {e}"))?;
-    expect(
-        set == json!({ "applied": "now" }),
-        "running, field/set applies",
-    )?;
+    expect(set == Applied::Now, "running, field/set applies")?;
     let edited = client
         .inspect(InspectWhat::Edict(Edict::new(monster).into()))
         .map_err(|e| e.to_string())?;
@@ -653,7 +648,7 @@ fn player_is_put_where_it_fits(client: &mut Client) -> Result<(), String> {
     )?;
     let refused = client.place_player_near(NOWHERE, [0.0; 3]);
     expect(
-        matches!(&refused, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::InvalidParams),
+        refused_with(&refused, ErrorCode::InvalidParams),
         "player/spawn_at with no room is refused",
     )?;
     expect(
@@ -806,7 +801,7 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
     )?;
     let refused = client.place_player_near([0.0; 3], [0.0; 3]);
     expect(
-        matches!(&refused, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::StoppedInFrame),
+        refused_with(&refused, ErrorCode::StoppedInFrame),
         "stopped, player/spawn_at is refused as stopped in frame",
     )?;
     client
@@ -854,6 +849,11 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         "breakpoint/set, hit, inspect the stack, watch, step and clear in client.qc".to_owned(),
     );
     Ok(())
+}
+
+/// Whether `answer` is the host's refusal with `code` (BRIDGE-7.1).
+fn refused_with<T>(answer: &Result<T, ClientError>, code: ErrorCode) -> bool {
+    matches!(answer, Err(ClientError::Rpc { code: given, .. }) if *given == code)
 }
 
 /// The string `key` of `value`, empty when it is not one.
