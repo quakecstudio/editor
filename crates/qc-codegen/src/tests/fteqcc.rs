@@ -6424,11 +6424,13 @@ fn a_locals_initialiser_is_stored_by_threes_a_pair_and_a_word() {
 // spec FTE-14.10: a local struct's braces store each value to its member in turn, by the
 // store of the member's type, in the members' order or the one a `.name =` gives; then each
 // member no value was stored at is stored a zero, a union's other members not, and of an
-// array member only its first element. The opcodes are the pinned FTEQCC's for these bodies
-// (`-Tid`), recorded on 2026-11-21
+// array member only its first element; a value of another type is cast to its member's, a
+// float for a vector `'1 1 1'` times it or a vector constant, and an array member's braces are
+// its elements', each braces of its own type. The opcodes are the pinned FTEQCC's for these
+// bodies (`-Tid`), recorded on 2026-11-21
 #[test]
 fn a_local_structs_braces_store_each_member() {
-    use qc_progs::Op::{AddF, Call0, StoreF, StoreFld, StoreS, StoreV};
+    use qc_progs::Op::{AddF, Call0, MulF, MulFv, MulVf, StoreF, StoreFld, StoreS, StoreV};
     let progs = compile_fteqcc(
         "struct In { float x; float y; };\n\
          struct Out { float a; struct In in; vector v; float xs[2]; };\n\
@@ -6442,7 +6444,16 @@ fn a_local_structs_braces_store_each_member() {
          void() d_values = { float n = 3; struct Two p = { n + 1, two() }; struct Two q = { 5 }; };\n\
          void() d_union = { union U u = { 3 }; };\n\
          void() d_nested = { float n = 9; struct Out o = { 1, { 2, 3 }, { 4, 5, n }, { 7, 8 } }; };\n\
-         void() d_partial = { struct Out o = { 1 }; };\n",
+         void() d_partial = { struct Out o = { 1 }; };\n\
+         struct SA { float a[2]; float b; };\n\
+         struct SV { vector v[2]; float c; };\n\
+         void() d_exact = { struct SA s = { {1, 2}, 3 }; };\n\
+         void() d_fewer = { struct SA s = { {1}, 3 }; };\n\
+         void() d_vecs = { struct SV s = { { '1 2 3', {4, 5, 6} }, 7 }; };\n\
+         void(vector v) d_wide = { struct Pair s = { 1, v * 2 }; };\n\
+         void(float x) d_narrow = { struct Pair s = { 1, x * 2 }; };\n\
+         void() d_lit = { struct Pair s = { 1, 2 }; };\n\
+         void(float x) d_name = { struct Pair s = { 1, x }; };\n",
     )
     .unwrap()
     .progs;
@@ -6464,6 +6475,19 @@ fn a_local_structs_braces_store_each_member() {
         ops("d_partial"),
         numbers([StoreF, StoreFld, StoreFld, StoreV, StoreF])
     );
+    // An array member's braces, as many as its elements or fewer, the rest not filled.
+    assert_eq!(ops("d_exact"), numbers([StoreF, StoreF, StoreF]));
+    assert_eq!(ops("d_fewer"), numbers([StoreF, StoreF]));
+    // Each element of an array of vectors, a value or its own braces of three floats.
+    assert_eq!(
+        ops("d_vecs"),
+        numbers([StoreV, StoreF, StoreF, StoreF, StoreF])
+    );
+    // The member's own type folded into it; a float cast to a vector member, then folded.
+    assert_eq!(ops("d_wide"), numbers([StoreF, MulVf, StoreS]));
+    assert_eq!(ops("d_narrow"), numbers([StoreF, MulF, MulFv, StoreS]));
+    assert_eq!(ops("d_lit"), numbers([StoreF, StoreV, StoreS]));
+    assert_eq!(ops("d_name"), numbers([StoreF, MulFv, StoreS]));
     // Each value goes to its member's own words.
     let p = body(&progs, "d_two");
     assert_eq!(p[1].b, p[0].b + 1);

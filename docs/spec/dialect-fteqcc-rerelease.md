@@ -586,9 +586,12 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
 - **FTE-14.10** A local struct's or union's braces, `P p = { a, b };`, are read by
   `QCC_PR_ParseInitializerType_Internal` ("structs go recursive") a member at a time: each
   value is its member's, in the members' order, or with `{ .name = value, ... }` the member
-  named ("designated initialisers"), and is stored to the member's words by
-  `QCC_PR_GenerateInitializerType` as FTE-14.9 says, the local being neither constant nor
-  static. A member's own braces are read as its type's: a struct's or a union's so, a
+  named ("designated initialisers"), read by `QCC_PR_Expression(TOP_PRIORITY,
+  EXPR_DISALLOW_COMMA)` and cast to the member's type by `QCC_EvaluateCast(tmp, type, true)`
+  with the cast's warning (a float for a vector member is `OP_MUL_FV` by `'1 1 1'`, or a
+  vector constant), and is stored to the member's words by
+  `QCC_PR_GenerateInitializerType` as FTE-14.9 says, or folded into the statement that made
+  it, the local being neither constant nor static. A member's own braces are read as its type's: a struct's or a union's so, a
   vector's as three floats ("vectors can be treated as an array of 3 floats"), an array's
   as its elements'. Each member is marked at its word, `isinited[def.ofs] |= ...`, and then
   "anything not already set needs to be filled with a default value": each member at a word

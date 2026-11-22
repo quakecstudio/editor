@@ -298,6 +298,10 @@ void test_a_case_range() { float r = 0; switch (5) { case 1 .. 3: r = 1; break; 
     const FOR_IDS_VM: &str = "[project]\ndialect = \"fteqcc\"\ntarget = \"rerelease\"\n\n\
                               [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
 
+    /// A project file of the FTEQCC dialect for FTE's engine, whose opcodes the program may use.
+    const FOR_FTE: &str = "[project]\ndialect = \"fteqcc\"\ntarget = \"fte\"\n\n\
+                           [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
+
     /// Runs the `test_` functions of `code` in a project with `manifest` for its
     /// `quakec.toml`, and returns each that did not pass.
     fn failures(name: &str, manifest: Option<&'static str>, code: &str) -> Vec<String> {
@@ -332,6 +336,11 @@ void test_a_case_range() { float r = 0; switch (5) { case 1 .. 3: r = 1; break; 
         );
         assert_eq!(
             failures("reference-fteqcc", Some(FOR_IDS_VM), FTEQCC),
+            Vec::<String>::new()
+        );
+        // The same program for FTE's engine: what the topic says holds on either target.
+        assert_eq!(
+            failures("reference-fteqcc-fte", Some(FOR_FTE), FTEQCC),
             Vec::<String>::new()
         );
     }

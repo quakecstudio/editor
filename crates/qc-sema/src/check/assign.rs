@@ -1717,11 +1717,9 @@ impl Checker<'_> {
             return Ok(());
         };
         let width = self.env.layout(&ty).map_or(1, |l| l.words);
-        let span = declarator.syntax().span();
         for (at, element) in (0_u32..).zip(elements) {
-            let value = self.value(Some(element.clone()))?;
             let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
-            self.store_part(&value, to, &ty, span);
+            self.store_part(element, to, &ty)?;
         }
         Ok(())
     }
@@ -1745,26 +1743,52 @@ impl Checker<'_> {
         self.last_temp = None;
     }
 
-    /// One value of a local's braces stored to the words `to` of the local, of type `ty`: by
-    /// the `STORE_*` of [`Checker::initialiser_steps`], as a local's initialiser is (FTE-14.9),
-    /// or folded into the statement that made it (FTEF-29.13). A value of another type is
-    /// converted as it is stored, which the body does not follow; the check reports one no
-    /// cast takes.
-    fn store_part(&mut self, value: &Value, to: Option<ir::Name>, ty: &Type, span: Span) {
-        if self.etype(&value.ty) != self.etype(ty) {
-            self.followed = false;
+    /// `value`, read from the initialiser `init`, converted to `ty` with the cast's warning
+    /// (FTEF-32.4); the resolver reports the cast of a literal, a name, a cast of a literal and
+    /// `_()` itself ([`resolver_casts`]), so here they are only converted.
+    fn initialiser_cast(&mut self, value: &Value, init: &ast::Expr, ty: &Type) -> Checked {
+        let span = init.syntax().span();
+        if resolver_casts(init) {
+            self.convert_to(value, ty, span)
+        } else {
+            self.cast_to(value, ty, span)
         }
+    }
+
+    /// One value of a local's braces, `part`, read and stored to the words `to` of the local, of
+    /// type `ty`: by the `STORE_*` of [`Checker::initialiser_steps`], as a local's initialiser
+    /// is (FTE-14.9), or folded into the statement that made it (FTEF-29.13). A value of
+    /// another type is cast to `ty` first, with the cast's warning, as a local's initialiser's
+    /// is (FTEF-32.4): a float for a vector member is `'1 1 1'` times it, or a vector constant.
+    fn store_part(
+        &mut self,
+        part: &ast::Expr,
+        to: Option<ir::Name>,
+        ty: &Type,
+    ) -> Result<(), Fatal> {
+        let span = part.syntax().span();
+        let value = self.value(Some(part.clone()))?;
+        if value.ty == Type::Unknown {
+            self.followed = false;
+            return Ok(());
+        }
+        let value = if self.etype(&value.ty) == self.etype(ty) {
+            value
+        } else {
+            self.initialiser_cast(&value, part, ty)?
+        };
         let wider = self.generated.last().is_some_and(|last| {
             let made = opcodes::row(last.op).map(|row| row.types[2].etype());
             made.map_or(1, Etype::words) > self.etype(ty).map_or(1, Etype::words)
         });
         if value.temp.is_some() && value.temp == self.last_temp && !wider {
-            self.fold_into(value, to);
+            self.fold_into(&value, to);
         } else {
-            self.store_initialiser((value, self.name_of(value)), to, ty, span);
+            self.store_initialiser((&value, self.name_of(&value)), to, ty, span);
         }
-        self.read_returned(value);
+        self.read_returned(&value);
         self.last_temp = None;
+        Ok(())
     }
 
     /// A local struct's or union's braces, as `QCC_PR_ParseInitializerType` reads them
@@ -1797,9 +1821,8 @@ impl Checker<'_> {
             let member = at.and_then(|at| members.get(at));
             match (member, Part::of(part)) {
                 (Some(member), Some(Part::Value(element))) if member.count == 1 => {
-                    let value = self.value(Some(element))?;
                     set.push(member.word);
-                    self.store_part(&value, word(member.word), &member.ty, span);
+                    self.store_part(&element, word(member.word), &member.ty)?;
                 }
                 (Some(member), Some(Part::Braces(braces))) => {
                     set.push(member.word);
@@ -1839,7 +1862,6 @@ impl Checker<'_> {
         (local, base): (Option<crate::DefId>, u32),
         member: &crate::MemberShape,
     ) -> Result<(), Fatal> {
-        let span = braces.syntax().span();
         let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
         let parts: Vec<Option<Part>> = braces.syntax().children().map(Part::of).collect();
         if member.count > 1 {
@@ -1855,8 +1877,7 @@ impl Checker<'_> {
                 let at = at.saturating_mul(words);
                 match part {
                     Some(Part::Value(value)) => {
-                        let value = self.value(Some(value))?;
-                        self.store_part(&value, word(at), &member.ty, span);
+                        self.store_part(&value, word(at), &member.ty)?;
                     }
                     Some(Part::Braces(inner)) => {
                         let at = base.saturating_add(at);
@@ -2366,20 +2387,8 @@ impl Checker<'_> {
             self.followed = false;
         }
         let span = init.syntax().span();
-        let resolver_casts = match &init {
-            ast::Expr::Literal(_) | ast::Expr::Name(_) => true,
-            ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
-            ast::Expr::Call(call) => matches!(
-                call.callee(),
-                Some(ast::Expr::Name(name)) if name.name().is_some_and(|t| t.text_lossless() == "_")
-            ),
-            _ => false,
-        };
-        let value = if resolver_casts {
-            self.convert_to(&value, &ty, span)?
-        } else {
-            self.cast_to(&value, &ty, span)?
-        };
+        let resolver_casts = resolver_casts(&init);
+        let value = self.initialiser_cast(&value, &init, &ty)?;
         // FTEF-19.70: a `static` local's value is a constant, which the resolver checks of a
         // name and an element of one.
         let element = matches!(
@@ -2599,5 +2608,19 @@ impl Zeroes {
             kind: ir::ImmediateKind::Integer,
             words: [0, 0, 0],
         })
+    }
+}
+
+/// Whether the resolver's initialiser check reports the cast of `init`: a literal, a name, a
+/// cast of a literal or `_()` (FTEF-32.4).
+fn resolver_casts(init: &ast::Expr) -> bool {
+    match init {
+        ast::Expr::Literal(_) | ast::Expr::Name(_) => true,
+        ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
+        ast::Expr::Call(call) => matches!(
+            call.callee(),
+            Some(ast::Expr::Name(name)) if name.name().is_some_and(|t| t.text_lossless() == "_")
+        ),
+        _ => false,
     }
 }
