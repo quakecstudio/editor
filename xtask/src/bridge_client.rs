@@ -552,7 +552,7 @@ fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
 }
 
 /// BRIDGE-4.4, P3-14: paused, a monster's health set waits for the resume, then is the
-/// monster's in game.
+/// monster's in game; running, one set is the monster's at once.
 fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     let health = json!({ "type": "float", "value": 50.0 });
     let held = client
@@ -584,6 +584,21 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
     expect(
         field(&edited, "health") == Some(health),
         "resumed, the monster's health is set",
+    )?;
+    let health = json!({ "type": "float", "value": 60.0 });
+    let set = client
+        .set_field(Edict::new(monster).into(), "health", &health)
+        .map_err(|e| format!("field/set: {e}"))?;
+    expect(
+        set == json!({ "applied": "now" }),
+        "running, field/set applies",
+    )?;
+    let edited = client
+        .inspect(InspectWhat::Edict(Edict::new(monster).into()))
+        .map_err(|e| e.to_string())?;
+    expect(
+        field(&edited, "health") == Some(health),
+        "running, the monster's health is set at once",
     )?;
     Ok(())
 }
@@ -780,6 +795,23 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     expect(frames > 0, "stopped, the stack has PlayerPreThink's frame")?;
+    // BRIDGE-4.6, BRIDGE-7.1: stopped, an edict is read, and a command that changes the world
+    // is refused with its code while the connection stays open.
+    let player = client
+        .inspect(InspectWhat::Edict(Edict::new(1).into()))
+        .map_err(|e| format!("inspect edict 1: {e}"))?;
+    expect(
+        text(&player, "classname") == "player",
+        "stopped, the player's edict is read",
+    )?;
+    let refused = client.place_player_near([0.0; 3], [0.0; 3]);
+    expect(
+        matches!(&refused, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::StoppedInFrame),
+        "stopped, player/spawn_at is refused as stopped in frame",
+    )?;
+    client
+        .inspect(InspectWhat::Stack)
+        .map_err(|e| format!("inspect stack after the refusal: {e}"))?;
     // P3-16: the Debugger tab's watch and step, against the stopped frame.
     let watched = client
         .evaluate("self.health")
