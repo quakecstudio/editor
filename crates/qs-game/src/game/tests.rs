@@ -2000,3 +2000,45 @@ fn an_empty_classname_stops_the_load() {
         "{error}"
     );
 }
+
+// spec BRIDGE-4.20: paused at a run error, inspect answers the failed run's stack and evaluate
+// reads in its frames; the next frame that runs forgets it
+#[test]
+fn a_run_error_pause_answers_its_stack() {
+    let (mut game, mut session) = game_with("{\n\"classname\" \"info_fail\"\n}\n");
+    events(&mut game);
+    for _ in 0..5 {
+        game.frame(0.1);
+    }
+    let raised = events(&mut game);
+    assert!(raised.iter().any(|(m, _)| *m == "qc/error"), "{raised:?}");
+    let stack = call(
+        &mut game,
+        &mut session,
+        "inspect",
+        &json!({ "what": "stack" }),
+    )
+    .unwrap();
+    assert_eq!(stack["stack"][0]["function"], "broken", "{stack}");
+    let me = call(
+        &mut game,
+        &mut session,
+        "evaluate",
+        &json!({ "expression": "self", "frame": 0 }),
+    )
+    .unwrap();
+    assert_eq!(me["value"]["type"], "entity", "{me}");
+    // A frame that runs to its end leaves no failed run to answer for.
+    call(&mut game, &mut session, "step", &json!({ "kind": "frame" })).unwrap();
+    let after = events(&mut game);
+    if !after.iter().any(|(m, _)| *m == "qc/error") {
+        let stack = call(
+            &mut game,
+            &mut session,
+            "inspect",
+            &json!({ "what": "stack" }),
+        )
+        .unwrap();
+        assert_eq!(stack["stack"], json!([]));
+    }
+}

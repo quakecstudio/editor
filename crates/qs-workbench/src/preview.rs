@@ -1194,7 +1194,10 @@ impl Preview {
             "qc/error" => {
                 let message = params.get("message").and_then(Value::as_str).unwrap_or("");
                 self.debugger.failed(message);
-                self.debugger.set_stack(params);
+                // One with no stack, a failure no QuakeC run made, leaves the stack shown.
+                if params.get("stack").is_some_and(Value::is_array) {
+                    self.debugger.set_stack(params);
+                }
                 self.push_line(message, "error");
             }
             // BRIDGE-3.5: a click in the paused game's window picked an edict; it is selected,
@@ -1354,14 +1357,6 @@ impl Preview {
             return;
         };
         self.debugger.stop(reason, location);
-        // A run error's stack came with its `qc/error`; the host answers `inspect stack` only
-        // where a breakpoint or a step stopped it.
-        if reason == StopReason::Error {
-            if let Err(error) = self.read_watches() {
-                tracing::debug!(%error, "the watches were not read");
-            }
-            return;
-        }
         let read = self
             .live_client()
             .and_then(|client| Ok(client.inspect(InspectWhat::Stack)?));

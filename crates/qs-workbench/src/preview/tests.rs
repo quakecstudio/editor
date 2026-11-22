@@ -785,4 +785,11 @@ fn a_run_error_stop_carries_its_message() {
         &json!({ "state": "paused", "reason": "breakpoint", "location": location }),
     );
     assert_eq!(PreviewStatus::of(&game).stopped.unwrap().message, None);
+    // A failure no QuakeC run made carries no stack, and leaves the one shown.
+    game.take_event(
+        "qc/error",
+        &json!({ "message": "again", "stack": [location, caller] }),
+    );
+    game.take_event("qc/error", &json!({ "message": "the progs cannot run" }));
+    assert_eq!(game.debugger().stack().len(), 2);
 }

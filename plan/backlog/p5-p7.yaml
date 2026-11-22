@@ -3178,7 +3178,7 @@ groups:
     size: S
     reqs:
     - ENG-1
-    - PRIN-7
+    - PRIN-8
     depends: []
     summary: |
       Filed by hand on 2026-11-22 in the follow-up playtest of v2026.11.2 (#1123). While the host is not answering the status bar says so, but the toolbar beside the play controls still shows a green dot and the game it was playing.

@@ -1609,7 +1609,7 @@ impl Shell {
         } else {
             Text::PreviewOwnWindow
         };
-        let shown = toolbar_status(state, self.preview_error.as_deref(), preview.status());
+        let shown = ToolbarStatus::of(state, self.preview_error.as_deref(), preview.status());
         egui::Panel::top(Id::new(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
@@ -1625,11 +1625,12 @@ impl Shell {
                             .small()
                             .color(theme.color(Token::TextMuted)),
                     );
-                    if let Some((status, failed)) = &shown {
-                        let colour = if *failed {
-                            theme.color(Token::StatusError)
-                        } else {
-                            theme.color(Token::StatusOk)
+                    if let Some(shown) = &shown {
+                        let (status, colour) = match shown {
+                            ToolbarStatus::Ok(status) => (status, theme.color(Token::StatusOk)),
+                            ToolbarStatus::Failed(status) => {
+                                (status, theme.color(Token::StatusError))
+                            }
                         };
                         status_dot(ui, colour);
                         ui.label(RichText::new(status.as_str()).color(colour));
@@ -3380,21 +3381,27 @@ pub(crate) fn line_index(line: u32) -> usize {
     usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
 }
 
-/// What the toolbar says of the game beside its play controls, and whether it is a failure: the
-/// last error a control met, else that a host which does not answer is not answering, else the
-/// play loop's own `status`; `None` when there is nothing to say.
-fn toolbar_status(
-    state: PlayState,
-    error: Option<&str>,
-    status: Option<&str>,
-) -> Option<(String, bool)> {
-    if let Some(error) = error {
-        return Some((error.to_owned(), true));
-    }
-    match state {
-        PlayState::NotAnswering => Some((Text::PreviewNotAnswering.get().to_owned(), true)),
-        PlayState::Stopped | PlayState::Playing | PlayState::Paused => {
-            status.map(|status| (status.to_owned(), false))
+/// What the toolbar says of the game beside its play controls.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ToolbarStatus {
+    /// The play loop's own status, such as the game it plays.
+    Ok(String),
+    /// A failure: a host that does not answer, or the last error a control met.
+    Failed(String),
+}
+
+impl ToolbarStatus {
+    /// The status for a game in `state`: a host that does not answer first, since nothing it
+    /// was doing before still holds; else the last `error` a control met; else the play loop's
+    /// own `status`; `None` when there is nothing to say.
+    fn of(state: PlayState, error: Option<&str>, status: Option<&str>) -> Option<Self> {
+        match state {
+            PlayState::NotAnswering => {
+                Some(Self::Failed(Text::PreviewNotAnswering.get().to_owned()))
+            }
+            PlayState::Stopped | PlayState::Playing | PlayState::Paused => error
+                .map(|error| Self::Failed(error.to_owned()))
+                .or_else(|| status.map(|status| Self::Ok(status.to_owned()))),
         }
     }
 }
@@ -3551,27 +3558,34 @@ impl std::error::Error for ShellError {
 mod toolbar_tests {
     use qs_workbench::PlayState;
 
-    use super::toolbar_status;
+    use super::ToolbarStatus;
     use crate::strings::Text;
 
     // No spec statement: L-72: a host that does not answer is shown as a failure beside the play
-    // controls, not as the game it was playing; an error a control met comes first
+    // controls, above an error a control met before, and not as the game it was playing
     #[test]
     fn a_host_that_does_not_answer_is_shown_as_failing() {
         let playing = Some(Text::PreviewRunning.get());
         let error = Text::ReloadFailed.get();
+        let not_answering = Some(ToolbarStatus::Failed(
+            Text::PreviewNotAnswering.get().to_owned(),
+        ));
         assert_eq!(
-            toolbar_status(PlayState::Playing, None, playing),
-            Some((Text::PreviewRunning.get().to_owned(), false))
+            ToolbarStatus::of(PlayState::Playing, None, playing),
+            Some(ToolbarStatus::Ok(Text::PreviewRunning.get().to_owned()))
         );
         assert_eq!(
-            toolbar_status(PlayState::NotAnswering, None, playing),
-            Some((Text::PreviewNotAnswering.get().to_owned(), true))
+            ToolbarStatus::of(PlayState::Playing, Some(error), playing),
+            Some(ToolbarStatus::Failed(error.to_owned()))
         );
         assert_eq!(
-            toolbar_status(PlayState::NotAnswering, Some(error), playing),
-            Some((error.to_owned(), true))
+            ToolbarStatus::of(PlayState::NotAnswering, None, playing),
+            not_answering
         );
-        assert_eq!(toolbar_status(PlayState::Stopped, None, None), None);
+        assert_eq!(
+            ToolbarStatus::of(PlayState::NotAnswering, Some(error), playing),
+            not_answering
+        );
+        assert_eq!(ToolbarStatus::of(PlayState::Stopped, None, None), None);
     }
 }
