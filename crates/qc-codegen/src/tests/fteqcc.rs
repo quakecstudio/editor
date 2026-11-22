@@ -6453,7 +6453,8 @@ fn a_local_structs_braces_store_each_member() {
          void(vector v) d_wide = { struct Pair s = { 1, v * 2 }; };\n\
          void(float x) d_narrow = { struct Pair s = { 1, x * 2 }; };\n\
          void() d_lit = { struct Pair s = { 1, 2 }; };\n\
-         void(float x) d_name = { struct Pair s = { 1, x }; };\n",
+         void(float x) d_name = { struct Pair s = { 1, x }; };\n\
+         void() d_short = { struct Pair s = { 1, {1, 2} }; };\n",
     )
     .unwrap()
     .progs;
@@ -6488,6 +6489,8 @@ fn a_local_structs_braces_store_each_member() {
     assert_eq!(ops("d_narrow"), numbers([StoreF, MulF, MulFv, StoreS]));
     assert_eq!(ops("d_lit"), numbers([StoreF, StoreV, StoreS]));
     assert_eq!(ops("d_name"), numbers([StoreF, MulFv, StoreS]));
+    // A vector's braces of fewer than three floats store those, and fill no other word.
+    assert_eq!(ops("d_short"), numbers([StoreF, StoreF, StoreF, StoreS]));
     // Each value goes to its member's own words.
     let p = body(&progs, "d_two");
     assert_eq!(p[1].b, p[0].b + 1);

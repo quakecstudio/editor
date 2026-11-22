@@ -592,8 +592,8 @@ Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1
   vector constant), and is stored to the member's words by
   `QCC_PR_GenerateInitializerType` as FTE-14.9 says, or folded into the statement that made
   it, the local being neither constant nor static. A member's own braces are read as its type's: a struct's or a union's so, a
-  vector's as three floats ("vectors can be treated as an array of 3 floats"), an array's
-  as its elements'. Each member is marked at its word, `isinited[def.ofs] |= ...`, and then
+  vector's as up to three floats ("vectors can be treated as an array of 3 floats"), each
+  stored to its word and a word none is given not filled, an array's as its elements'. Each member is marked at its word, `isinited[def.ofs] |= ...`, and then
   "anything not already set needs to be filled with a default value": each member at a word
   not marked is stored `QCC_MakeIntConst(0)` by its own type, once, so a union's other
   members are not stored, and of an array member only the first element is. So `struct Out {

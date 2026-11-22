@@ -324,7 +324,8 @@ fn literal_initialisers_are_cast() {
 }
 
 // spec FTEF-19.31: a name is cast as its definition's type, and in a member function a field's
-// name is the field's value
+// name is the field's value; `_()` is a string constant, cast as one, once, in a local's
+// initialiser, a struct's braces and an array's; a cast of a literal in braces warns once
 // spec QCD-3.32: E0232 "_() intrinsic accepts only a string immediate"
 #[test]
 fn named_initialisers_are_cast() {
@@ -339,6 +340,24 @@ fn named_initialisers_are_cast() {
         []
     );
     assert_eq!(fte("string s = _(\"a\");\n"), []);
+    for source in [
+        "void() f = { float x = _(\"a\"); };\n",
+        "struct S { float a; float b; };\nvoid() f = { struct S s = { 1, _(\"a\") }; };\n",
+        "void() f = { float xs[2] = { 1, _(\"a\") }; };\n",
+        "float xs[2] = { 1, _(\"a\") };\n",
+    ] {
+        assert_eq!(
+            fte_only(source),
+            (Code::E0213, "Cannot cast from string to float".to_owned()),
+            "{source}"
+        );
+    }
+    assert_eq!(
+        fte_only(
+            "struct P { float a; vector b; };\nvoid() f = { struct P p = { 1, (float)2 }; };\n"
+        ),
+        (Code::W0220, "Implicit cast from float to vector".to_owned())
+    );
     assert_eq!(
         fte_only("string s = _(5);\n"),
         (

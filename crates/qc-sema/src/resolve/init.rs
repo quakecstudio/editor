@@ -285,12 +285,18 @@ impl Resolver<'_> {
             }
             ValueKind::Translate(string) => {
                 // FTEF-19.31: `_()` initialising a string takes one string literal.
-                if !*string && ty == Type::Simple(SimpleType::String) {
+                let string_type = Type::Simple(SimpleType::String);
+                if !*string && ty == string_type {
                     self.report(
                         Code::E0232,
                         location,
                         "_() intrinsic accepts only a string immediate".to_owned(),
                     );
+                    return Err(Fatal);
+                }
+                // `QCC_MakeTranslateStringConst`: its value is a string, cast to the type as any
+                // string is.
+                if self.cast_value(Source::Typed(&string_type), &ty, location, value.cast_flags) {
                     return Err(Fatal);
                 }
                 Ok(None)

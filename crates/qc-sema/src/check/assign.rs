@@ -1777,11 +1777,9 @@ impl Checker<'_> {
         } else {
             self.initialiser_cast(&value, part, ty)?
         };
-        let wider = self.generated.last().is_some_and(|last| {
-            let made = opcodes::row(last.op).map(|row| row.types[2].etype());
-            made.map_or(1, Etype::words) > self.etype(ty).map_or(1, Etype::words)
-        });
-        if value.temp.is_some() && value.temp == self.last_temp && !wider {
+        // Cast to the member's type, the value is as wide as the member: one its statement made
+        // is folded into it.
+        if value.temp.is_some() && value.temp == self.last_temp {
             self.fold_into(&value, to);
         } else {
             self.store_initialiser((&value, self.name_of(&value)), to, ty, span);
@@ -1854,7 +1852,7 @@ impl Checker<'_> {
 
     /// The braces of one member of a struct's braces, stored from the word `base` of
     /// `local`: a struct's or a union's are its own members' ([`Checker::struct_aggregate`]),
-    /// a vector's its three floats, each stored by `STORE_F` (FTE-13.1), and an array's its
+    /// a vector's up to three floats, each stored by `STORE_F` (FTE-13.1), and an array's its
     /// elements, each a value or braces of the element's type. Any other is not followed.
     fn member_braces(
         &mut self,
@@ -1891,8 +1889,10 @@ impl Checker<'_> {
         if self.aggregate_type(&member.ty) {
             return self.struct_aggregate(braces, (local, base), &member.ty);
         }
+        // A vector's braces are up to three floats, each stored to its word; a word none is
+        // given is not filled.
         let vector = self.etype(&member.ty) == Some(Etype::Vector);
-        if !vector || parts.len() != qc_types::PROGS_VECTOR_SLOTS {
+        if !vector || parts.len() > qc_types::PROGS_VECTOR_SLOTS {
             self.followed = false;
             return Ok(());
         }
