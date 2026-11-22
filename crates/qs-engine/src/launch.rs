@@ -208,27 +208,32 @@ impl LaunchSpec {
 }
 
 /// Passes the host's error output on to the app's, line by line, as when it was inherited,
-/// and gives, once it ends, the error the host stopped with: its last line that starts with
-/// [`HOST_ERROR_PREFIX`], without it, else its last line that is not blank.
+/// and gives, once it ends, what the host said last: its last line that is not blank, without
+/// the [`HOST_ERROR_PREFIX`] the host puts before the error it stops with. Each line is read
+/// as bytes, so text that is not UTF-8 is passed on and the pipe is read to its end.
 fn relay(stderr: ChildStderr) -> JoinHandle<Option<String>> {
     std::thread::spawn(move || {
         let mut said = None;
-        let mut last = None;
         let mut out = std::io::stderr();
-        for line in BufReader::new(stderr).lines() {
-            let Ok(line) = line else {
-                break;
-            };
-            if writeln!(out, "{line}").is_err() {
+        let mut reader = BufReader::new(stderr);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            match reader.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            if out.write_all(&line).is_err() {
                 tracing::debug!("the preview host's error output could not be passed on");
             }
-            if let Some(error) = line.strip_prefix(HOST_ERROR_PREFIX) {
+            let text = String::from_utf8_lossy(&line);
+            let text = text.trim_end();
+            if !text.trim().is_empty() {
+                let error = text.strip_prefix(HOST_ERROR_PREFIX).unwrap_or(text);
                 said = Some(error.to_owned());
-            } else if !line.trim().is_empty() {
-                last = Some(line);
             }
         }
-        said.or(last)
+        said
     })
 }
 

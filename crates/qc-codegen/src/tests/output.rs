@@ -540,3 +540,28 @@ fn a_build_reads_the_target_a_pragma_sets() {
     assert!(!refused("", &format!("#pragma target fte\n{adds}")));
     assert!(refused("", adds));
 }
+
+// spec QCD-6.12: a literal past the format, which names no declaration, is E0512 at the source
+// statement that uses it: the writer meets the statement's operand before the definition
+#[test]
+fn a_literal_past_the_format_is_e0512_at_its_statement() {
+    let mut source = String::from("void() f;\n");
+    for n in 1..=65_520 {
+        _ = writeln!(source, "float g{n};");
+    }
+    let body = "void() f = { g1 = 7.5; };\n";
+    source.push_str(body);
+    let Err(crate::CompileError::Diagnostics(found)) = compile_source(&source) else {
+        panic!("E0512 expected");
+    };
+    let [refused] = found.as_slice() else {
+        panic!("one diagnostic: {found:?}");
+    };
+    assert_eq!(refused.diagnostic.code, qc_diag::Code::E0512);
+    let statement = source.len() - body.len() + "void() f = { ".len();
+    assert_eq!(
+        refused.diagnostic.span.start, statement,
+        "{}",
+        refused.diagnostic.message
+    );
+}

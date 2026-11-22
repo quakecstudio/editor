@@ -337,3 +337,27 @@ fn a_file_a_list_includes_is_compiled() {
         );
     }
 }
+
+// spec PRJ-6.6: an include in a file the compiler reads is the compiler's to judge: one a false
+// `#ifdef` skips builds, and one that is read and missing is the compiler's E0111, not written
+#[test]
+fn an_include_in_a_compiled_file_is_the_compilers() {
+    let dir = root("include-in-qc");
+    let skipped = ProjectSpec {
+        world: "#ifdef NOPE\n#include \"missing.qc\"\n#endif\nvoid() worldspawn = {};\n".to_owned(),
+        ..ProjectSpec::default()
+    };
+    let built = opened(&dir, &skipped).build().unwrap();
+    assert!(built[0].built, "{:?}", built[0].problems);
+    let read = ProjectSpec {
+        world: "#include \"missing.qc\"\nvoid() worldspawn = {};\n".to_owned(),
+        ..ProjectSpec::default()
+    };
+    let built = opened(&dir, &read).build().unwrap();
+    assert!(!built[0].built);
+    assert!(
+        built[0].problems.iter().any(|p| p.code == "E0111"),
+        "{:?}",
+        built[0].problems
+    );
+}

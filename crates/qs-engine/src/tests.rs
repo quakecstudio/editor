@@ -663,6 +663,17 @@ fn a_host_that_stops_as_it_starts_says_why() {
         "the preview host stopped as it started: a spawn function failed: worldspawn exploded, \
          in worldspawn at world.qc:3"
     );
+    // The last line said wins, prefixed or not, and bytes that are not UTF-8 neither stop the
+    // relay nor the host.
+    let panicked = launch(
+        "panics",
+        "#!/bin/sh\necho 'quakec-engine: logging is off: no home' >&2\n\
+         printf 'caf\\351\\n' >&2\necho \"thread 'main' panicked at load.rs\" >&2\nexit 101\n",
+    );
+    assert_eq!(
+        panicked,
+        "the preview host stopped as it started: thread 'main' panicked at load.rs"
+    );
     let silent = launch("silent", "#!/bin/sh\nexit 1\n");
     assert!(
         silent.starts_with("the preview host stopped as it started: exit status: 1"),
@@ -707,8 +718,8 @@ fn a_host_that_does_not_answer_is_not_waited_for_again() {
             Ok(())
         }
     }
-    let mut client =
-        Client::over(Fed(fed, Vec::new()), Sink(written.clone())).answering_within(Duration::ZERO);
+    let mut client = Client::over(Fed(fed, Vec::new()), Sink(written.clone()));
+    client.answer_within(Duration::ZERO);
     assert!(client.is_answering());
     assert!(matches!(client.shutdown(), Err(ClientError::Timeout)));
     assert!(!client.is_answering());

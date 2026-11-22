@@ -26,6 +26,7 @@ use super::{
 };
 use crate::ids::Edict;
 use crate::preview::{HasPreview, Preview, PreviewConfig, PreviewError, register_preview};
+use crate::search::{REPLACE_RANGE, register_search};
 use crate::{Config, HasWorkbench, Workbench};
 
 /// The eight bytes a PNG starts with, in base64.
@@ -276,6 +277,7 @@ fn the_engine_commands_need_a_running_game() {
 fn a_breakpoint_on_a_line_with_no_statement_is_refused() {
     let mut registry = Registry::new();
     register_preview(&mut registry).unwrap();
+    register_search(&mut registry).unwrap();
     let dir = std::env::temp_dir().join(format!("qs-workbench-break-{}", std::process::id()));
     let mut loader = MemoryLoader::new();
     for (name, text) in [
@@ -325,5 +327,17 @@ fn a_breakpoint_on_a_line_with_no_statement_is_refused() {
     };
     assert_eq!(set(&mut session), 1);
     assert_eq!(set(&mut session), 0, "the second call takes it away");
+    // Once line 4 holds a statement, the program is compiled again and it is taken.
+    let blank = "float x;\n\nvoid() worldspawn = {\n".len();
+    session
+        .execute(
+            REPLACE_RANGE,
+            json!({ "path": dir.join("world.qc"), "start": blank, "end": blank, "text": "    x = 2;" }),
+        )
+        .unwrap();
+    session
+        .execute(crate::BREAKPOINT, json!({ "file": "world.qc", "line": 4 }))
+        .unwrap();
+    assert_eq!(session.context().preview.debugger().breakpoints().len(), 1);
     assert!(!dir.join("build").exists());
 }

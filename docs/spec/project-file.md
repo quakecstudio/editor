@@ -57,10 +57,11 @@ compiles `progs.src` in its source directory when given no file (`QCC_main`).
   the root, that holds `quakec.toml` or `progs.src`; a file with no such directory above it
   has none. Opening a file from outside the app (Finder) opens that project, as Cargo finds
   the `Cargo.toml` above the current directory.
-- **PRJ-1.7** The project directory's name, for PRJ-1.4 and a `quakec.toml` with no `name` or
-  `mod`, is that of the directory a path names: `.` or a path ending in `..` names a directory
-  of the working directory, whose own name it is, so `quakec-ide build` run in `mymod` builds
-  to `build/mymod/`. Only a directory with no name, a file system's root, has none.
+- **PRJ-1.7** The command line opens the project at the absolute path of the directory it is
+  given, made against the working directory, as the MCP server does: `.` is the directory the
+  command runs in, with its name, so `quakec-ide build` run in `mymod` builds to `build/mymod/`.
+  The project's reading itself never consults the working directory: a path with no name it is
+  given is PRJ-1.4's `project` and `mod`.
 
 ## PRJ-2 quakec.toml
 

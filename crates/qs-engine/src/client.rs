@@ -232,12 +232,10 @@ impl Client {
         }
     }
 
-    /// The client waiting `within` for each answer instead of the default, as a test of a
-    /// host that does not answer waits for none.
-    #[must_use]
-    pub const fn answering_within(mut self, within: Duration) -> Self {
+    /// Waits `within` for each answer from now on instead of the default, as a test of a host
+    /// that does not answer waits for none.
+    pub const fn answer_within(&mut self, within: Duration) {
         self.answer_within = within;
-        self
     }
 
     /// The client of a host that runs in this process, on this thread (ADR-0028): while the

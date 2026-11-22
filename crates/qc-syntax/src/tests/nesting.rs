@@ -402,3 +402,26 @@ fn a_statement_past_the_limit_is_one_error() {
         }
     }
 }
+
+// spec QC-27.16: in a class each member nests afresh: one past the limit does not mute the next
+// member's error
+#[test]
+fn a_member_past_the_limit_mutes_only_itself() {
+    let deep = QC_MAX_NESTING.saturating_mul(2);
+    let parens = format!("{}1{}", "(".repeat(deep), ")".repeat(deep));
+    let source = format!(
+        "class c : entity {{\n    void() m = {{ local float a; a = {parens}; }};\n    float b = ;\n}};\n"
+    );
+    let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+    assert_eq!(parsed.syntax().text(), source.as_bytes());
+    let codes: Vec<Code> = parsed.errors().map(|d| d.code).collect();
+    assert_eq!(codes.first(), Some(&Code::E0509), "{codes:?}");
+    assert_eq!(codes.len(), 2, "{codes:?}");
+    // The same members with the deep one fixed report only the second's error.
+    let shallow = source.replace(&parens, "1");
+    let codes: Vec<Code> = parse_with(shallow.as_bytes(), Dialect::Fteqcc)
+        .errors()
+        .map(|d| d.code)
+        .collect();
+    assert_eq!(codes.len(), 1, "{codes:?}");
+}

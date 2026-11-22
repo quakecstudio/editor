@@ -206,33 +206,13 @@ fn bare_defaults() {
 #[test]
 fn bare_without_a_directory_name() {
     let project = open_file(
-        &mut loader(&[("/progs.src", "x.dat")]),
-        Path::new("/progs.src"),
+        &mut loader(&[("progs.src", "x.dat")]),
+        Path::new("progs.src"),
     )
     .unwrap();
     assert_eq!(project.name, "project");
     assert_eq!(project.mod_name, "mod");
-    assert_eq!(project.modules[0].output, Path::new("/build/mod/progs.dat"));
-}
-
-// spec PRJ-1.7: `.`, the empty path and `..` are named after the directory they name in the
-// working directory
-#[test]
-fn a_relative_directory_is_named_after_the_one_it_names() {
-    let here = std::env::current_dir().unwrap();
-    let parent = here.parent().unwrap();
-    for (dir, named) in [(".", &here), ("", &here), ("..", &parent.to_path_buf())] {
-        let name = named.file_name().unwrap().to_string_lossy().into_owned();
-        let src = Path::new(dir).join("progs.src");
-        let project = open_file(&mut loader(&[(src.to_str().unwrap(), "x.dat")]), &src).unwrap();
-        assert_eq!(project.name, name, "{dir:?}");
-        assert_eq!(project.mod_name, name, "{dir:?}");
-        assert_eq!(
-            project.modules[0].output,
-            Path::new(dir).join("build").join(&name).join("progs.dat"),
-            "{dir:?}"
-        );
-    }
+    assert_eq!(project.modules[0].output, Path::new("build/mod/progs.dat"));
 }
 
 // spec PRJ-3.3: a bare module is csqc for csprogs.dat, menuqc for menu.dat, any case, else ssqc

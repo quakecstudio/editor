@@ -414,9 +414,13 @@ impl Preview {
                 Ok(())
             }
             // BRIDGE-4.9: the list follows the host's answer, so one it refuses is not kept.
+            // One it did not answer in time stays, without an id: the host may still set it,
+            // and the list must show where the game can stop.
             None if self.live.is_some() => {
                 let set = self.set_breakpoint(file, line);
-                if set.is_err() {
+                if let Err(error) = &set
+                    && !matches!(error, PreviewError::Bridge(ClientError::Timeout))
+                {
                     self.debugger.toggle(file, line);
                 }
                 set
@@ -1361,6 +1365,15 @@ impl Preview {
     }
 }
 
+/// The project's server program as [`Workbench::statement_on_line`] last compiled it, and the
+/// hash of its files' names and text it was compiled from.
+#[derive(Debug)]
+pub(crate) struct LineProgram {
+    key: u64,
+    progs: Vec<u8>,
+    lines: Vec<i32>,
+}
+
 impl Drop for Preview {
     fn drop(&mut self) {
         self.stop();
@@ -1368,37 +1381,57 @@ impl Drop for Preview {
 }
 
 impl<L: Loader> Workbench<L> {
-    /// Builds the project; its root, its first program and the mod folder it is in, or why there
-    /// is none.
     /// Whether the project's server program has a statement on `line` of `file`, as the
-    /// running game finds a breakpoint's (BRIDGE-4.9): compiled in memory, nothing written;
-    /// `None` when it does not compile, so cannot tell.
+    /// running game finds a breakpoint's (BRIDGE-4.9): compiled in memory, nothing written, and
+    /// compiled again only once its files' text has changed; `None` when it does not compile, so
+    /// cannot tell.
     pub(crate) fn statement_on_line(&mut self, file: &Path, line: u32) -> Option<bool> {
         self.root()?;
         let line = i32::try_from(line).ok()?;
         let name = file.to_string_lossy().replace('\\', "/");
+        let mut cached = self.line_program.take();
         for module in self.host.project_modules() {
             if module.kind != qc_project::ModuleKind::Ssqc {
                 continue;
             }
-            let names = module.names;
-            let compiled = qc_codegen::compile_module(module.db, module.input, |id| {
-                names.get(id.index()).cloned().unwrap_or_default()
-            })
-            .ok()?;
-            let bytes = qc_progs::write(&compiled.progs).ok()?;
-            let progs = qc_progs::Progs::read_with(
-                &bytes,
-                qc_progs::ReadOptions {
-                    check_header_crc: false,
-                },
-            )
-            .ok()?;
-            return Some(resolve(&progs, &compiled.lno.lines, &name, line).is_some());
+            let mut hasher = std::hash::DefaultHasher::new();
+            for (index, file_name) in module.names.iter().enumerate() {
+                std::hash::Hash::hash(file_name, &mut hasher);
+                std::hash::Hash::hash(
+                    module.db.file_text(qc_sema::FileId::new(index)),
+                    &mut hasher,
+                );
+            }
+            let key = std::hash::Hasher::finish(&hasher);
+            if cached.as_ref().is_none_or(|program| program.key != key) {
+                let names = module.names;
+                let compiled = qc_codegen::compile_module(module.db, module.input, |id| {
+                    names.get(id.index()).cloned().unwrap_or_default()
+                })
+                .ok()?;
+                cached = Some(LineProgram {
+                    key,
+                    progs: qc_progs::write(&compiled.progs).ok()?,
+                    lines: compiled.lno.lines,
+                });
+            }
+            break;
         }
-        None
+        let program = cached?;
+        let progs = qc_progs::Progs::read_with(
+            &program.progs,
+            qc_progs::ReadOptions {
+                check_header_crc: false,
+            },
+        )
+        .ok()?;
+        let found = resolve(&progs, &program.lines, &name, line).is_some();
+        self.line_program = Some(program);
+        Some(found)
     }
 
+    /// Builds the project; its root, its first program and the mod folder it is in, or why there
+    /// is none.
     pub(super) fn built_program(&mut self) -> Result<BuiltProgram, PreviewError> {
         let project = self
             .root()

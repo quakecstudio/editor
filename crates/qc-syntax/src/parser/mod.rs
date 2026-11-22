@@ -1131,6 +1131,18 @@ impl<'a> Parser<'a> {
         self.open_items = self.open_items.saturating_sub(1);
     }
 
+    /// Reads one statement, declaration or member with `read` as an outermost one, whatever it
+    /// is inside (QC-27.16): a function body's statements and the members of a class, an
+    /// accessor or an `extern` block each nest afresh, and one that passes the limit mutes
+    /// only itself.
+    pub(super) fn outermost_item(&mut self, read: impl FnOnce(&mut Self)) {
+        let outer_items = core::mem::replace(&mut self.open_items, 0);
+        self.start_item();
+        read(self);
+        self.end_item();
+        self.open_items = outer_items;
+    }
+
     fn leave(&mut self, levels: usize) {
         self.depth = self.depth.saturating_sub(levels);
     }
@@ -1345,10 +1357,8 @@ impl<'a> Parser<'a> {
                     self.expected("}");
                     break;
                 }
-                self.start_item();
                 let before = self.pos;
-                self.block_item(site);
-                self.end_item();
+                self.outermost_item(|parser| parser.block_item(site));
                 if self.pos == before {
                     self.bump_error();
                 }

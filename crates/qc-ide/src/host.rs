@@ -96,8 +96,10 @@ pub struct ModuleBuild<'a> {
     pub kind: ModuleKind,
     /// The dialect it is read in.
     pub dialect: qc_syntax::Dialect,
-    /// The project graph's diagnostics for it (PRJ-6.5); an error among them stops its build
-    /// as a compile error does (COMP-2).
+    /// The project graph's diagnostics (PRJ-6.5) on files the compiler does not read itself,
+    /// such as a list-form `progs.src` or `quakec.toml`: an error among them stops its build as
+    /// a compile error does (PRJ-6.6). One in a file it compiles, or an `#include` there, the
+    /// compiler's preprocessor reports itself.
     pub graph: Vec<GraphDiagnostic>,
 }
 
@@ -551,10 +553,15 @@ impl<L: Loader> AnalysisHost<L> {
     pub fn project_modules(&mut self) -> Vec<ModuleBuild<'_>> {
         let mut graphs = Vec::with_capacity(self.modules.len());
         for index in 0..self.modules.len() {
-            let found = self
-                .modules
-                .get(index)
-                .map_or_default(|module| module.graph_diagnostics.clone());
+            let found: Vec<qc_project::Diagnostic> =
+                self.modules.get(index).map_or_default(|module| {
+                    module
+                        .graph_diagnostics
+                        .iter()
+                        .filter(|d| !module.files.contains(&normalize(&d.file)))
+                        .cloned()
+                        .collect()
+                });
             let mut placed = Vec::with_capacity(found.len());
             for d in &found {
                 placed.push(self.graph_diagnostic(d));

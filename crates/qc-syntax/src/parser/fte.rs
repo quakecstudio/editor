@@ -1002,9 +1002,7 @@ impl Parser<'_> {
                 break;
             }
             let before = self.pos;
-            self.start_item();
-            self.class_member();
-            self.end_item();
+            self.outermost_item(Self::class_member);
             if self.pos == before {
                 self.bump_error();
             }
@@ -1211,9 +1209,7 @@ impl Parser<'_> {
             // FTEF-18.27: an accessor that lost its `}` ends at the next declaration line.
             while !self.at(K::RBrace) && self.current().is_some() && !self.lost_brace() {
                 let before = self.pos;
-                self.start_item();
-                self.accessor_member(Member::Accessor);
-                self.end_item();
+                self.outermost_item(|parser| parser.accessor_member(Member::Accessor));
                 if self.at(K::Comma) || self.at(K::Semicolon) {
                     self.bump();
                 }

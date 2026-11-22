@@ -16,7 +16,7 @@ use qc_types::Etype;
 use qs_workbench::FsLoader;
 use serde_json::Value;
 
-use super::{Exit, Open, Refused, Request, parse, run, run_with_input};
+use super::{Exit, Open, Refused, Request, parse, project_dir, run, run_with_input};
 
 fn args(list: &[&str]) -> Vec<OsString> {
     list.iter().map(OsString::from).collect()
@@ -731,4 +731,17 @@ fn a_manifest_module_with_a_missing_src_says_so() {
     assert!(out.contains("quakec.toml"), "{out}");
     assert!(out.contains("module ssqc: "), "{out}");
     assert!(out.contains("nope.src"), "{out}");
+}
+
+// spec PRJ-1.7: the command line opens `.` as the directory it runs in, and `..` as its parent,
+// so the project takes that directory's name
+#[test]
+fn a_relative_project_is_the_directory_it_names() {
+    let here = std::env::current_dir().unwrap();
+    assert_eq!(project_dir(Path::new(".")).unwrap(), here);
+    let up = project_dir(Path::new("..")).unwrap();
+    assert_eq!(
+        std::fs::canonicalize(&up).unwrap(),
+        std::fs::canonicalize(here.parent().unwrap()).unwrap()
+    );
 }

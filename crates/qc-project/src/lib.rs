@@ -326,16 +326,9 @@ pub fn open_file<L: Loader>(loader: &mut L, file: &Path) -> Result<Project, Proj
     Ok(bare(loader, &dir, &[file.to_path_buf()]))
 }
 
-/// The directory's own name, if it has one: that of the directory a relative path such as `.`
-/// or `..` names, in the working directory (PRJ-1.4).
+/// The directory's own name, if it has one.
 fn dir_name(dir: &Path) -> Option<String> {
-    let named = match dir.file_name() {
-        Some(_) => dir.to_path_buf(),
-        // `normalize` makes `.` the empty path, which `absolute` refuses.
-        None if dir.as_os_str().is_empty() => normalize(&std::path::absolute(".").ok()?),
-        None => normalize(&std::path::absolute(dir).ok()?),
-    };
-    named.file_name().map(|n| n.to_string_lossy().into_owned())
+    dir.file_name().map(|n| n.to_string_lossy().into_owned())
 }
 
 /// The mod name of a project directory with no `mod` given (PRJ-1.4).

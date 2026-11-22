@@ -335,6 +335,8 @@ pub enum CheckAfterTyping {
 #[derive(Debug)]
 pub struct Workbench<L> {
     host: AnalysisHost<L>,
+    /// The program `preview.breakpoint` last looked a line up in (BRIDGE-4.9).
+    line_program: Option<preview::LineProgram>,
     root: Option<PathBuf>,
     tree: Vec<TreeEntry>,
     problems: Vec<Problem>,
@@ -372,6 +374,7 @@ impl<L: Loader> Workbench<L> {
     pub fn new(loader: L, config: Config) -> Self {
         Self {
             host: AnalysisHost::new(loader, config),
+            line_program: None,
             root: None,
             tree: Vec::new(),
             problems: Vec::new(),
