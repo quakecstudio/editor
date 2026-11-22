@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-2001 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
 // Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_demo.c, CL_ClearSignons, CL_StopPlayback, CL_WriteDemoMessage, CL_GetDemoMessage, CL_GetMessage, CL_Stop_f, CL_Record_f, CL_PlayDemo_f, CL_FinishTimeDemo, CL_TimeDemo_f
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/host_cmd.c, Host_Pause_f
 
 //! Demos (CLIENT-10): the messages a client reads, kept in a `.dem` file with the view
 //! angles at each, and read back through the same parser in whichever protocol the server

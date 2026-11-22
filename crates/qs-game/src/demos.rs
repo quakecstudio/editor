@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-2001 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
 // Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cl_demo.c, CL_StopPlayback, CL_Stop_f, CL_Record_f, CL_PlayDemo_f, CL_FinishTimeDemo, CL_TimeDemo_f
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/host_cmd.c, Host_Pause_f, Host_Restart_f, Host_Changelevel_f
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cmd.c, Cmd_ForwardToServer
 
 //! The host's demo commands (CLIENT-10): `record`, `stop`, `playdemo` and `timedemo`, over
 //! `qs-client`'s recorder and playing client. The host has no state without a map, so a
@@ -34,13 +38,16 @@ const PAUSE: &[u8] = b"pause";
 const DEMO_EXTENSION: &str = "dem";
 
 /// Whether a level is a new game's, as `map` starts one, the client disconnected first, or
-/// the next of the one being played, as `changelevel` and `restart` go on to it.
+/// the next of the one being played, as `changelevel` and `restart` go on to it, the
+/// client reconnecting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Connection {
     /// `Host_Map_f`: "`CL_Disconnect ();`" first.
     New,
-    /// `Host_Changelevel_f` and `Host_Restart_f`: the client reconnects.
-    Kept,
+    /// `Host_Changelevel_f`.
+    Changed,
+    /// `Host_Restart_f`.
+    Restarted,
 }
 
 /// A recording that starts with the map `record` named, once the map has loaded.
@@ -333,6 +340,25 @@ impl Demos {
             second: None,
         });
         host.game.world_mut().console(&format!("map {map}\n"));
+    }
+
+    /// Whether a level asked for is refused because a demo plays: `restart` does nothing,
+    /// "`if (cls.demoplayback || !sv.active) return;`", and `changelevel` says why, "`if
+    /// (!sv.active || cls.demoplayback)`". A new game is never refused: it stops the demo.
+    ///
+    /// Implements CLIENT-10.6.
+    pub(crate) fn refuses(&self, connection: Connection, game: &mut Game) -> bool {
+        if !self.playing() {
+            return false;
+        }
+        match connection {
+            Connection::New => false,
+            Connection::Changed => {
+                game.console_line("Only the server may changelevel\n");
+                true
+            }
+            Connection::Restarted => true,
+        }
     }
 
     /// Starts the map `back` again when it is not the one being played: where a demo that

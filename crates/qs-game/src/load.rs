@@ -407,6 +407,10 @@ impl Args {
     ) -> Acted {
         match action {
             HostAction::Level(next) => {
+                // CLIENT-10.6: no level follows the one a demo plays over.
+                if demos.refuses(next.connection, game) {
+                    return Acted::Stay;
+                }
                 let watched = game.level_debugger().map(|debugger| Watched {
                     debugger,
                     level: next.clone(),

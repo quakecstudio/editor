@@ -285,7 +285,7 @@ fn a_new_game_ends_a_recording_and_the_next_level_keeps_it() {
     let mut host = Host::connected("levels");
     host.say("record run");
     host.demos
-        .before_level(Connection::Kept, &mut host.game, &host.client);
+        .before_level(Connection::Changed, &mut host.game, &host.client);
     host.demos
         .after_level(Some(&mut host.client), &mut host.game);
     assert!(host.demos.recorder.recording());
@@ -544,4 +544,28 @@ fn a_map_started_while_a_demo_plays_stops_it() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     assert!(!host.demos.playing());
+}
+
+// spec CLIENT-10.6: while a demo plays `restart` does nothing and `changelevel` says only
+// the server may, and a new game is not refused; with no demo playing none is refused
+#[test]
+fn no_level_follows_the_one_a_demo_plays_over() {
+    let mut host = Host::connected("levels-refused");
+    for connection in [Connection::New, Connection::Changed, Connection::Restarted] {
+        assert!(!host.demos.refuses(connection, &mut host.game));
+    }
+    host.recorded("run", 3);
+    host.say("playdemo run");
+    host.asked();
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    host.demos
+        .after_level(Some(&mut host.client), &mut host.game);
+    host.printed();
+    assert!(host.demos.refuses(Connection::Restarted, &mut host.game));
+    assert_eq!(host.printed(), Vec::<String>::new());
+    assert!(host.demos.refuses(Connection::Changed, &mut host.game));
+    assert_eq!(host.printed(), ["Only the server may changelevel\n"]);
+    assert!(!host.demos.refuses(Connection::New, &mut host.game));
+    assert!(host.demos.playing());
 }

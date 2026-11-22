@@ -454,7 +454,7 @@ impl Game {
                 map: self.world.map().to_owned(),
                 carried: self.world.carried(),
                 host,
-                connection: Connection::Kept,
+                connection: Connection::Restarted,
             }),
             // PHYS-13.6: a new game, carrying nothing.
             HostCommand::Map(map) => HostAction::Level(NextLevel {
@@ -473,7 +473,7 @@ impl Game {
                         map,
                         carried: Some(kept),
                         host,
-                        connection: Connection::Kept,
+                        connection: Connection::Changed,
                     }),
                     Err(error) => {
                         self.fail(None, &error);
