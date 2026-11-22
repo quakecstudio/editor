@@ -6480,6 +6480,47 @@ fn a_local_structs_braces_store_each_member() {
     assert_eq!(values[1].c + 1, values[3].b);
 }
 
+// spec FTEF-18.7: `return = e;` stores the value to the `ret*` local, by the store of the
+// return type or folded into the statement that made it, and does not return; a bare
+// `return;` and the body's end then return the local (FTE-18.10). The opcodes are the pinned
+// FTEQCC's for these bodies (`-Tid`), recorded on 2026-11-21
+#[test]
+fn return_equals_stores_the_value_the_function_returns() {
+    use qc_progs::Op::{AddF, MulF, Return, StoreF, StoreV};
+    let progs = compile_fteqcc(
+        "float(float x) d_pick = { return = 4; return; };\n\
+         float(float x) d_end = { return = x + 1; };\n\
+         vector() d_vec = { return = '1 2 3'; return; };\n\
+         float(float x) d_twice = { return = 1; if (x) return = x * 2; };\n\
+         float(float x) d_early = { return = 1; if (x) return 9; };\n",
+    )
+    .unwrap()
+    .progs;
+    let ops = |name: &str| -> Vec<u32> {
+        let mut ops: Vec<u32> = body(&progs, name).iter().map(|s| s.op).collect();
+        ops.pop();
+        ops
+    };
+    assert_eq!(ops("d_pick"), numbers([StoreF, Return, Return]));
+    assert_eq!(ops("d_end"), numbers([AddF, Return]));
+    assert_eq!(ops("d_vec"), numbers([StoreV, Return, Return]));
+    let if_not = u32::from(Opcode::IfNot as u16);
+    let [store, mul, ret] = numbers([StoreF, MulF, Return])[..] else {
+        panic!("three opcodes");
+    };
+    assert_eq!(ops("d_twice"), [store, if_not, mul, ret]);
+    assert_eq!(ops("d_early"), [store, if_not, ret, ret]);
+    // The store's target is what both returns return, and the folded sum's result too.
+    let pick = body(&progs, "d_pick");
+    assert_eq!((pick[1].a, pick[2].a), (pick[0].b, pick[0].b));
+    let end = body(&progs, "d_end");
+    assert_eq!(end[1].a, end[0].c);
+    // An early `return e;` returns its own value, the end the local.
+    let early = body(&progs, "d_early");
+    assert_ne!(early[2].a, early[0].b);
+    assert_eq!(early[3].a, early[0].b);
+}
+
 // spec FTEF-27.20: on a target without `OP_STORE_I64` a 64-bit integer is stored by
 // `OP_STORE_FLD` of each of its two words, a constant 0 from the 64-bit zero's, to a definition
 // and to an element at a constant index alike

@@ -1726,6 +1726,25 @@ impl Checker<'_> {
         Ok(())
     }
 
+    /// `return = e;` (FTEF-18.7): `value` stored to the `ret*` local of the function's return
+    /// type `ret`, by the store of the type, or folded into the statement that made it
+    /// (FTEF-29.13).
+    pub(super) fn store_returned(&mut self, value: &Value, ret: &Type, span: Span) {
+        let to = Some(ir::Name::RetLocal);
+        if value.temp.is_some() && value.temp == self.last_temp && !self.wider_than(ret) {
+            self.fold_into(value, to);
+        } else {
+            let op = self.store_or_refuse(None, ret, span);
+            self.generated.push(ir::BodyStatement {
+                a: self.store_source(op, value),
+                b: to,
+                ..ir::BodyStatement::bare(op)
+            });
+        }
+        self.read_returned(value);
+        self.last_temp = None;
+    }
+
     /// One value of a local's braces stored to the words `to` of the local, of type `ty`: by
     /// the `STORE_*` of [`Checker::initialiser_steps`], as a local's initialiser is (FTE-14.9),
     /// or folded into the statement that made it (FTEF-29.13). A value of another type is
