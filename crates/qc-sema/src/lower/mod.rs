@@ -23,7 +23,7 @@ pub use decl::{Binum, LiteralValue, Qualifier, ValueKind, declares};
 pub(crate) use expr::{MemberBase, RawUse, UseKind};
 pub(crate) use types::{
     EnumItem, IntConst, MemberKind, MemberStorage, Qualification, RawClass, RawMember, RawStruct,
-    StructMember, TypeKind,
+    StructMember, StructOrigin, TypeKind,
 };
 
 use core::fmt::Write as _;
@@ -399,7 +399,10 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
             _ => {}
         }
     }
-    out.generate_array_types();
+    // Only a profile that declares types makes array types.
+    if dialect.has_fteqcc_extensions() {
+        out.generate_array_types();
+    }
     out
 }
 
@@ -412,6 +415,8 @@ impl FileDecls {
     /// type is made before any declaration reads it.
     fn generate_array_types(&mut self) {
         let mut made = ArrayTypes::default();
+        // A global's or a local's size of 0 makes rows of no words, as FTEQCC's do; only a
+        // struct member's is refused (FTEF-6.17).
         for decl in &mut self.decls {
             if !decl.inner_dims.is_empty() {
                 decl.ty = made.of(&decl.ty, &decl.inner_dims, decl.span);
@@ -456,15 +461,20 @@ impl FileDecls {
 struct ArrayTypes(Vec<RawStruct>);
 
 impl ArrayTypes {
-    /// The array type of `sizes` of `element` (`QCC_GenArrayType`), named for them as C writes
-    /// them, `float[3][4]`, made with the types inside it unless made already; `at` is where the
-    /// first declarator that needs it is written.
+    /// The array type of `sizes` of `element` (`QCC_GenArrayType`), named for its element as
+    /// written and the sizes as C writes them, `float[3][4]`, made with the types inside it
+    /// unless made already; `at` is where the first declarator that needs it is written.
     fn of(&mut self, element: &Type, sizes: &[u32], at: Span) -> Type {
         let Some((&count, rest)) = sizes.split_first() else {
             return element.clone();
         };
         let inner = self.of(element, rest, at);
-        let name = sizes.iter().fold(element.fteqcc_name(), |mut name, size| {
+        // Its element as written, so that two C types FTEQCC names alike are two types.
+        let written = match element {
+            Type::Named(name) => name.to_string(),
+            other => other.fteqcc_name(),
+        };
+        let name = sizes.iter().fold(written, |mut name, size| {
             let _infallible = write!(name, "[{size}]");
             name
         });
@@ -497,7 +507,7 @@ impl ArrayTypes {
                     sizes: vec![IntConst::Integer(i64::from(count))],
                     nested: Vec::new(),
                 }],
-                generated: true,
+                origin: StructOrigin::ArrayType,
             });
         }
         Type::Named(name.into())

@@ -651,7 +651,7 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
             value,
             literal,
             array: array_dim(&declarator, init.as_ref()),
-            inner_dims: inner_dims(&declarator),
+            inner_dims: inner_dims(&declarator, cx),
             aggregate: raw_aggregate(&declarator, init.as_ref(), cx),
             scope_end: None,
             flags: cx.flags_at(local.syntax().span().start),

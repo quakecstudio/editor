@@ -19,7 +19,7 @@ use crate::ty::{Passing, SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of, omitted_type};
 use super::expr::{RawUse, lower_expr};
-use super::types::{EnumItem, RawClass, TypeKind, lower_enum};
+use super::types::{EnumItem, IntConst, RawClass, TypeKind, lower_enum};
 use super::{Cx, first_word, token_text};
 
 /// A name a file declares, before cross-file resolution.
@@ -754,18 +754,14 @@ pub(super) fn array_dim(
 }
 
 /// The sizes of a declarator's array dimensions after its first, when it has two or more and
-/// each is a number: `QCC_PR_ParseArrayType` makes the element type an array type of each, the
-/// last innermost (`QCC_GenArrayType`, FTEF-5.2). Empty otherwise.
-pub(super) fn inner_dims(declarator: &ast::Declarator) -> Vec<u32> {
+/// each is an integer `QCC_PR_IntConstExpr` reads, as a struct member's are (FTEF-6.17):
+/// `QCC_PR_ParseArrayType` makes the element type an array type of each, the last innermost
+/// (`QCC_GenArrayType`, FTEF-5.2). Empty otherwise.
+pub(super) fn inner_dims(declarator: &ast::Declarator, cx: Cx<'_>) -> Vec<u32> {
     let sizes: Option<Vec<u32>> = declarator
         .array_suffixes()
         .skip(1)
-        .map(|suffix| {
-            let ast::Expr::Literal(literal) = suffix.children().find_map(ast::Expr::cast)? else {
-                return None;
-            };
-            literal.token()?.text_lossless().parse::<u32>().ok()
-        })
+        .map(|suffix| IntConst::of(&suffix.children().find_map(ast::Expr::cast)?, cx).size())
         .collect();
     sizes.unwrap_or_default()
 }
@@ -1247,7 +1243,7 @@ pub(super) fn lower_declarators(
         raw.scope = declarator.scope().map(|t| t.text_lossless());
         raw.array = array_dim(&declarator, init.as_ref());
         raw.array_dims = declarator.array_suffixes().count();
-        raw.inner_dims = inner_dims(&declarator);
+        raw.inner_dims = inner_dims(&declarator, cx);
         raw.size_expr = size_expr(&declarator);
         raw.aggregate = raw_aggregate(&declarator, init.as_ref(), cx);
         if let Some(ast::Initializer::Aggregate(agg)) = &init {

@@ -1869,7 +1869,7 @@ impl Checker<'_> {
             };
             let member = at.and_then(|at| members.get(at));
             match (member, Part::of(part)) {
-                (Some(member), Some(Part::Value(element))) if member.count == 1 => {
+                (Some(member), Some(Part::Value(element))) if member.elements.is_none() => {
                     set.push(member.word);
                     self.store_part(&element, word(member.word), &member.ty)?;
                 }
@@ -1913,16 +1913,16 @@ impl Checker<'_> {
     ) -> Result<(), Fatal> {
         let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
         let parts: Vec<Option<Part>> = braces.syntax().children().map(Part::of).collect();
-        if member.count > 1 {
+        if let Some(count) = member.elements {
             let words = self.env.layout(&member.ty).map_or(1, |layout| layout.words);
             let element = crate::MemberShape {
-                count: 1,
+                elements: None,
                 ..member.clone()
             };
-            if parts.len() > usize::try_from(member.count).unwrap_or(usize::MAX) {
+            if parts.len() > usize::try_from(count).unwrap_or(usize::MAX) {
                 self.followed = false;
             }
-            for (at, part) in (0..member.count).zip(parts) {
+            for (at, part) in (0..count).zip(parts) {
                 let at = at.saturating_mul(words);
                 match part {
                     Some(Part::Value(value)) => {

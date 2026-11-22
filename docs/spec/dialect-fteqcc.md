@@ -322,7 +322,7 @@ one dimension.
 - **FTEF-5.4** **Withdrawn** 2026-11-19: it deferred an array's layout and subscripts to
   L-01; replaced by FTEF-5.5.
 - **FTEF-5.5** An array's elements are its definition's words in turn, with no word for the
-  array itself (FTE-13.10, FTE-13.13). An element at a constant index is the definition at
+  array itself (FTE-13.10, FTE-13.19). An element at a constant index is the definition at
   that word, read and stored as any definition: `arr[2] = x` is `STORE_F x, arr[2]`. At an
   index that is no constant, a target with the opcodes makes the index an integer
   (`OP_CONV_FTOI` of a float) and checks it (`OP_BOUNDCHECK`, FTEF-31.24), then stores by

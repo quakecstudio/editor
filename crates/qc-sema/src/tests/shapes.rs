@@ -44,7 +44,7 @@ fn struct_layouts_are_recorded() {
         name: name.to_owned(),
         ty,
         word,
-        count: 1,
+        elements: None,
     };
     assert_eq!(
         p.members,
@@ -70,7 +70,7 @@ fn member_arrays_and_nested_structs_are_recorded() {
     assert_eq!(out.members[0].word, 0);
     assert_eq!(out.members[1].word, 2);
     let inner = &i.struct_shape(&named("In")).unwrap();
-    assert_eq!(inner.members[0].count, 2);
+    assert_eq!(inner.members[0].elements, Some(2));
 }
 
 // spec FTEF-8.6: a named enum's type stands for its base type; FTEF-7.2: a typedef's for its

@@ -179,14 +179,17 @@ fn records(progs: &ProgsFile, roots: &[&str]) -> Vec<(u32, bool, i32, String)> {
 }
 
 // spec FTEF-5.8: an element of an array type is a union record, never saved, then its member's
-// elements, `NAME[i][j]`, a vector's `NAME[i].(null)[j]`
-// spec FTE-13.19: a struct's member that is an array writes each element and a member that is
-// a struct its own members, with no record for the member itself
+// elements, `NAME[i][j]`, a vector's `NAME[i].(null)[j]`; each element type its own array
+// type, a size read as any integer constant
+// spec FTE-13.19: a struct's member that is an array writes each element, one of one element
+// too, and a member that is a struct its own members, with no record for the member itself
 #[test]
 fn an_array_types_records_are_its_rows_and_elements() {
     let p = fte_progs(&format!(
         "{PROGRAM}struct In {{ float x; vector y; }};\n\
          struct S1 {{ float a[2]; In in; float g[2][2]; }};\nS1 s1;\n\
+         struct S2 {{ float a[1]; float g[1][2]; float b; }};\nS2 s2;\n\
+         float hx[2][0x3];\n_Bool bb[2][3];\nint ii[2][3];\n\
          void() u = {{ vector w = gv[0][0]; m_k = s1.a[1] + s1.in.x + s1.g[1][1] + w_x; }};\n"
     ));
     let union = 15;
@@ -233,6 +236,21 @@ fn an_array_types_records_are_its_rows_and_elements() {
             saved(float, 9, "s1.g[1][1]"),
         ]
     );
+    assert_eq!(
+        records(&p, &["s2"]),
+        [
+            saved(float, 0, "s2.a[0]"),
+            row(1, "s2.g[0]"),
+            saved(float, 1, "s2.g[0][0]"),
+            saved(float, 2, "s2.g[0][1]"),
+            saved(float, 3, "s2.b"),
+        ]
+    );
+    assert!(records(&p, &["hx"]).contains(&saved(float, 5, "hx[1][2]")));
+    let boolean = 19;
+    let integer = 8;
+    assert!(records(&p, &["bb"]).contains(&saved(boolean, 0, "bb[0][0]")));
+    assert!(records(&p, &["ii"]).contains(&saved(integer, 0, "ii[0][0]")));
 }
 
 /// The numbers of FTE's opcodes `ops`.

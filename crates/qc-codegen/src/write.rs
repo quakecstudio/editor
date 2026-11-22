@@ -165,7 +165,7 @@ fn array_member_records(
     } else {
         name.to_owned()
     };
-    for i in 0..member.count {
+    for i in 0..member.count() {
         let at = i
             .checked_mul(words)
             .and_then(|w| w.checked_add(ofs))
@@ -227,9 +227,9 @@ fn member_records(
         let element = ValueType::Of(member.ty.clone());
         // FTE-13.19: a member that is an array writes each element, `NAME.member[i]`, with its
         // own records, and none for itself.
-        if member.count > 1 {
+        if let Some(count) = member.elements {
             let words = type_words(index, &element);
-            for i in 0..member.count {
+            for i in 0..count {
                 let at = i
                     .checked_mul(words)
                     .and_then(|w| w.checked_add(at))

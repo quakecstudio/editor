@@ -578,13 +578,11 @@ impl Compiler<'_> {
                 .cloned()
         {
             let aggregate = ast::AggregateInit::cast(item.clone()).at(span)?;
+            let count = member.count();
             let element = ValueType::Of(member.ty);
             let size = type_words(self.index, &element);
             let items: Vec<_> = aggregate.syntax().children().collect();
-            if u32::try_from(items.len())
-                .ok()
-                .is_none_or(|n| n > member.count)
-            {
+            if u32::try_from(items.len()).ok().is_none_or(|n| n > count) {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
             for (k, value) in (0_u32..).zip(&items) {
@@ -606,7 +604,7 @@ impl Compiler<'_> {
             if !names.is_empty() {
                 for (name, value) in names.iter().zip(aggregate.syntax().children()) {
                     let member = shape.members.iter().find(|m| m.name == *name).at(span)?;
-                    if member.count != 1 {
+                    if member.elements.is_some() {
                         return Err(Abort::Internal(Internal::Unsupported, span));
                     }
                     let to = at.checked_add(member.word).at(span)?;
@@ -618,7 +616,7 @@ impl Compiler<'_> {
                 return Err(Abort::Internal(Internal::Unsupported, span));
             }
             for (member, value) in shape.members.iter().zip(aggregate.syntax().children()) {
-                if member.count != 1 {
+                if member.elements.is_some() {
                     return Err(Abort::Internal(Internal::Unsupported, span));
                 }
                 let to = at.checked_add(member.word).at(span)?;

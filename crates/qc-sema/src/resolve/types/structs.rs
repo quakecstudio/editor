@@ -10,7 +10,7 @@ use crate::resolve::Init;
 use qc_diag::Code;
 
 use crate::check::StructMemberFacts;
-use crate::lower::{IntConst, MemberBase, RawStruct, StructMember};
+use crate::lower::{IntConst, MemberBase, RawStruct, StructMember, StructOrigin};
 use crate::resolve::{ComparedMember, MAX_CLASS_DEPTH, Resolver, Scope, StructDef, StructMatch};
 use crate::symbol::{FileId, Location};
 use crate::ty::Type;
@@ -53,7 +53,7 @@ impl<'a> Resolver<'a> {
                     parent: None,
                     defined: true,
                     union: true,
-                    generated: true,
+                    origin: StructOrigin::ArrayType,
                 });
         }
     }
@@ -69,7 +69,7 @@ impl<'a> Resolver<'a> {
         if !self.profile.type_declarations() {
             return;
         }
-        if st.generated {
+        if st.origin == StructOrigin::ArrayType {
             self.declare_array_type(st);
             return;
         }
@@ -147,7 +147,7 @@ impl<'a> Resolver<'a> {
                         parent: parent_key,
                         defined: false,
                         union: st.union,
-                        generated: false,
+                        origin: StructOrigin::Written,
                     },
                 );
             }
@@ -230,7 +230,7 @@ impl<'a> Resolver<'a> {
                     parent: parent_key,
                     defined: true,
                     union: st.union,
-                    generated: false,
+                    origin: StructOrigin::Written,
                 },
             );
         }

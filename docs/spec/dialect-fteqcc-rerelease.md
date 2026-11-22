@@ -807,7 +807,7 @@ name (QC-10.3), and nothing follows the name.
   parameters and locals, which FTEQCC lays out after every function's statics
   (`QCC_UnmarshalLocals`): the record's `parm_start` is above it and its `locals` count it
   out. `rerelease-mg3`'s `float(...) SUB_True` makes one, written as its 24 elements
-  (FTE-13.13), and a variadic function with no body use of `va_arg` makes one all the same. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  (FTE-13.19), and a variadic function with no body use of `va_arg` makes one all the same. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`.
 - **FTE-18.7** A call passes a parameter's default value where its argument is left empty,
   `f(a, , c)` (`else if (arg < t->num_parms && (QCC_PR_PeekToken (",") || QCC_PR_PeekToken

@@ -213,9 +213,18 @@ pub(crate) struct RawStruct {
     pub local: bool,
     /// The members, in order, of the body.
     pub members: Vec<StructMember>,
-    /// Whether it is an array type `QCC_GenArrayType` makes for a dimension after an array's
-    /// first, not one the file writes (FTEF-5.2).
-    pub generated: bool,
+    /// Whether the file writes it or it is an array type (FTEF-5.2).
+    pub origin: StructOrigin,
+}
+
+/// Where a struct or union comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StructOrigin {
+    /// The file writes it.
+    Written,
+    /// `QCC_GenArrayType` makes it for a dimension after an array's first: a union of one
+    /// unnamed member (FTEF-5.2).
+    ArrayType,
 }
 
 /// One member of a [`RawStruct`] (FTEF-6.7).
@@ -515,7 +524,7 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
         body,
         local,
         members,
-        generated: false,
+        origin: StructOrigin::Written,
     })
 }
 

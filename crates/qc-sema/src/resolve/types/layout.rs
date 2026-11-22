@@ -13,7 +13,7 @@ use qc_syntax::c_scalar::CScalar;
 
 use crate::check::etype::Etype;
 use crate::lower::LiteralValue;
-use crate::lower::{ArrayDim, StructMember};
+use crate::lower::{ArrayDim, StructMember, StructOrigin};
 use crate::resolve::{
     InitialValue, MAX_CLASS_DEPTH, MemberShape, RecordShape, Resolver, Scalar, StructShape,
 };
@@ -472,7 +472,7 @@ impl Resolver<'_> {
         };
         for member in &def.members {
             // An array type's one member is unnamed (FTEF-5.2).
-            let unnamed = member.name.is_empty() && !def.generated;
+            let unnamed = member.name.is_empty() && def.origin == StructOrigin::Written;
             if member.is_static || unnamed || member.bits.is_some() {
                 continue;
             }
@@ -486,7 +486,11 @@ impl Resolver<'_> {
                 name: member.name.clone(),
                 ty: member.ty.clone(),
                 word: position >> WORD_SHIFT,
-                count: array_count(member)?,
+                elements: if member.array.is_empty() {
+                    None
+                } else {
+                    Some(array_count(member)?)
+                },
             });
         }
         Some(StructShape { words, members })
