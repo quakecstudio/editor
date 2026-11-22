@@ -185,6 +185,18 @@ pub struct StructShape {
     pub members: Vec<MemberShape>,
 }
 
+impl StructShape {
+    /// The one member of an array type `QCC_GenArrayType` made, which has no name (FTEF-5.2);
+    /// `None` for any other struct or union, whose unnamed members a shape leaves out.
+    #[must_use]
+    pub fn array_member(&self) -> Option<&MemberShape> {
+        match self.members.as_slice() {
+            [member] if member.name.is_empty() => Some(member),
+            _ => None,
+        }
+    }
+}
+
 /// One member of a [`StructShape`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MemberShape {
@@ -763,6 +775,9 @@ struct StructDef {
     defined: bool,
     /// Whether it is a union (FTEF-6.7).
     union: bool,
+    /// Whether it is an array type `QCC_GenArrayType` made, whose one member is unnamed
+    /// (FTEF-5.2).
+    generated: bool,
 }
 
 /// What the resolver knows of a definition beyond its [`Definition`], as `qcc` and FTEQCC keep

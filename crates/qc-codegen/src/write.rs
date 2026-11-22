@@ -11,12 +11,12 @@ use qc_progs::Op;
 use qc_progs::crc::crc_block;
 use qc_progs::opcode::Opcode;
 use qc_progs::{Def as DefRecord, PROGS_DEF_SAVEGLOBAL, ProgsFile};
-use qc_sema::{ModuleIndex, StructShape};
+use qc_sema::{MemberShape, ModuleIndex, StructShape};
 use qc_types::{Etype, Slot};
 use std::fmt::Write as _;
 
 use crate::Internal;
-use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_number};
+use crate::program::{Def, Program, RESERVED_OFS, ValueType, type_number, type_words};
 use qc_lexer::latin1_encode;
 
 /// `PR_WriteProgdefs` (QC-25.5, QC-25.6): the text of `progdefs.h` and the CRC of it up to the
@@ -107,9 +107,9 @@ pub(crate) fn needs_fte32(progs: &ProgsFile) -> bool {
             .any(|statement| statement.op == goto && !(-BIG_JUMP..=BIG_JUMP).contains(&statement.a))
 }
 
-/// FTE-13.13: the records of the array element `name` of type `ty` at `ofs`: its own, a struct
-/// element's typed `ev_struct`, then each member's that starts at a word, `name.member`, an
-/// array member as one record.
+/// FTE-13.19: the records of the array element `name` of type `ty` at `ofs`: its own, a struct
+/// element's typed `ev_struct`, then each member's that starts at a word, `name.member`
+/// ([`member_records`]); an array type's element as FTEF-5.8 says.
 fn element_records(
     out: &mut Vec<DefRecord>,
     program: &mut Program,
@@ -121,6 +121,16 @@ fn element_records(
         ValueType::Of(t) => index.struct_shape(t),
         ValueType::FloatField => None,
     };
+    // FTEF-5.2: an element of an array type, a union, is a header of its own, never saved,
+    // then its member's elements.
+    if let Some(member) = shape.and_then(StructShape::array_member) {
+        out.push(DefRecord {
+            type_bits: EV_UNION,
+            ofs,
+            s_name: program.copy_string(&latin1_encode(name))?,
+        });
+        return array_member_records(out, program, name, (index, member), (ofs, saving));
+    }
     // `def->saved = false; //struct headers don't get saved.`
     let type_bits = if shape.is_some() {
         EV_STRUCT
@@ -134,6 +144,34 @@ fn element_records(
     });
     if let Some(shape) = shape {
         member_records(out, program, name, (index, shape), (ofs, saving))?;
+    }
+    Ok(())
+}
+
+/// FTEF-5.2: the records of the elements of the unnamed member `member` of an array type, the
+/// value `name` at `ofs`, as `QCC_PR_DummyDef` names them: `NAME[N]`, or `NAME.(null)[N]` for a
+/// vector's, whose part name is null (`"%s.%s"` of no name), each with its own records.
+fn array_member_records(
+    out: &mut Vec<DefRecord>,
+    program: &mut Program,
+    name: &str,
+    (index, member): (&ModuleIndex, &MemberShape),
+    (ofs, saving): (u32, Saving),
+) -> Result<(), Internal> {
+    let element = ValueType::Of(member.ty.clone());
+    let words = type_words(index, &element);
+    let prefix = if element.etype() == Etype::Vector {
+        format!("{name}.(null)")
+    } else {
+        name.to_owned()
+    };
+    for i in 0..member.count {
+        let at = i
+            .checked_mul(words)
+            .and_then(|w| w.checked_add(ofs))
+            .ok_or(Internal::TooLarge)?;
+        let element_name = format!("{prefix}[{i}]");
+        element_records(out, program, index, (&element_name, &element, at), saving)?;
     }
     Ok(())
 }
@@ -164,8 +202,8 @@ impl Saving {
 /// ev_function, false);`, which a struct's function member's record is named after.
 const FUNCTION_TYPE_NAME: &str = "__function";
 
-/// FTE-13.13: the records of the members of the struct value `name` at `ofs`, `name.member`,
-/// each member that starts at a word, an array member as one record.
+/// FTE-13.19: the records of the members of the struct value `name` at `ofs`, `name.member`,
+/// each member that starts at a word: a struct member's own members, an array member's elements.
 fn member_records(
     out: &mut Vec<DefRecord>,
     program: &mut Program,
@@ -175,11 +213,6 @@ fn member_records(
 ) -> Result<(), Internal> {
     for member in &shape.members {
         let at = ofs.checked_add(member.word).ok_or(Internal::TooLarge)?;
-        // A member that is itself a struct is its header, which is never saved.
-        let saving = match index.struct_shape(&member.ty) {
-            Some(_) => Saving::Unsaved,
-            None => saving,
-        };
         // FTEF-6.33: a member that is a function is named after its type, `__function`, not
         // itself (`case ev_function: QC_snprintfz(newname, sizeof(newname), "%s.%s", def->name,
         // parttype->name);`).
@@ -190,10 +223,31 @@ fn member_records(
         } else {
             member.name.as_str()
         };
+        let member_name = format!("{name}.{member_name}");
+        let element = ValueType::Of(member.ty.clone());
+        // FTE-13.19: a member that is an array writes each element, `NAME.member[i]`, with its
+        // own records, and none for itself.
+        if member.count > 1 {
+            let words = type_words(index, &element);
+            for i in 0..member.count {
+                let at = i
+                    .checked_mul(words)
+                    .and_then(|w| w.checked_add(at))
+                    .ok_or(Internal::TooLarge)?;
+                let element_name = format!("{member_name}[{i}]");
+                element_records(out, program, index, (&element_name, &element, at), saving)?;
+            }
+            continue;
+        }
+        // A member that is itself a struct is written as its own members, as a struct value is.
+        if let Some(inner) = index.struct_shape(&member.ty) {
+            member_records(out, program, &member_name, (index, inner), (at, saving))?;
+            continue;
+        }
         out.push(DefRecord {
             type_bits: saving.bits(number),
             ofs: at,
-            s_name: program.copy_string(&latin1_encode(&format!("{name}.{member_name}")))?,
+            s_name: program.copy_string(&latin1_encode(&member_name))?,
         });
     }
     Ok(())
@@ -257,7 +311,7 @@ pub(crate) fn wrap_unsigned_operands(progs: &mut ProgsFile) {
     }
 }
 
-/// How the global definition list is written (FTE-13.13).
+/// How the global definition list is written (FTE-13.19).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Records {
     /// A record for each definition, as id's `qcc` writes them.
@@ -270,6 +324,8 @@ pub(crate) enum Records {
 /// FTEQCC's `ev_struct`, the type an element of an array of structs is written with
 /// (`progslib.h`'s `etype_t`).
 const EV_STRUCT: u32 = 14;
+/// FTEQCC's `ev_union`, the type an element of an array type is written with (FTEF-5.2).
+const EV_UNION: u32 = 15;
 
 pub(crate) fn progs(
     mut program: Program,

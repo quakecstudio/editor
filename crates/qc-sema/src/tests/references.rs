@@ -58,6 +58,25 @@ fn not_valid(op: &str) -> (Code, String) {
     )
 }
 
+// spec FTEF-5.6: each index of an array of two dimensions is checked against its own size, a
+// row's `length` is its size, and a subscript of a row reads its member array
+#[test]
+fn each_dimension_of_an_array_checks_its_own_bounds() {
+    let messages = |statement: &str| -> Vec<String> {
+        diags(&format!(
+            "float g[2][3]; float k;\nvoid() f = {{ {statement} }};\n"
+        ))
+        .into_iter()
+        .map(|(_, message)| message)
+        .collect()
+    };
+    let out = |i: u32, of: u32| format!("(constant) array index out of bounds (0 <= {i} < {of})");
+    assert_eq!(messages("k = g[1][2];"), Vec::<String>::new());
+    assert_eq!(messages("k = g[0][5];"), [out(5, 3)]);
+    assert_eq!(messages("k = g[2][0];"), [out(2, 2)]);
+    assert_eq!(messages("k = g[2][3];"), [out(2, 2), out(3, 3)]);
+}
+
 // spec FTEF-31.2: a constant index is checked against an array's length and a vector's 3
 // spec QCD-7.91: W0249 for a constant index past an array's end
 // spec QCD-4.40: E0333 for a vector's index out of bounds

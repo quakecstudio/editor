@@ -471,7 +471,9 @@ impl Resolver<'_> {
             None => Vec::new(),
         };
         for member in &def.members {
-            if member.is_static || member.name.is_empty() || member.bits.is_some() {
+            // An array type's one member is unnamed (FTEF-5.2).
+            let unnamed = member.name.is_empty() && !def.generated;
+            if member.is_static || unnamed || member.bits.is_some() {
                 continue;
             }
             let Some(position) = self.member_position(&resolved, &member.name) else {

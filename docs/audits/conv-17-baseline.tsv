@@ -568,10 +568,6 @@ magic-number	crates/qc-sema/src/check/format.rs	Checker::verify_event:8
 magic-number	crates/qc-sema/src/check/format.rs	digits:10
 magic-number	crates/qc-sema/src/check/member.rs	Checker::member_index:4
 magic-number	crates/qc-sema/src/check/member.rs	Checker::member_index:8
-magic-number	crates/qc-sema/src/check/member.rs	Checker::struct_member:16
-magic-number	crates/qc-sema/src/check/member.rs	Checker::struct_member:31
-magic-number	crates/qc-sema/src/check/member.rs	Checker::struct_member:5
-magic-number	crates/qc-sema/src/check/member.rs	Checker::struct_member:8
 magic-number	crates/qc-sema/src/check/member.rs	alignment:16
 magic-number	crates/qc-sema/src/check/member.rs	alignment:32
 magic-number	crates/qc-sema/src/check/member.rs	alignment:8

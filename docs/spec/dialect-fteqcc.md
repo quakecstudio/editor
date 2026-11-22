@@ -330,6 +330,36 @@ one dimension.
   `OP_LOADA_*` of the array and the index (FTEF-31.19). The standard target has none of
   them, and there a read calls the array's `ArrayGet*NAME` and a store its `ArraySet*NAME`,
   functions the compiler writes (FTE-13.8, FTE-13.11, FTEF-19.78).
+- **FTEF-5.6** `T a[A][B]` is an array of `A` elements of the array type `QCC_GenArrayType(T,
+  B)` makes: a union of one member with no name (`param->paramname = NULL`), `B` elements of
+  `T`, whose size is `B` times `T`'s (`type->size = param->type->size * param->arraysize`); more
+  dimensions nest so. A subscript of a value of that type indexes its member
+  (`QCC_PR_ParseRefArrayPointer`'s array type, `t->type == ev_union && t->num_parms == 1 &&
+  !t->params[0].paramname`): each index is scaled by the size of what it selects ("if
+  (tmp.cast->type == ev_float) tmp = QCC_PR_Statement(&pr_opcodes[OP_MUL_F], ...,
+  QCC_MakeFloatConst(t->size), NULL)") and added to the index before it (`OP_ADD_F`, or
+  `OP_ADD_I` of integers), so `a[i][j]` is `MUL_F i, B` then `ADD_F` of that and `j`, constants
+  folded and a constant 0 added left out; the element is the whole array's at that word,
+  read and stored as FTEF-5.5 says, by the whole array's `ArrayGet` and `ArraySet` on the
+  standard target, a vector element a word at a time. Each index is checked against its own
+  dimension: a constant one out of it warns "(constant) array index out of bounds (0 <= i <
+  B)", and one that is no constant is `OP_BOUNDCHECK`ed by `B` where the target has it.
+  `a[i].length` is `B`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_GenArrayType`, `QCC_PR_ParseArrayType`,
+  `QCC_PR_ParseRefArrayPointer`.
+- **FTEF-5.7** The braces of a value of an array type are its member's elements ("weird
+  typedefed array hack", `QCC_PR_ParseInitializerType((type)->params[0].arraysize, ...)`), so
+  `float a[2][2] = { {1, 2}, {3, 4} };`, global or local, gives each row its braces; a value
+  where a row's braces belong is "expected {, found 3". A local's are stored element by
+  element as FTE-14.10 says. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`.
+- **FTEF-5.8** `QCC_PR_DummyDef` writes an element of an array type as a definition of type
+  `ev_union` (15), never saved, then its member's elements: `NAME[i][j]`, the member's name
+  being none (`QC_snprintfz(newname, sizeof(newname), "%s", def->name)`), but for a vector's
+  `NAME[i].(null)[j]`, which `"%s.%s"` prints of a vector part's null name. So `float
+  g[2][3];` writes `g[0]`, `g[0][0]` to `g[0][2]`, `g[1]`, `g[1][0]` to `g[1][2]`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_DummyDef`.
 
 ## FTEF-6 `struct` and `union`
 

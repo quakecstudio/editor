@@ -30,7 +30,8 @@ compiler read it.
 - **Pointers.** `T *p`, `&lvalue`, `*p` and `p->member` (FTEF-4.1 to FTEF-4.4). They need a
   target with the opcodes: for id's VM the address of a global is the error `E0331`
   (FTEF-4.6). There, use a field or an array.
-- **Arrays** with a size, `float xs[8];` (FTEF-5.1).
+- **Arrays** with a size, `float xs[8];` (FTEF-5.1), and of more than one dimension, `float
+  m[4][4];`, `m[i][j]`, with braces for each row, `{ {1, 2}, {3, 4} }` (FTEF-5.2).
 - **`struct` and `union`** by name: `struct Name { float a; vector b; };`, a child `struct
   Child : Parent { ... }`, members that are arrays, pointers, functions or bitfields, and
   `{ .a = 1, .b = '0 0 1' }` to initialise by member (FTEF-6.1 to FTEF-6.5, FTEF-16.11), at

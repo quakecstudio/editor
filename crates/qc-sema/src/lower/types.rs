@@ -213,6 +213,9 @@ pub(crate) struct RawStruct {
     pub local: bool,
     /// The members, in order, of the body.
     pub members: Vec<StructMember>,
+    /// Whether it is an array type `QCC_GenArrayType` makes for a dimension after an array's
+    /// first, not one the file writes (FTEF-5.2).
+    pub generated: bool,
 }
 
 /// One member of a [`RawStruct`] (FTEF-6.7).
@@ -306,6 +309,14 @@ pub(crate) enum IntConst {
 }
 
 impl IntConst {
+    /// The size it gives an array: an integer that fits, else none the model reads.
+    pub(crate) fn size(&self) -> Option<u32> {
+        match self {
+            Self::Integer(n) => u32::try_from(*n).ok(),
+            Self::NotInteger | Self::Name(_) | Self::Unfolded => None,
+        }
+    }
+
     /// The first array suffix of `declarator`, `[N]`, as it is written, and the size it
     /// gives, unfolded for one with none; neither for a declarator with no suffix.
     fn of_suffix(declarator: &ast::Declarator, cx: Cx<'_>) -> (Option<String>, Option<Self>) {
@@ -504,6 +515,7 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
         body,
         local,
         members,
+        generated: false,
     })
 }
 

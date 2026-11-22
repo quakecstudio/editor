@@ -479,18 +479,9 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   stored with `STORE_F` to a temporary. A store through a subscript by a value calls the
   array's setter (FTE-13.11). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`, `QCC_LoadFromArray`,
   `QCC_PR_ParseRefArrayPointer`.
-- **FTE-13.13** FTEQCC writes no definition for an array's head, only for its elements
-  (`QCC_WriteData`: "the head of an array/struct is never written. only, its member fields
-  are."), each made by `QCC_PR_DummyDef` and named `NAME[i]` (`QC_snprintfz(array,
-  sizeof(array), "[%i]", a);`) at the element's first word, typed as the element: an element of
-  an array of structs as `ev_struct` (14 in `progslib.h`'s `etype_t`), followed by each member's
-  definition, `NAME[i].member`; a vector array's elements have no `_x`, `_y` or `_z`. A struct
-  value, global or local, is written as its members alone, `NAME.member`. So `string s[2];`
-  writes `s[0]` and `s[1]`, and a local `pose p;` of a struct of `mdl` and `frame` writes
-  `p.mdl` and `p.frame`. This profile writes an element of an array of
-  unions as a struct's, as the model keeps no union apart from a struct, and a member that is an
-  array as one definition. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qccmain.c`, `QCC_WriteData`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DummyDef`.
+- **FTE-13.13** **Withdrawn** 2026-11-22: it wrote a struct's member that is an array as one
+  definition and a member that is a struct with its header, where the pinned FTEQCC writes each
+  element of the one and only the members of the other; replaced by FTE-13.19.
 - **FTE-13.14** A field's definition is written only for a constant field at file level, a
   static one or one initialised (`else if (def->type->type == ev_field && def->constant &&
   (!def->scope || def->isstatic || def->initialized)) { QCC_GenerateFieldDefs(def, def->name, 0,
@@ -526,6 +517,21 @@ that position, and subscripting is not an expression form (QC-7, QC-15).
   `(e.v).y;`, loads the vector first, as FTE-9.3 converts the parenthesised field. The
   warning is FTEF-18.25's. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
   `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DiscardExpression`, `QCC_PR_DiscardRef`.
+- **FTE-13.19** FTEQCC writes no definition for an array's head, only for its elements
+  (`QCC_WriteData`: "the head of an array/struct is never written. only, its member fields
+  are."), each made by `QCC_PR_DummyDef` and named `NAME[i]` (`QC_snprintfz(array,
+  sizeof(array), "[%i]", a);`) at the element's first word, typed as the element: an element of
+  an array of structs as `ev_struct` (14 in `progslib.h`'s `etype_t`), followed by each member's
+  definition, `NAME[i].member`; an element of an array type as FTEF-5.8 says; a vector array's
+  elements have no `_x`, `_y` or `_z`. A struct value, global or local, is written as its
+  members alone, `NAME.member`, a member that is a struct as its own members,
+  `NAME.member.inner`, and a member that is an array as each of its elements,
+  `NAME.member[i]`, with no definition for the member itself. So `string s[2];` writes `s[0]`
+  and `s[1]`, a local `pose p;` of a struct of `mdl` and `frame` writes `p.mdl` and `p.frame`,
+  and a `struct S { float a[2]; } s;` writes `s.a[0]` and `s.a[1]`. This profile writes an
+  element of an array of unions other than an array type as a struct's, as the model keeps no
+  union apart from a struct. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_WriteData`; `engine/qclib/qcc_pr_comp.c`, `QCC_PR_DummyDef`.
 - **FTE-13.17** A subscript by a value as a statement of its own, `arr[i];` (parenthesised or
   not), computes its index (FTE-13.12: `BITAND` for `i & 3`, and `MUL_F` by the element's
   words for a vector array) and calls no getter: the statement's expression is a reference

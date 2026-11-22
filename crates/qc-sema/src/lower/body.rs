@@ -15,8 +15,8 @@ use crate::ty::{SimpleType, Type};
 use super::Cx;
 use super::decl::{
     ArrayDim, LiteralValue, Qualifier, RawAggregate, RawValue, ValueKind, array_dim,
-    declarator_type, lower_array_sizes, lower_initializer_uses, qualifiers_of, raw_aggregate,
-    raw_value,
+    declarator_type, inner_dims, lower_array_sizes, lower_initializer_uses, qualifiers_of,
+    raw_aggregate, raw_value,
 };
 use super::expr::{RawUse, UseKind, lower_expr};
 use super::types::{TypedefScope, typedef_diagnostics};
@@ -124,6 +124,9 @@ pub(crate) struct RawLocal {
     pub literal: Option<LiteralValue>,
     /// The first array dimension, when the declarator has one (FTEF-19.8).
     pub array: Option<ArrayDim>,
+    /// The sizes of the dimensions after the first, which make its type an array type
+    /// (FTEF-5.2).
+    pub inner_dims: Vec<u32>,
     /// A braced initialiser, read against the type (FTEF-19.47).
     pub aggregate: Option<RawAggregate>,
     /// The byte offset where the innermost `for` statement it is defined in ends, after which
@@ -648,6 +651,7 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
             value,
             literal,
             array: array_dim(&declarator, init.as_ref()),
+            inner_dims: inner_dims(&declarator),
             aggregate: raw_aggregate(&declarator, init.as_ref(), cx),
             scope_end: None,
             flags: cx.flags_at(local.syntax().span().start),
