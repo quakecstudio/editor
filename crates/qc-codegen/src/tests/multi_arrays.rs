@@ -234,3 +234,41 @@ fn an_array_types_records_are_its_rows_and_elements() {
         ]
     );
 }
+
+/// The numbers of FTE's opcodes `ops`.
+fn fte_numbers(ops: &[qc_progs::Op]) -> Vec<u32> {
+    ops.iter()
+        .map(|op| u32::try_from(op.number()).unwrap())
+        .collect()
+}
+
+// spec FTEF-31.32: on a target with the opcodes, a struct's member array, of one dimension or
+// two, is the definition's own words from the member's, which its index counts from the
+// definition's start: the address of the struct's first word and the index plus the member's
+// word, each dimension's index checked by its own size
+#[test]
+fn a_member_array_is_indexed_from_its_struct() {
+    use qc_progs::Op::{AddI, Boundcheck, ConvFtoi, Done, Globaladdress, LoadaF, MulI, StorepF};
+    let p = fte_progs(
+        "#pragma target fte\nstruct S { float x; float a[3]; float g[2][2]; };\nS s;\nfloat k;\n\
+         void(float i) f = { s.a[i] = 3; };\n\
+         void(float i, float j) h = { k = s.g[i][j]; };\n",
+    );
+    assert_eq!(
+        ops(&p, "f"),
+        fte_numbers(&[ConvFtoi, Boundcheck, AddI, Globaladdress, StorepF, Done])
+    );
+    let f = body(&p, "f");
+    assert_eq!(f[3].a, global(&p, "s"));
+    assert_eq!(p.globals[usize::try_from(f[2].a).unwrap()].bits(), 1);
+    assert_eq!(
+        ops(&p, "h"),
+        fte_numbers(&[
+            ConvFtoi, Boundcheck, MulI, AddI, ConvFtoi, Boundcheck, AddI, LoadaF, Done
+        ])
+    );
+    let h = body(&p, "h");
+    assert_eq!((h[1].b, h[5].b), (2, 2));
+    assert_eq!(p.globals[usize::try_from(h[3].a).unwrap()].bits(), 4);
+    assert_eq!(h[7].a, global(&p, "s"));
+}
