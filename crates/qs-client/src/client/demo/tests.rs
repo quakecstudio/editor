@@ -320,6 +320,8 @@ fn a_playing_demos_view_turns_between_its_messages() {
     let bytes = file.0.borrow().clone();
     let mut demo = Demo::open(bytes).unwrap();
     let mut playing = client();
+    // The forward key held, which starts the pitch drifting in a game, turns no demo's view.
+    playing.set_forwardmove(400.0);
     let mut frame = |frametime: f32, pace: DemoPace| {
         playing
             .demo_frame(frametime, &mut demo, pace, &mut TestModels, &mut NoRandom)
@@ -699,4 +701,59 @@ fn a_recorder_shows_what_it_holds() {
         format!("{recorder:?}"),
         "DemoRecorder { head: 2, recording: true }"
     );
+}
+
+// spec CLIENT-10.8: a frame that reads a serverinfo says the map of the level it begins and
+// where the message that holds it starts, and a demo sent back there reads it again; sent
+// past its end it is at its end
+#[test]
+fn a_frame_says_the_level_a_serverinfo_begins() {
+    let frames = game(Protocol::NETQUAKE, 4);
+    let file = File::default();
+    let mut recorder = DemoRecorder::new();
+    recorder
+        .record(Box::new(file.clone()), DemoTrack::None, None)
+        .unwrap();
+    live(&frames, &mut recorder, &mut client(), 0);
+    let mut demo = Demo::open(file.0.borrow().clone()).unwrap();
+    let start = demo.position();
+    assert_eq!(start, 3, "after the header's line");
+    let play = |demo: &mut Demo| {
+        client()
+            .demo_frame(FRAME, demo, DemoPace::Timed, &mut TestModels, &mut NoRandom)
+            .unwrap()
+    };
+    let first = play(&mut demo);
+    assert_eq!(first.level, Some(("test".to_owned(), start)));
+    assert!(demo.position() > start);
+    // A frame that reads no serverinfo begins no level.
+    let mut playing = client();
+    let mut again = Demo::open(file.0.borrow().clone()).unwrap();
+    for _ in 0..2 {
+        playing
+            .demo_frame(
+                FRAME,
+                &mut again,
+                DemoPace::EveryFrame,
+                &mut TestModels,
+                &mut NoRandom,
+            )
+            .unwrap();
+    }
+    let later = playing
+        .demo_frame(
+            FRAME,
+            &mut again,
+            DemoPace::EveryFrame,
+            &mut TestModels,
+            &mut NoRandom,
+        )
+        .unwrap();
+    assert_eq!((later.read, later.level), (1, None));
+    // Sent back, the demo gives a fresh client the level again; past its end it is at it.
+    demo.seek(start);
+    assert_eq!(play(&mut demo).level, Some(("test".to_owned(), start)));
+    demo.seek(usize::MAX);
+    assert_eq!(demo.position(), file.0.borrow().len());
+    assert_eq!(demo.next_message(), Err(DemoError::Read));
 }

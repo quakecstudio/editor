@@ -34,7 +34,7 @@ use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
 use crate::contents::contents_at;
-use crate::demos::{DemoHost, Demos};
+use crate::demos::{DemoHost, Demos, Started};
 use crate::game::{Eye, Game, PendingSwap, Placement, Screen};
 use crate::keys::{
     MouseLook, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
@@ -200,6 +200,7 @@ impl Viewer {
             describer,
             rand,
             printed,
+            demos,
         } = loaded;
         // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
         // map's first frame printed (CLIENT-1.7).
@@ -257,7 +258,7 @@ impl Viewer {
             audio,
             bridge,
             client,
-            demos: Demos::new(),
+            demos,
             bsp,
             describer,
             rand,
@@ -476,7 +477,7 @@ impl Viewer {
         if let Some(action) = self.game.host_action() {
             match self
                 .args
-                .act(&mut self.game, action, (&mut self.demos, &self.client))
+                .act(&mut self.game, action, (&mut self.demos, &mut self.client))
             {
                 Acted::Load(loaded) => {
                     self.change_level(*loaded);
@@ -694,6 +695,8 @@ impl Viewer {
             describer,
             rand,
             printed,
+            // The host keeps the demos it had: one may be recording or playing.
+            demos: _,
         } = loaded;
         let realtime = self.started.elapsed().as_secs_f64();
         for text in &printed {
@@ -1164,8 +1167,9 @@ impl Viewer {
         self.audio.set_music_volume(read.music);
     }
 
-    /// Runs a demo command the console met (CLIENT-10).
-    fn demo_command(&mut self, command: &ClientCommand) {
+    /// Runs a demo command the console met (CLIENT-10); where the keys go after it: to the
+    /// game when a demo started, "get rid of the menu and/or console", else where they went.
+    fn demo_command(&mut self, command: &ClientCommand) -> KeyDest {
         let describer = &self.describer;
         let mut host = DemoHost {
             args: &self.args,
@@ -1173,7 +1177,10 @@ impl Viewer {
             client: &mut self.client,
             read: &|name| describer.read(name),
         };
-        self.demos.command(command, &mut host);
+        match self.demos.command(command, &mut host) {
+            Started::Demo => KeyDest::Game,
+            Started::Nothing => self.dest,
+        }
     }
 
     /// The client's commands the console met, run in order (CON-6.1).
@@ -1227,17 +1234,10 @@ impl Viewer {
                 ClientCommand::Record(_)
                 | ClientCommand::StopDemo
                 | ClientCommand::StartDemos(_)
-                | ClientCommand::StopPlayback => {
-                    self.demo_command(&command);
-                    self.dest
-                }
-                // "get rid of the menu and/or console".
-                ClientCommand::PlayDemo(_)
+                | ClientCommand::StopPlayback
+                | ClientCommand::PlayDemo(_)
                 | ClientCommand::TimeDemo(_)
-                | ClientCommand::DemoLoop => {
-                    self.demo_command(&command);
-                    KeyDest::Game
-                }
+                | ClientCommand::DemoLoop => self.demo_command(&command),
                 ClientCommand::Press(button, key) => {
                     let printed = self.input.press(button, key);
                     self.print_line(printed);

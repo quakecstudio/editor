@@ -187,6 +187,18 @@ impl Demo {
         })
     }
 
+    /// Where the next message starts, for [`Demo::seek`].
+    #[must_use]
+    pub const fn position(&self) -> usize {
+        self.at
+    }
+
+    /// Goes back to `position`, one [`Demo::position`] gave: the message there is read
+    /// next, again.
+    pub fn seek(&mut self, position: usize) {
+        self.at = position.min(self.bytes.len());
+    }
+
     /// The CD track the demo forces, or [`DEMO_NO_TRACK`].
     #[must_use]
     pub const fn forcetrack(&self) -> i32 {
@@ -266,9 +278,16 @@ impl Demo {
         drop(reader.string());
         let world = reader.string();
         let world = String::from_utf8(world).ok()?;
-        let map = world.strip_prefix("maps/")?.strip_suffix(".bsp")?;
-        (!map.is_empty()).then(|| map.to_owned())
+        map_of(&world).map(str::to_owned)
     }
+}
+
+/// The map a world model `maps/<map>.bsp` is of.
+fn map_of(world: &str) -> Option<&str> {
+    world
+        .strip_prefix("maps/")?
+        .strip_suffix(".bsp")
+        .filter(|map| !map.is_empty())
 }
 
 /// What `record` was given for the CD track: none, or a track to force.
@@ -449,6 +468,10 @@ pub struct DemoFrame {
     pub events: Vec<Event>,
     /// How many messages it read.
     pub read: usize,
+    /// The last level a serverinfo it read began: the map, and where in the demo the
+    /// message that holds the serverinfo starts, for a host that must load the map and read
+    /// the message again (CLIENT-10.8).
+    pub level: Option<(String, usize)>,
     /// Whether the demo goes on.
     pub state: DemoState,
 }
@@ -589,6 +612,7 @@ impl Client {
         self.advance(frametime);
         let mut events = Vec::new();
         let mut read = 0_usize;
+        let mut level = None;
         let mut state = DemoState::Playing;
         loop {
             // CLIENT-10.10: "`if (cls.demopaused) return 0;`".
@@ -605,6 +629,7 @@ impl Client {
                     break;
                 }
             }
+            let start = demo.position();
             let Some(message) = demo.next_message().map_err(DemoFrameError::Demo)? else {
                 state = DemoState::Ended;
                 break;
@@ -617,9 +642,15 @@ impl Client {
             self.read_message(message.data, models, rand, &mut events)
                 .map_err(DemoFrameError::Parse)?;
             read = read.saturating_add(1);
-            let disconnected = events
-                .get(before..)
-                .is_some_and(|new| new.contains(&Event::Disconnect));
+            let new = events.get(before..).unwrap_or_default();
+            for event in new {
+                if let Event::NewMap { models, .. } = event
+                    && let Some(map) = models.first().and_then(|world| map_of(world))
+                {
+                    level = Some((map.to_owned(), start));
+                }
+            }
+            let disconnected = new.contains(&Event::Disconnect);
             if disconnected {
                 state = DemoState::Ended;
                 break;
@@ -632,6 +663,7 @@ impl Client {
         Ok(DemoFrame {
             events,
             read,
+            level,
             state,
         })
     }

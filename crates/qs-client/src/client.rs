@@ -1223,10 +1223,17 @@ impl Client {
         let Some(entity) = self.entities.get(self.viewentity).copied() else {
             return Refdef::default();
         };
+        // CLIENT-10.7: "`if (noclip_anglehack || !cl.onground || cls.demoplayback )`": while a
+        // demo plays the pitch drifts no more than in the air, and the drift is forgotten.
+        let footing = if self.playback.is_some() {
+            Footing::InAir
+        } else {
+            self.onground
+        };
         self.view.drift_pitch(
             self.time,
             self.time - self.oldtime,
-            self.onground,
+            footing,
             self.forwardmove,
             self.idealpitch,
             &mut self.viewangles,

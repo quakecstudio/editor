@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use qs_client::{Client, DemoFrameError, Event, ModelInfo, Models, Random};
 
-use super::{Connection, DemoHost, Demos, with_extension};
+use super::{Connection, DemoHost, Demos, Level, Showing, Started, with_extension};
 use crate::args::Args;
 use crate::game::tests::game_with;
 use crate::game::{Game, HostAction};
@@ -68,6 +68,8 @@ struct Host {
     game: Game,
     client: Client,
     demos: Demos,
+    /// Whether each demo command of the last line said started a demo.
+    started: Vec<Started>,
 }
 
 impl Host {
@@ -91,6 +93,7 @@ impl Host {
             game,
             client: Client::new(qs_client::Game::Standard),
             demos: Demos::new(),
+            started: Vec::new(),
         }
     }
 
@@ -111,6 +114,7 @@ impl Host {
         self.game.world_mut().console(&format!("{line}\n"));
         self.game.frame(FRAME);
         let dir = self.root.0.join("id1");
+        self.started.clear();
         for command in self.game.world_mut().take_client_commands() {
             let mut host = DemoHost {
                 args: &self.args,
@@ -118,7 +122,8 @@ impl Host {
                 client: &mut self.client,
                 read: &|name| std::fs::read(dir.join(name)).ok(),
             };
-            self.demos.command(&command, &mut host);
+            let started = self.demos.command(&command, &mut host);
+            self.started.push(started);
         }
         self.printed()
     }
@@ -248,8 +253,9 @@ fn record_stops_the_last_and_reports_a_file_it_cannot_make() {
 }
 
 // spec CLIENT-10.3: `record <name> <map> <track>` says the track forced before, starts the
-// map as a new game and records it from its first message with the track in the header; a
-// map that does not load leaves no file.
+// map as a new game and records it from its first message with the track in the header,
+// beside its name until the map has loaded; a map that does not load records nothing and
+// leaves a demo of that name as it was.
 #[test]
 fn record_with_a_map_starts_the_map_and_records_it() {
     let mut host = Host::connected("map");
@@ -264,18 +270,27 @@ fn record_with_a_map_starts_the_map_and_records_it() {
         [format!("recording to {}.\n", path.display())]
     );
     assert!(host.demos.recorder.recording());
+    let beside = host.root.file("run.dem.loading");
+    assert!(beside.exists() && !path.exists());
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     assert!(host.demos.recorder.recording());
+    assert!(path.exists() && !beside.exists());
     host.say("stop");
     assert!(std::fs::read(&path).unwrap().starts_with(b"3\n"));
     // The track forced is the one the next `record` names as the one before.
     assert_eq!(host.say("record run test 4"), ["Forcing CD track to 3\n"]);
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
-    host.demos.after_level(None, &mut host.game);
+    host.demos
+        .after_level(Level::Stayed(&mut host.client), &mut host.game);
     assert!(!host.demos.recorder.recording());
-    assert!(!path.exists());
+    assert!(!beside.exists());
+    assert!(
+        std::fs::read(&path).unwrap().starts_with(b"3\n"),
+        "the demo there was is as it was"
+    );
+    assert!(host.demos.waiting.is_none());
 }
 
 // spec CLIENT-10.3: a new game ends a demo being recorded, and the next level of the game
@@ -287,7 +302,7 @@ fn a_new_game_ends_a_recording_and_the_next_level_keeps_it() {
     host.demos
         .before_level(Connection::Changed, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     assert!(host.demos.recorder.recording());
     assert_eq!(host.printed(), Vec::<String>::new());
     host.demos
@@ -354,7 +369,7 @@ fn a_demo_plays_over_its_map_and_the_last_map_comes_back() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     assert!(host.demos.playing());
     assert_eq!(host.client.signon(), 0);
     assert_eq!(
@@ -381,7 +396,8 @@ fn a_demo_whose_map_does_not_load_is_over() {
     host.say("playdemo run");
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
-    host.demos.after_level(None, &mut host.game);
+    host.demos
+        .after_level(Level::Stayed(&mut host.client), &mut host.game);
     assert!(!host.demos.playing());
     assert_eq!(host.printed(), ["ERROR: the demo's map did not load\n"]);
 }
@@ -396,7 +412,7 @@ fn timedemo_says_its_speed() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     let mut realtime = 10.0;
     let mut frames = 0;
     while host.demos.playing() {
@@ -418,7 +434,7 @@ fn timedemo_in_no_time_took_a_second() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     while host.demos.playing() {
         host.frame(7.0).unwrap();
     }
@@ -439,7 +455,7 @@ fn a_demo_cut_short_stops() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     let mut frames = 0;
     while host.demos.playing() {
         host.frame(0.0).unwrap();
@@ -467,7 +483,7 @@ fn a_demo_with_a_message_too_long_stops_with_the_error() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     let mut failed = None;
     for _ in 0..100 {
         if !host.demos.playing() {
@@ -496,7 +512,7 @@ fn pause_holds_a_playing_demo() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     host.frame(0.0).unwrap();
     let time = host.game.world().time();
 
@@ -533,7 +549,7 @@ fn a_map_started_while_a_demo_plays_stops_it() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     host.frame(0.0).unwrap();
     host.game.world_mut().console("map test\n");
     Demos::console_frame(&mut host.game, &mut host.client);
@@ -543,7 +559,19 @@ fn a_map_started_while_a_demo_plays_stops_it() {
     ));
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
+    // A map that does not load leaves the demo playing, with its client.
+    host.demos
+        .after_level(Level::Stayed(&mut host.client), &mut host.game);
+    assert!(host.demos.playing());
+    assert!(host.client.demo_playing());
+    assert_eq!(host.demos.showing, Showing::Demo);
+    // One that loads is the game's: the demo is over.
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    host.demos
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     assert!(!host.demos.playing());
+    assert_eq!(host.demos.showing, Showing::Game);
 }
 
 // spec CLIENT-10.6: while a demo plays `restart` does nothing and `changelevel` says only
@@ -560,7 +588,7 @@ fn no_level_follows_the_one_a_demo_plays_over() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     host.printed();
     assert!(host.demos.refuses(Connection::Restarted, &mut host.game));
     assert_eq!(host.printed(), Vec::<String>::new());
@@ -616,7 +644,7 @@ fn a_demo_that_does_not_start_goes_back_to_the_map_before() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     host.demos
-        .after_level(Some(&mut host.client), &mut host.game);
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     // As when the first demo was started from another map than its own.
     host.demos.playing.as_mut().unwrap().back = "elsewhere".to_owned();
     host.game.world_mut().console("playdemo none\n");
@@ -652,7 +680,7 @@ impl Host {
         self.demos
             .before_level(Connection::New, &mut self.game, &self.client);
         self.demos
-            .after_level(Some(&mut self.client), &mut self.game);
+            .after_level(Level::Loaded(&mut self.client), &mut self.game);
         assert!(self.demos.playing());
     }
 
@@ -755,6 +783,8 @@ fn what_ends_the_loop() {
     host.demos
         .before_level(Connection::New, &mut host.game, &host.client);
     assert_eq!(host.demos.next, None);
+    host.demos
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
     assert!(!host.demos.playing());
 }
 
@@ -774,4 +804,151 @@ fn stopdemo_stops_a_playing_demo() {
     assert!(!host.demos.playing());
     assert!(!host.client.demo_playing());
     assert_eq!(host.asked(), Some(("test".to_owned(), Connection::New)));
+}
+
+// spec CLIENT-10.8: a demo that does not start in the place of one playing, or whose map
+// does not load, leaves the demo's map: its client stops playing and the map played before
+// starts again, though it has the demo's own name; one that fails over a game leaves the
+// game alone
+#[test]
+fn a_demo_that_fails_over_a_demo_leaves_it() {
+    let mut host = Host::connected("fails");
+    // Over a game: nothing is asked of the host, and the game's connection is still kept
+    // for a recording.
+    host.say("playdemo none");
+    assert_eq!(host.started, [Started::Nothing]);
+    assert_eq!(host.asked(), None);
+
+    host.recorded("run", 6);
+    host.say("playdemo run");
+    assert_eq!(host.started, [Started::Demo]);
+    host.starts_playing();
+    host.frame(0.0).unwrap();
+    assert!(host.client.demo_playing());
+    host.game.world_mut().console("playdemo none\n");
+    Demos::console_frame(&mut host.game, &mut host.client);
+    let commands = host.game.world_mut().take_client_commands();
+    for command in commands {
+        let mut demo_host = DemoHost {
+            args: &host.args,
+            game: &mut host.game,
+            client: &mut host.client,
+            read: &|_| None,
+        };
+        assert_eq!(
+            host.demos.command(&command, &mut demo_host),
+            Started::Nothing
+        );
+    }
+    assert!(!host.demos.playing());
+    assert!(!host.client.demo_playing());
+    assert_eq!(host.asked(), Some(("test".to_owned(), Connection::New)));
+
+    // The next demo's map does not load while the last demo's is shown.
+    let mut host = Host::connected("fails-load");
+    host.recorded("run", 2);
+    host.say("playdemo run");
+    host.starts_playing();
+    host.frame(0.0).unwrap();
+    host.say("playdemo run");
+    host.asked();
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    host.demos
+        .after_level(Level::Stayed(&mut host.client), &mut host.game);
+    assert_eq!(host.printed(), ["ERROR: the demo's map did not load\n"]);
+    assert!(!host.demos.playing());
+    assert!(!host.client.demo_playing());
+    assert_eq!(host.asked(), Some(("test".to_owned(), Connection::New)));
+}
+
+// spec CLIENT-10.8: a demo that goes on to a level of another map has that map loaded, and
+// reads the level again from its serverinfo with the client the map is given
+#[test]
+fn a_demo_that_changes_level_has_the_next_map_loaded() {
+    let mut host = Host::connected("levels-in");
+    host.recorded("run", 3);
+    // The demo's level is of another map than the one the host can load here.
+    let path = host.root.file("run.dem");
+    let bytes = std::fs::read(&path).unwrap();
+    let at = bytes
+        .windows(13)
+        .position(|window| window == b"maps/test.bsp")
+        .unwrap();
+    let mut other = bytes;
+    other[at..at + 13].copy_from_slice(b"maps/tesu.bsp");
+    std::fs::write(&path, other).unwrap();
+    host.say("playdemo run");
+    assert_eq!(host.asked(), Some(("tesu".to_owned(), Connection::New)));
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    // The host's world is still `test`, as when a level of the demo names another map.
+    host.demos
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
+    assert!(host.demos.playing());
+    assert_eq!(host.frame(0.0).unwrap(), Vec::new());
+    assert!(!host.demos.playing(), "the map is loading");
+    assert_eq!(host.asked(), Some(("tesu".to_owned(), Connection::New)));
+    // The level is read again from its serverinfo.
+    let playing = host.demos.playing.as_ref().unwrap();
+    assert_eq!(playing.demo.map().as_deref(), Some("tesu"));
+    assert_eq!(playing.demo.position(), 3);
+}
+
+// spec CLIENT-10.6: while the game is paused a playing demo stands still
+#[test]
+fn a_paused_game_holds_a_playing_demo() {
+    let mut host = Host::connected("paused");
+    host.recorded("run", 3);
+    host.say("timedemo run");
+    host.starts_playing();
+    host.frame(0.0).unwrap();
+    host.game.start_paused();
+    for _ in 0..40 {
+        assert!(host.frame(0.0).unwrap().is_empty());
+    }
+    assert!(host.demos.playing());
+}
+
+// spec CLIENT-10.1: the CD track a demo being recorded or played forces is the one played,
+// in the place of the level's own
+#[test]
+fn a_forced_track_is_the_one_played() {
+    let track = |events: &[Event]| -> Vec<i32> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                Event::CdTrack { track, .. } => Some(*track),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut host = Host::new("track");
+    host.say("record run test 5");
+    host.asked();
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    let events = host.frame(0.0).unwrap();
+    assert_eq!(track(&events), [5], "recording");
+    host.demos
+        .after_level(Level::Loaded(&mut host.client), &mut host.game);
+    host.game.frame(FRAME);
+    host.frame(0.0).unwrap();
+    host.say("stop");
+    // Played, the demo's header forces it again.
+    host.say("playdemo run");
+    host.starts_playing();
+    let mut played = Vec::new();
+    while host.demos.playing() {
+        played.extend(track(&host.frame(0.0).unwrap()));
+        assert!(played.len() < 100, "the demo does not end");
+    }
+    assert_eq!(played, [5], "playing");
+
+    // With none forced the level's own is played.
+    let mut host = Host::new("no-track");
+    let events = host.frame(0.0).unwrap();
+    let own = track(&events);
+    assert_eq!(own.len(), 1);
+    assert_ne!(own, [5]);
 }

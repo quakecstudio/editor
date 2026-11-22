@@ -86,7 +86,7 @@ impl Args {
             // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
             world.client_commands(self);
             if let Some(action) = world.game.host_action() {
-                let demos = (&mut world.demos, &world.client);
+                let demos = (&mut world.demos, &mut world.client);
                 match self.act(&mut world.game, action, demos) {
                     Acted::Load(loaded) => {
                         let next = Headless::new(*loaded, offscreen.as_ref());
@@ -415,7 +415,7 @@ impl Headless {
             bsp,
             audio,
             printed,
-            ..
+            demos,
         } = loaded;
         match drawer {
             Some(drawer) => {
@@ -445,7 +445,7 @@ impl Headless {
             audio,
             printed,
             input: Input::new(),
-            demos: Demos::new(),
+            demos,
         }
     }
 

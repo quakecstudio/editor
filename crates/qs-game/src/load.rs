@@ -26,7 +26,7 @@ use crate::AXES;
 use crate::Error;
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
-use crate::demos::{Connection, Demos};
+use crate::demos::{Connection, Demos, Level};
 use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
 use crate::keys::{STARTUP, config_path, host_files};
 use crate::map_bsp::MapBsp;
@@ -123,6 +123,10 @@ pub(crate) struct Loaded {
     /// What the map's first client frame printed for the console: the server's version line,
     /// the divider and the level's name (CLIENT-1.7).
     pub(crate) printed: Vec<Vec<u8>>,
+    /// The demos of a host that starts on this map: their recorder holds the messages of
+    /// its connection, so `record` can start after it (CLIENT-10.2). A host that came here
+    /// from another level keeps the demos it had.
+    pub(crate) demos: Demos,
 }
 
 /// A file of the install by name, `None` when it is not on the search path.
@@ -397,13 +401,27 @@ pub(crate) enum Startup {
 }
 
 impl Args {
+    /// Tells the demos how a level asked for came out (CLIENT-10.8), and gives it back.
+    fn loaded_or_stayed(
+        mut acted: Acted,
+        game: &mut Game,
+        (demos, client): (&mut Demos, &mut Client),
+    ) -> Acted {
+        let level = match &mut acted {
+            Acted::Load(loaded) => Level::Loaded(&mut loaded.client),
+            Acted::Quit | Acted::Stay => Level::Stayed(client),
+        };
+        demos.after_level(level, game);
+        acted
+    }
+
     /// Carries out `action` (PHYS-13.6): a level loaded, the game saved or loaded as
     /// `Host_Savegame_f` and `Host_Loadgame_f` do, or the host stopped.
     pub(crate) fn act(
         &self,
         game: &mut Game,
         action: HostAction,
-        (demos, client): (&mut Demos, &Client),
+        (demos, client): (&mut Demos, &mut Client),
     ) -> Acted {
         match action {
             HostAction::Level(next) => {
@@ -415,15 +433,10 @@ impl Args {
                     debugger,
                     level: next.clone(),
                 });
-                // CLIENT-10.3: a new game ends a demo, and `record`'s map starts its own.
+                // CLIENT-10.3: a new game ends a recording, and `record`'s map starts its own.
                 demos.before_level(next.connection, game, client);
-                let mut acted = self.next_level(next, watched, demos.recorder());
-                let loaded = match &mut acted {
-                    Acted::Load(loaded) => Some(&mut loaded.client),
-                    Acted::Quit | Acted::Stay => None,
-                };
-                demos.after_level(loaded, game);
-                acted
+                let acted = self.next_level(next, watched, demos.recorder());
+                Self::loaded_or_stayed(acted, game, (demos, client))
             }
             HostAction::Spawned(next) => self.next_level(next, None, demos.recorder()),
             HostAction::Save(name) => {
@@ -455,7 +468,7 @@ impl Args {
                 // `Host_Loadgame_f`: "`CL_Disconnect_f ();`" first.
                 demos.before_level(Connection::New, game, client);
                 let recorder = Some(demos.recorder());
-                match self.load_map(
+                let acted = match self.load_map(
                     &save.map,
                     None,
                     Start::Kept(host),
@@ -467,7 +480,8 @@ impl Args {
                         game.console_line(&format!("{error}\n"));
                         Acted::Stay
                     }
-                }
+                };
+                Self::loaded_or_stayed(acted, game, (demos, client))
             }
             HostAction::Quit => Acted::Quit,
         }
@@ -512,7 +526,15 @@ impl Args {
     /// and paused when [`Args::starts_paused`]. A map loaded later, by a level change or a
     /// `map` command, is paused when the game was (`Game::carry_from`).
     pub(crate) fn first_map(&self, startup: Startup) -> Result<Loaded, Error> {
-        let mut loaded = self.load_map(&self.map, None, Start::New(startup), (None, None), None)?;
+        let mut demos = Demos::new();
+        let mut loaded = self.load_map(
+            &self.map,
+            None,
+            Start::New(startup),
+            (None, None),
+            Some(demos.recorder()),
+        )?;
+        loaded.demos = demos;
         if self.starts_paused() {
             loaded.game.start_paused();
         }
@@ -682,6 +704,8 @@ impl Args {
         // CLIENT-10.2: a demo being recorded takes the connection's messages as they are read.
         let events = match recorder {
             Some(recorder) => {
+                // The messages kept for a recording started later are this connection's.
+                recorder.clear_signons();
                 client.frame_recorded(0.0, &packets, recorder, &mut describer, &mut rand)
             }
             None => client.frame(0.0, &packets, &mut describer, &mut rand),
@@ -770,6 +794,7 @@ impl Args {
             rand,
             camera,
             printed,
+            demos: Demos::new(),
         })
     }
 

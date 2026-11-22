@@ -45,6 +45,8 @@ const MAX_DEMO_NAME: usize = 15;
 const LOOP_START: usize = 1;
 /// The command that holds a playing demo.
 const PAUSE: &[u8] = b"pause";
+/// What a recording that waits for its map is written as, after its name.
+const UNLOADED: &str = ".loading";
 /// The extension a demo's name is given when it has another or none.
 const DEMO_EXTENSION: &str = "dem";
 
@@ -61,13 +63,42 @@ pub(crate) enum Connection {
     Restarted,
 }
 
-/// A recording that starts with the map `record` named, once the map has loaded.
+/// A recording that starts with the map `record` named. It is written beside its name
+/// from the map's first message and takes the name once the map has loaded, so a map that
+/// does not load costs no demo already there.
 #[derive(Debug)]
 struct Waiting {
     path: PathBuf,
     track: DemoTrack,
-    /// Whether the file is open and written: from the map's first message.
+    /// Whether the file beside the name is open and written.
     started: bool,
+}
+
+/// Whose world the host has loaded: a game's, or the map a demo plays over, which a demo
+/// that stops must leave.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Showing {
+    /// A game's map, with the game's client.
+    Game,
+    /// A demo's map, with the demo's client.
+    Demo,
+}
+
+/// How a level asked for came out, with the client it left the host.
+pub(crate) enum Level<'a> {
+    /// It loaded: the new level's client.
+    Loaded(&'a mut Client),
+    /// It did not: the client there was.
+    Stayed(&'a mut Client),
+}
+
+/// Whether a demo command started a demo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Started {
+    /// It did: "get rid of the menu and/or console".
+    Demo,
+    /// It did not.
+    Nothing,
 }
 
 /// Where a demo being played is.
@@ -107,6 +138,7 @@ pub(crate) struct Demos {
     next: Option<usize>,
     /// The map to go back to after a loop's demos, kept from one demo to the next.
     resume: Option<String>,
+    showing: Showing,
 }
 
 /// What the demo commands work on.
@@ -131,6 +163,13 @@ fn with_extension(name: &str) -> String {
     }
 }
 
+/// The file a recording that waits for the map of `path` is written as.
+fn unloaded(path: &Path) -> PathBuf {
+    let mut file = path.as_os_str().to_owned();
+    file.push(UNLOADED);
+    PathBuf::from(file)
+}
+
 /// The word `place` of a command, as text.
 fn word(words: &[Vec<u8>], place: usize) -> String {
     words
@@ -149,6 +188,7 @@ impl Demos {
             listed: [const { String::new() }; MAX_DEMOS],
             next: None,
             resume: None,
+            showing: Showing::Game,
         }
     }
 
@@ -181,15 +221,18 @@ impl Demos {
         &mut self.recorder
     }
 
-    /// Runs a demo command the console met; any other client command is not this module's.
-    pub(crate) fn command(&mut self, command: &ClientCommand, host: &mut DemoHost<'_>) {
+    /// Runs a demo command the console met, and says whether it started a demo; any other
+    /// client command is not this module's.
+    pub(crate) fn command(&mut self, command: &ClientCommand, host: &mut DemoHost<'_>) -> Started {
         match command {
             ClientCommand::Record(words) => self.record(words, host),
             ClientCommand::StopDemo => self.stop(host.game, host.client),
-            ClientCommand::PlayDemo(words) => self.play(words, DemoPace::Timed, host),
-            ClientCommand::TimeDemo(words) => self.play(words, DemoPace::EveryFrame, host),
+            ClientCommand::PlayDemo(words) => return self.play(words, DemoPace::Timed, host),
+            ClientCommand::TimeDemo(words) => {
+                return self.play(words, DemoPace::EveryFrame, host);
+            }
             ClientCommand::StartDemos(words) => self.start_demos(words, host.game),
-            ClientCommand::DemoLoop => self.demo_loop(host),
+            ClientCommand::DemoLoop => return self.demo_loop(host),
             ClientCommand::StopPlayback => self.stop_playback(host),
             ClientCommand::ToggleConsole
             | ClientCommand::Clear
@@ -208,6 +251,7 @@ impl Demos {
             | ClientCommand::Press(..)
             | ClientCommand::Release(..) => {}
         }
+        Started::Nothing
     }
 
     /// `CL_Stop_f`.
@@ -275,22 +319,22 @@ impl Demos {
                 host.game.world_mut().console(&format!("map {map}\n"));
             }
             None => {
-                self.open(&path, track, Some(host.client), host.game);
+                self.open((&path, &path), track, Some(host.client), host.game);
             }
         }
     }
 
-    /// Opens the demo file at `path` and starts the recording, from `connected`'s state
-    /// when the client is; whether it started.
+    /// Opens the demo file `file`, said as `path`, and starts the recording, from
+    /// `connected`'s state when the client is; whether it started.
     fn open(
         &mut self,
-        path: &Path,
+        (path, file): (&Path, &Path),
         track: DemoTrack,
         connected: Option<&Client>,
         game: &mut Game,
     ) -> bool {
         game.console_line(&format!("recording to {}.\n", path.display()));
-        let opened = std::fs::File::create(path)
+        let opened = std::fs::File::create(file)
             .and_then(|file| self.recorder.record(Box::new(file), track, connected));
         match opened {
             Ok(()) => {
@@ -310,13 +354,13 @@ impl Demos {
     /// `CL_PlayDemo_f`, and `CL_TimeDemo_f` at the pace of every frame.
     ///
     /// Implements CLIENT-10.8 and CLIENT-10.9.
-    fn play(&mut self, words: &[Vec<u8>], pace: DemoPace, host: &mut DemoHost<'_>) {
+    fn play(&mut self, words: &[Vec<u8>], pace: DemoPace, host: &mut DemoHost<'_>) -> Started {
         if words.len() != PLAY_WORDS {
             host.game.console_line(match pace {
                 DemoPace::Timed => "playdemo <demoname> : plays a demo\n",
                 DemoPace::EveryFrame => "timedemo <demoname> : gets demo speeds\n",
             });
-            return;
+            return Started::Nothing;
         }
         // "disconnect from server": a demo being played stops, one being recorded ends.
         // The map to go back to is the one before the first of a loop's demos.
@@ -330,35 +374,30 @@ impl Demos {
                 host.game.world().map().to_owned()
             }
         };
-        self.recorder.clear_signons();
+        // The messages kept for a recording are forgotten when the demo's map loads
+        // (`Args::load_map`): a demo that does not start leaves the game connected.
         let name = with_extension(&word(words, 1));
         host.game
             .console_line(&format!("Playing demo from {name}.\n"));
-        let Some(bytes) = (host.read)(&name) else {
-            host.game
-                .console_line(&format!("ERROR: couldn't open {name}\n"));
-            // "stop demo loop".
-            self.next = None;
-            self.back_to(&back, host.game);
-            return;
+        let said = match (host.read)(&name).map(Demo::open) {
+            None => Err(format!("ERROR: couldn't open {name}\n")),
+            Some(Err(DemoError::Invalid | DemoError::Read | DemoError::TooLong)) => {
+                Err(format!("ERROR: demo \"{name}\" is invalid\n"))
+            }
+            Some(Ok(demo)) => match demo.map() {
+                Some(map) => Ok((demo, map)),
+                None => Err(format!("ERROR: demo \"{name}\" names no map\n")),
+            },
         };
-        let demo = match Demo::open(bytes) {
-            Ok(demo) => demo,
-            Err(DemoError::Invalid | DemoError::Read | DemoError::TooLong) => {
-                host.game
-                    .console_line(&format!("ERROR: demo \"{name}\" is invalid\n"));
+        let (demo, map) = match said {
+            Ok(found) => found,
+            Err(error) => {
+                host.game.console_line(&error);
                 // "stop demo loop".
                 self.next = None;
-                self.back_to(&back, host.game);
-                return;
+                self.leave(&back, host.client, host.game);
+                return Started::Nothing;
             }
-        };
-        let Some(map) = demo.map() else {
-            host.game
-                .console_line(&format!("ERROR: demo \"{name}\" names no map\n"));
-            self.next = None;
-            self.back_to(&back, host.game);
-            return;
         };
         self.forcetrack = demo.forcetrack();
         self.playing = Some(Playing {
@@ -370,6 +409,7 @@ impl Demos {
             second: None,
         });
         host.game.world_mut().console(&format!("map {map}\n"));
+        Started::Demo
     }
 
     /// Whether a level asked for is refused because a demo plays: `restart` does nothing,
@@ -391,18 +431,21 @@ impl Demos {
         }
     }
 
-    /// Starts the map `back` again when it is not the one being played: where a demo that
-    /// stopped another, and then did not start, leaves the host.
-    fn back_to(&self, back: &str, game: &mut Game) {
-        if game.world().map() != back {
+    /// Where every demo that stops leaves the host: when the world loaded is a demo's, its
+    /// client stops playing and the map `back`, played before the demos, starts again; a
+    /// game's world, which a demo that never started left alone, goes on.
+    fn leave(&self, back: &str, client: &mut Client, game: &mut Game) {
+        if self.showing == Showing::Demo {
+            client.stop_playback();
             game.world_mut().console(&format!("map {back}\n"));
         }
     }
 
-    /// What a level about to load does to the demos: a new game disconnects the client
-    /// first, which stops a demo being played and ends one being recorded, and the
-    /// recording `record` asked for with its map starts with the map; the next level of a
-    /// game goes on being recorded. The messages kept for a later recording are forgotten.
+    /// What a level about to load does to the demos. A new game disconnects the client
+    /// first, which ends a demo being recorded and stops the demo loop ("stop demo loop in
+    /// case this fails"); the recording `record` asked for with its map starts with the
+    /// map; the next level of a game goes on being recorded. A demo being played is left
+    /// until the level is known to have loaded ([`Demos::after_level`]).
     pub(crate) fn before_level(
         &mut self,
         connection: Connection,
@@ -414,68 +457,108 @@ impl Demos {
             .as_ref()
             .is_some_and(|playing| playing.stage == Stage::Loading);
         if connection == Connection::New && !loading {
-            // `Host_Map_f`: "stop demo loop in case this fails".
             self.next = None;
-            self.resume = None;
-            self.playing = None;
             if self.recorder.recording() {
                 self.stop(game, client);
             }
         }
-        self.recorder.clear_signons();
         if let Some(waiting) = self.waiting.take() {
-            let started = self.open(&waiting.path, waiting.track, None, game);
+            let file = unloaded(&waiting.path);
+            let started = self.open((&waiting.path, &file), waiting.track, None, game);
             if started {
                 self.waiting = Some(Waiting { started, ..waiting });
             }
         }
     }
 
-    /// What a level that loaded, or did not, does to the demos. A recording that waited
-    /// for the map is recording it, or with no map is not, its file removed: "`if (cls.state
-    /// != ca_connected) return;`". A demo whose map loaded plays, its client `fresh`, in the
-    /// place of the one the map's own server connected; one whose map did not is over.
-    pub(crate) fn after_level(&mut self, loaded: Option<&mut Client>, game: &mut Game) {
+    /// What a level that loaded, or did not, does to the demos.
+    ///
+    /// A recording that waited for the map takes its name when the map loaded, and with no
+    /// map is not made: "`if (cls.state != ca_connected) return;`". A demo whose map loaded
+    /// plays, with a client of its own in the place of the one the map's server connected;
+    /// one whose map did not is over, and leaves. A demo that was playing when another
+    /// level loaded is over, the level the game's; when that level did not load it plays
+    /// on.
+    pub(crate) fn after_level(&mut self, level: Level<'_>, game: &mut Game) {
         if let Some(waiting) = self.waiting.take()
-            && loaded.is_none()
             && waiting.started
         {
-            // No client read the map: the recording ends with no view to say.
-            if let Err(error) = self.recorder.stop(qs_client::DEMO_NO_ANGLES) {
-                tracing::debug!(%error, "the demo of a map that did not load");
-            }
-            if let Err(error) = std::fs::remove_file(&waiting.path) {
-                tracing::warn!(%error, "the demo of a map that did not load was not removed");
+            let file = unloaded(&waiting.path);
+            let kept = match &level {
+                Level::Loaded(_) => std::fs::rename(&file, &waiting.path),
+                Level::Stayed(_) => {
+                    // No client read the map: the recording ends with no view to say.
+                    if let Err(error) = self.recorder.stop(qs_client::DEMO_NO_ANGLES) {
+                        tracing::debug!(%error, "the demo of a map that did not load");
+                    }
+                    std::fs::remove_file(&file)
+                }
+            };
+            if let Err(error) = kept {
+                tracing::warn!(%error, file = %file.display(), "the demo beside its name");
             }
         }
-        let Some(playing) = self.playing.as_mut() else {
-            return;
-        };
-        if playing.stage != Stage::Loading {
-            return;
-        }
-        match loaded {
-            Some(client) => {
+        let stage = self.playing.as_ref().map(|playing| playing.stage);
+        match (stage, level) {
+            (Some(Stage::Loading), Level::Loaded(client)) => {
                 *client = Client::new(qs_client::Game::Standard);
-                playing.stage = Stage::Playing;
+                if let Some(playing) = self.playing.as_mut() {
+                    playing.stage = Stage::Playing;
+                }
+                self.showing = Showing::Demo;
             }
-            None => {
+            (Some(Stage::Loading), Level::Stayed(client)) => {
                 game.console_line("ERROR: the demo's map did not load\n");
-                self.playing = None;
+                self.next = None;
+                if let Some(playing) = self.playing.take() {
+                    self.leave(&playing.back, client, game);
+                }
             }
+            (Some(Stage::Playing) | None, Level::Loaded(_)) => {
+                self.playing = None;
+                self.resume = None;
+                self.showing = Showing::Game;
+            }
+            (Some(Stage::Playing) | None, Level::Stayed(_)) => {}
         }
     }
 
     /// The client's frame: the playing demo's messages in the place of the server's
     /// `packets`, or the packets, each recorded as it is read. A demo that ends, or does
     /// not read, stops, `timedemo` says its speed by the host's clock `realtime`, and the
-    /// map played before it starts again.
+    /// map played before it starts again. While the game is paused a playing demo stands
+    /// still. A demo that goes on to another level has that level's map loaded before the
+    /// level's messages are read (CLIENT-10.8). The CD track the events name is the one a
+    /// demo being recorded or played forces, when it forces one (CLIENT-10.1).
     ///
     /// # Errors
     ///
     /// [`DemoFrameError`]: a message of the server's or of the demo's that does not read,
     /// or the demo's file.
     pub(crate) fn frame(
+        &mut self,
+        client: &mut Client,
+        (frametime, realtime, packets): (f32, f64, &[Vec<u8>]),
+        (models, rand): (&mut dyn Models, &mut dyn Random),
+        game: &mut Game,
+    ) -> Result<Vec<Event>, DemoFrameError> {
+        let mut events =
+            self.read_frame(client, (frametime, realtime, packets), (models, rand), game)?;
+        // "`if ( (cls.demoplayback || cls.demorecording) && (cls.forcetrack != -1) )
+        // BGM_PlayCDtrack ((byte)cls.forcetrack, true);`".
+        let forced = self.playing.is_some() || self.recorder.recording();
+        if forced && self.forcetrack != qs_client::DEMO_NO_TRACK {
+            for event in &mut events {
+                if let Event::CdTrack { track, .. } = event {
+                    *track = self.forcetrack;
+                }
+            }
+        }
+        Ok(events)
+    }
+
+    /// [`Demos::frame`]'s messages, read.
+    fn read_frame(
         &mut self,
         client: &mut Client,
         (frametime, realtime, packets): (f32, f64, &[Vec<u8>]),
@@ -491,6 +574,13 @@ impl Demos {
                 .frame_recorded(frametime, packets, &mut self.recorder, models, rand)
                 .map_err(DemoFrameError::Parse);
         };
+        // The game paused from the IDE, or at a breakpoint: no time passes and no message is
+        // read, as when the server's own frame does not run.
+        if game.paused() {
+            return client
+                .frame(0.0, &[], models, rand)
+                .map_err(DemoFrameError::Parse);
+        }
         // "if this is the second frame, grab the real td_starttime so the bogus time on
         // the first frame doesn't count".
         if playing.frames == 1 {
@@ -498,14 +588,27 @@ impl Demos {
         }
         playing.frames = playing.frames.saturating_add(1);
         let played = client.demo_frame(frametime, &mut playing.demo, playing.pace, models, rand);
-        let ended = match &played {
-            Ok(frame) => frame.state == DemoState::Ended,
-            Err(_) => true,
+        let frame = match played {
+            Ok(frame) => frame,
+            Err(error) => {
+                self.finish(client, game, realtime);
+                return Err(error);
+            }
         };
-        if ended {
+        // The demo went on to a level of another map: the map is loaded, and the level's
+        // messages are read again from its serverinfo by the client the map is given.
+        if let Some((map, start)) = &frame.level
+            && map != game.world().map()
+        {
+            playing.demo.seek(*start);
+            playing.stage = Stage::Loading;
+            game.world_mut().console(&format!("map {map}\n"));
+            return Ok(Vec::new());
+        }
+        if frame.state == DemoState::Ended {
             self.finish(client, game, realtime);
         }
-        played.map(|frame| frame.events)
+        Ok(frame.events)
     }
 
     /// `CL_StopPlayback`: the demo is over, `timedemo`'s speed is said (`CL_FinishTimeDemo`),
@@ -579,17 +682,20 @@ impl Demos {
     /// on to its next demo, the one playing stopped.
     ///
     /// Implements CLIENT-10.12.
-    fn demo_loop(&mut self, host: &mut DemoHost<'_>) {
+    fn demo_loop(&mut self, host: &mut DemoHost<'_>) -> Started {
         if self.next.is_none() {
             self.next = Some(LOOP_START);
         }
         match self.next_demo(host.game) {
             Some(name) => {
                 let words = [b"playdemo".to_vec(), name.into_bytes()];
-                self.play(&words, DemoPace::Timed, host);
+                self.play(&words, DemoPace::Timed, host)
             }
             // `CL_Disconnect`: a demo being played stops.
-            None => self.stop_playback(host),
+            None => {
+                self.stop_playback(host);
+                Started::Nothing
+            }
         }
     }
 
@@ -601,10 +707,7 @@ impl Demos {
         let Some(playing) = self.playing.take() else {
             return;
         };
-        host.client.stop_playback();
-        host.game
-            .world_mut()
-            .console(&format!("map {}\n", playing.back));
+        self.leave(&playing.back, host.client, host.game);
     }
 }
 
