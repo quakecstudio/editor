@@ -14,7 +14,7 @@ mod session;
 
 pub use base64::{base64, base64_decode};
 pub use framing::{BRIDGE_CONTENT_TYPE, BRIDGE_MAX_CONTENT, FrameError, read_frame, write_frame};
-pub use message::{ErrorCode, Id, Message, RpcError};
+pub use message::{Applied, ErrorCode, Id, Message, RpcError};
 pub use session::{
     Answer, BRIDGE_COMMANDS, BRIDGE_PROTOCOL_VERSION, Capabilities, Host, HostInfo, Reply, Session,
     check_schema, event, is_flagged,

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use interprocess::local_socket::traits::Stream as _;
 use interprocess::local_socket::{GenericFilePath, Stream, ToFsName as _};
 use qs_bridge::{
-    BRIDGE_PROTOCOL_VERSION, ErrorCode, Id, Message, is_flagged, read_frame, write_frame,
+    Applied, BRIDGE_PROTOCOL_VERSION, ErrorCode, Id, Message, is_flagged, read_frame, write_frame,
 };
 use serde_json::{Value, json};
 
@@ -48,6 +48,8 @@ pub enum ClientError {
     Unsupported(String),
     /// No answer came within the time given.
     Timeout,
+    /// The host's answer to the command, named here, is not what the command answers.
+    Unreadable(&'static str),
 }
 
 impl fmt::Display for ClientError {
@@ -62,6 +64,9 @@ impl fmt::Display for ClientError {
                 write!(f, "the preview host does not offer {method}")
             }
             Self::Timeout => f.write_str("the preview host did not answer in time"),
+            Self::Unreadable(method) => {
+                write!(f, "the preview host's answer to {method} does not read")
+            }
         }
     }
 }
@@ -70,7 +75,11 @@ impl std::error::Error for ClientError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
-            Self::Closed | Self::Rpc { .. } | Self::Unsupported(_) | Self::Timeout => None,
+            Self::Closed
+            | Self::Rpc { .. }
+            | Self::Unsupported(_)
+            | Self::Timeout
+            | Self::Unreadable(_) => None,
         }
     }
 }
@@ -467,21 +476,24 @@ impl Client {
             .ok_or_else(|| ClientError::Unsupported("screenshot".to_owned()))
     }
 
-    /// `field/set` (BRIDGE-4.4), `value` a bridge value (BRIDGE-5.1).
+    /// `field/set` (BRIDGE-4.4), `value` a bridge value (BRIDGE-5.1); when the value applies.
     ///
     /// # Errors
     ///
-    /// The request's [`ClientError`].
+    /// The request's [`ClientError`], and [`ClientError::Unreadable`] for an answer that says
+    /// neither `now` nor `on_resume`.
     pub fn set_field(
         &mut self,
         edict: EdictNumber,
         field: &str,
         value: &Value,
-    ) -> Result<Value, ClientError> {
-        self.request(
-            "field/set",
+    ) -> Result<Applied, ClientError> {
+        const METHOD: &str = "field/set";
+        let answer = self.request(
+            METHOD,
             json!({ "edict": edict.index(), "field": field, "value": value }),
-        )
+        )?;
+        Applied::of_result(&answer).ok_or(ClientError::Unreadable(METHOD))
     }
 
     /// `pick` (BRIDGE-4.9): `x` and `y` fractions of the window from its top left.
@@ -713,8 +725,17 @@ fn read_messages(read: impl Read, sender: &Sender<Option<Message>>) {
     let mut reader = BufReader::new(read);
     loop {
         let message = match read_frame(&mut reader) {
-            Ok(Some(content)) => Message::parse(&content).ok(),
-            Ok(None) | Err(_) => None,
+            Ok(Some(content)) => Message::parse(&content)
+                .inspect_err(|answer| {
+                    tracing::warn!(?answer, "the host sent a message that does not read");
+                })
+                .ok(),
+            Ok(None) => None,
+            // A host stopped or killed often ends its connection with a reset, not an end.
+            Err(error) => {
+                tracing::debug!(%error, "the host's connection ended");
+                None
+            }
         };
         let closed = message.is_none();
         if sender.send(message).is_err() || closed {

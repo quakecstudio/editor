@@ -55,7 +55,7 @@ use qs_workbench::{
     RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
     TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, Workbench,
 };
-use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
+use qs_workbench::{FieldSet, SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
 use crate::about::{self, AboutWindow};
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
@@ -1856,9 +1856,9 @@ impl Shell {
             EntityAction::Select(edict) => {
                 self.run::<_, SelectedEntity>(SELECT, &SelectParams { edict })
             }
-            EntityAction::SetField { field, value } => {
-                self.run::<_, SelectedEntity>(SET_FIELD, &SetFieldParams { field, value })
-            }
+            EntityAction::SetField { field, value } => self
+                .run::<_, FieldSet>(SET_FIELD, &SetFieldParams { field, value })
+                .map(|set| set.entity),
             EntityAction::Open(name) => {
                 let place = self
                     .session

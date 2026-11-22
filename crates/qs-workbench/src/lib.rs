@@ -73,10 +73,11 @@ pub use crate::preview::{
     dock, engine, game_files, scenario,
 };
 pub use crate::preview::{
-    CHOOSE_GAME, ChooseGameParams, ConsoleLine, GAME, GameStart, HasPreview, OnLoss, PAUSE, PICK,
-    PLAY, POLL, PickParams, PlayParams, PlayState, Preview, PreviewConfig, PreviewError,
-    PreviewStatus, RELOAD, RESTART, RESUME, ReloadParams, SELECT, SET_FIELD, STEP, STOP,
-    SelectParams, SelectedEntity, SendLive, SetFieldParams, entities, register_preview,
+    CHOOSE_GAME, ChooseGameParams, ConsoleLine, FieldSet, GAME, GameStart, HasPreview, HeldEdit,
+    OnLoss, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState, Preview, PreviewConfig,
+    PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, ReloadParams, SELECT, SET_FIELD, STEP,
+    STOP, SelectParams, SelectedEntity, SendLive, SetFieldParams, Stopped, entities,
+    register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 pub use crate::staged::{
