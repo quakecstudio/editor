@@ -335,7 +335,7 @@ struct Loaded {
 impl Loaded {
     /// The model at `path`.
     fn read(path: &Path) -> Result<Self, ModelError> {
-        let bytes = std::fs::read(path).map_err(|error| ModelError::Read {
+        let bytes = qs_paths::read_regular_file(path).map_err(|error| ModelError::Read {
             path: path.to_path_buf(),
             error,
         })?;
@@ -737,10 +737,11 @@ impl<C: HasWorkbench + HasMap + 'static> Command<C> for ModelSetSkin {
         params: SetSkinParams,
     ) -> Result<Outcome<ModelWritten, C>, ModelError> {
         let palette = palette(context)?;
-        let png = std::fs::read(&params.png_path).map_err(|error| ModelError::Read {
-            path: params.png_path.clone(),
-            error,
-        })?;
+        let png =
+            qs_paths::read_regular_file(&params.png_path).map_err(|error| ModelError::Read {
+                path: params.png_path.clone(),
+                error,
+            })?;
         let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
             .map_err(ModelError::Image)?
             .into_rgba8();
@@ -1228,7 +1229,7 @@ impl ImportParams {
         let ending = source
             .extension()
             .map(|ending| ending.to_string_lossy().to_ascii_lowercase());
-        let text = std::fs::read(source).map_err(|error| ModelError::Read {
+        let text = qs_paths::read_regular_file(source).map_err(|error| ModelError::Read {
             path: source.clone(),
             error,
         })?;
@@ -1248,9 +1249,11 @@ impl ImportParams {
                         let name = path
                             .file_stem()
                             .map_or_default(|stem| stem.to_string_lossy().into_owned());
-                        let bytes = std::fs::read(path).map_err(|error| ModelError::Read {
-                            path: path.clone(),
-                            error,
+                        let bytes = qs_paths::read_regular_file(path).map_err(|error| {
+                            ModelError::Read {
+                                path: path.clone(),
+                                error,
+                            }
                         })?;
                         Ok((name, bytes, path.clone()))
                     })

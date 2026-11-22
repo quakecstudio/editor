@@ -22,9 +22,11 @@ use std::path::{Component, Path, PathBuf};
 
 pub mod arguments;
 mod fonts;
+mod read;
 mod stores;
 
 pub use fonts::current_font_dirs;
+pub use read::read_regular_file;
 pub use stores::{StoreDirs, current_store_dirs, store_dirs};
 
 /// The directory name on macOS and Windows, where names are displayed to users.

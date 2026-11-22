@@ -168,13 +168,14 @@ fn same_ignoring_case(a: &OsStr, b: &OsStr) -> bool {
     a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
-/// Reads files from the file system.
+/// Reads files from the file system: regular files only, so a device such as `/dev/zero` or a
+/// FIFO named by a source or an `#include` is refused rather than read without end (PRJ-4.15).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FsLoader;
 
 impl Loader for FsLoader {
     fn load(&mut self, path: &Path) -> io::Result<Vec<u8>> {
-        fs::read(path)
+        qs_paths::read_regular_file(path)
     }
 
     /// Lists the directory holding `path`, so the answer is the same whether or not the host

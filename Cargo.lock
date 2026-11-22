@@ -3491,6 +3491,7 @@ dependencies = [
  "proptest",
  "qc-lexer",
  "qc-progs",
+ "qs-paths",
 ]
 
 [[package]]
@@ -4081,6 +4082,7 @@ dependencies = [
  "qs-map-vis",
  "qs-mdl",
  "qs-pak",
+ "qs-paths",
  "qs-sim",
  "qs-vfs",
  "qs-wad",

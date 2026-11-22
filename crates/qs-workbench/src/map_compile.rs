@@ -370,8 +370,10 @@ impl<C: HasPreview + 'static> Command<C> for MapPortalsCommand {
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapPortals, C>, WorkbenchError> {
         let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
         let path = document.path().with_extension("prt");
-        let text = std::fs::read_to_string(&path)
-            .map_err(|_| WorkbenchError::NoFile { path: path.clone() })?;
+        let text = qs_paths::read_regular_file(&path)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
         let portals =
             qs_map_vis::portal_windings(&text).map_err(|error| WorkbenchError::PortalFile {
                 path: path.clone(),

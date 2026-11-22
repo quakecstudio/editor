@@ -55,6 +55,9 @@ pub struct ModuleInput {
     /// directory, the graph's when it names its files (PRJ-6.8); empty by default, so a name is
     /// the file of that path.
     pub dir: PathBuf,
+    /// Why each file the graph could not read was not read (PRJ-4.15), so the preprocessor's
+    /// E0111 gives the reason; none by default.
+    pub unread: BTreeMap<PathBuf, String>,
 }
 
 impl ModuleInput {
@@ -67,6 +70,7 @@ impl ModuleInput {
     pub fn from_graph(graph: &FileGraph) -> Self {
         let mut input = Self {
             autoproto: graph.autoproto,
+            unread: graph.unread.clone(),
             ..Self::default()
         };
         for (index, file) in graph.files.iter().enumerate() {
@@ -288,14 +292,22 @@ pub(crate) struct Preprocessed {
 /// rather than the disk.
 struct DbLoader<'a> {
     texts: &'a HashMap<PathBuf, &'a [u8]>,
+    /// Why the graph did not read each file it could not (PRJ-4.15).
+    unread: &'a BTreeMap<PathBuf, String>,
 }
 
 impl Loader for DbLoader<'_> {
     fn load(&mut self, path: &Path) -> io::Result<Vec<u8>> {
-        self.texts
+        if let Some(text) = self.texts.get(path) {
+            return Ok(text.to_vec());
+        }
+        // The graph did not read it: its reason, missing or not a regular file, or else that it
+        // could not be read, which holds of every file the graph has not.
+        let reason = self
+            .unread
             .get(path)
-            .map(|text| text.to_vec())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such file"))
+            .map_or("it could not be read", String::as_str);
+        Err(io::Error::new(io::ErrorKind::NotFound, reason.to_owned()))
     }
 }
 
@@ -323,6 +335,7 @@ pub(crate) fn preprocess(
 ) -> Preprocessed {
     let loader = DbLoader {
         texts: &files.texts,
+        unread: &input.unread,
     };
     let mut pp = Preprocessor::new(loader)
         .with_dialect(dialect)
