@@ -31,9 +31,13 @@ impl Root {
         Self(dir)
     }
 
-    /// The file `name` of the game directory.
+    /// The file `name` of the game directory, named as the host names it: the directory, a
+    /// `/` and the name, on every platform (`sprintf (name, "%s/%s", com_gamedir, ...)`).
     fn file(&self, name: &str) -> PathBuf {
-        self.0.join("id1").join(name)
+        let mut path = self.0.join("id1").into_os_string();
+        path.push("/");
+        path.push(name);
+        PathBuf::from(path)
     }
 }
 
