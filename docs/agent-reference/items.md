@@ -115,7 +115,9 @@ Every item's touch has these parts, in this order:
    `weapon_touch`), and unless it is alive (`other.health <= 0` in `ammo_touch` and
    `powerup_touch`): a corpse still touches.
 2. **Whether it is needed.** Return, leaving the item, when the player is full: `T_Heal`
-   returns 0 at full health, `ammo_touch` returns when `other.ammo_shells >= 100`.
+   returns 0 at full health, `ammo_touch` returns when `other.ammo_shells >= 100`. `T_Heal
+   (e, amount, ignore)` stops at `max_health` with `ignore` 0 and only at 250 with it set:
+   for a limit of your own, test and write `other.health` yourself.
 3. **Give it**, by writing the player's fields: `other.health`, `other.ammo_nails`,
    `other.items = other.items | self.items`, `other.armorvalue`. After ammo, call
    `bound_other_ammo ()`, which holds shells and rockets and cells to 100 and nails to 200.
@@ -173,9 +175,16 @@ keys and powerups from `items` at a level's end; anything else in `items` is car
   its own functions. A weapon's pickup also needs its branch in `weapon_touch`, and ammo in
   `ammo_touch` (the `weapons` topic).
 
+id's forms above (`deathmatch != 2`, `sprint` with two arguments, strings written in
+place) are what a mod most often changes: one may have its own helpers for the deathmatch
+rules, a `sprint` that takes a print level, or names for its messages. Write what its own
+items write.
+
 ## Trying it
 
 `project.compile`; place it in a map with `map.place_entity` a little above a floor, and
-`preview.play`. `engine.inspect` on the item shows `solid` 1 and `flags` 256 once it has
-settled; walk the player onto it, or move the player with `preview.set_field` on `origin`,
+`preview.play`. `engine.inspect` on the item shows `solid` 1 and `flags` 768 once it has
+settled (`FL_ITEM` 256 and `FL_ONGROUND` 512, which landing sets); walk the player onto it, or move the player with `preview.set_field` on `origin`,
 and read the player's field it gives and the item's `model`, which is empty once taken.
+To test the deathmatch return, the map needs an `info_player_deathmatch`, and `deathmatch`
+is set at the console before a `map` command starts the level.

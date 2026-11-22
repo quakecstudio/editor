@@ -2824,3 +2824,26 @@ groups:
     - 'The compiler differential (`cargo xtask compiler-diff`) stays green'
     verify:
     - 'cargo nextest run -p qc-codegen -p qc-sema; cargo xtask compiler-diff --fast'
+  - key: L-56
+    title: Debugging a played game over MCP closes the host or reads stale values
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:bug
+    size: M
+    reqs:
+    - ENG-2
+    depends:
+    - L-45
+    summary: |
+      Filed by hand on 2026-11-21 from three Claude Code runs through `quakec-ide mcp` (L-46: a new weapon, item and trigger on LibreQuake, each played headless), as the runs reported it and not yet reproduced by hand. With the game stopped at a breakpoint, the next `engine.inspect` closed the preview host, twice; removing a breakpoint while stopped on it closed the host's connection; `preview.set_field` on the player's `health` answered success and changed nothing; and `preview.watch` values were never returned by `preview.poll`.
+    environment: |
+      macOS, main 77dd4d28 with L-46's branch, `quakec-ide mcp <project> --dialect fteqcc --game <LibreQuake>`, the server's own headless game
+    deliverable:
+    - 'crates/qs-game, crates/qs-engine or crates/qs-workbench/src/preview.rs: each of the four reproduced in a test, or shown not to happen with the steps recorded, and the cause of each that does fixed where it is'
+    acceptance:
+    - 'With the game stopped at a breakpoint, `engine.inspect` of the stack and of an edict answers and the host stays up; removing the breakpoint leaves it up; in a test over the real host'
+    - '`preview.set_field` on the player''s `health` is read back by `engine.inspect`, paused and running; in a test'
+    - 'A `preview.watch` value comes back from `preview.poll` when the game stops; in a test'
+    verify:
+    - 'cargo nextest run -p qs-game -p qs-workbench; cargo xtask bridge-client on LibreQuake'

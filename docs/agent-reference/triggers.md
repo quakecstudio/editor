@@ -87,8 +87,10 @@ void() trigger_hurt =
   `defs.qc`); the engine ignores a key that names none, with the message `'<key>' is not a
   field` (EDICT-8). Declare a new one, `.float charge;`, before the spawn function.
 - **`touch` runs every frame the thing stays inside**, so a trigger that should not fire
-  each frame turns itself off, `self.solid = SOLID_NOT`, and a think turns it back on. That
-  is the whole of a "once a second" trigger.
+  each frame holds itself off. id's turns itself off, `self.solid = SOLID_NOT`, and a think
+  turns it back on a second later; another way, which a mod may use in its place, is a time
+  in a field of the trigger that `touch` tests against `time` and sets again. Use the one
+  the project's `trigger_hurt` uses.
 - In `touch`, `self` is the trigger and `other` what touched it. Test `other` first: a
   monster, a grenade and a corpse all touch.
 - The `/*QUAKED` comment is the map editor's, and `project.entities` reads it: id writes `?`
@@ -237,5 +239,7 @@ Nothing else names it.
 `project.compile`. In a map, `map.brush_create` a brush where the player will walk and
 `map.make_brush_entity` it into your classname, with its keys set by `map.set_key`; give it
 a `target` and something with that `targetname` whose `use` you can see, a door or a
-`trigger_relay` with a `message`. `preview.play`, walk the player in, and read the target
-with `engine.inspect`, or the `message` in `preview.console`.
+`trigger_relay` with a `message`, or a `trigger_counter` whose `count` falls by one each
+time it is fired. `preview.play`, walk the player in, and read the target with
+`engine.inspect`, or the `message` in `preview.console`. To hurt the player for a test,
+`give h 50` at `engine.console` sets its health once frames run.

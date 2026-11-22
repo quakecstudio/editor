@@ -87,18 +87,26 @@ So nothing happens until `attack_finished`; then a key's impulse is handled, the
    `W_Attack` first calls `W_CheckNoAmmo`, which changes to `W_BestWeapon ()` and returns
    FALSE when `currentammo` is 0 and the weapon is not the axe: a weapon that uses no ammo
    must be allowed there as the axe is.
-4. **`W_ChangeWeapon`**: the impulse that selects it. Impulses 1 to 8 are taken;
-   `ImpulseCommands` sends only those to `W_ChangeWeapon` ("`if (self.impulse >= 1 &&
-   self.impulse <= 8)`"), so a ninth weapon needs its own impulse added there and a branch
+4. **`W_ChangeWeapon`**: the impulse that selects it. Impulses 1 to 8 are the weapons, and
+   id's `ImpulseCommands` takes 9 for the cheat, 10 to cycle, 11 and 255; a mod may take
+   more, so read its `ImpulseCommands` and pick a number it does not use. `ImpulseCommands`
+   sends only 1 to 8 to `W_ChangeWeapon` ("`if (self.impulse >= 1 && self.impulse <= 8)`"),
+   so a ninth weapon needs its own impulse added there, and a branch in `W_ChangeWeapon`
    that sets `fl` to its bit and `am` when its ammo is short.
 5. **`CycleWeaponCommand`** (impulse 10): the chain from one weapon to the next; put the new
    one between two.
 6. **`W_BestWeapon`**: which weapon is chosen when ammo runs out or one is picked up. A
    weapon that hurts its user, as the rocket launcher does, is left out by id.
 
+id names its weapons in two more places, and a mod may in others: search the project for
+one weapon's bit, `IT_SUPER_NAILGUN`, and give the new one a branch wherever it has one.
+id's two are `RankForWeapon` (`items.qc`), the order deathmatch uses to decide whether a
+pickup replaces the weapon held, and `CheatCommand` (impulse 9), which gives every weapon.
+
 And the **pickup**, in `items.qc` (the `items` topic): `weapon_touch` has a branch for each
 `classname`, and ends in `objerror ("weapon_touch: unknown classname")` for one it does not
-know. A weapon carries to the next level by itself: `SetChangeParms` saves `self.items` and
+know. In single player the pickup also selects the weapon ("`if (!deathmatch) self.weapon =
+new;`"). A weapon carries to the next level by itself: `SetChangeParms` saves `self.items` and
 `self.weapon` in `parm1` and `parm8`, and `DecodeLevelParms` gives them back.
 
 ## Firing: a trace
@@ -186,12 +194,18 @@ void() player_shot2 = [$shotatt2, player_shot3 ] {self.weaponframe=2;};
 ```
 
 Each is the player's body frame and the gun's `weaponframe`; the last goes back to
-`player_run`. A new weapon on an existing `v_` model reuses the chain that fits it; a model
-of your own needs its own chain, as many frames as the model has (`model.inspect`).
+`player_run`. A new weapon on an existing `v_` model may reuse a chain that only animates,
+as `player_shot1` and `player_rocket1` do, with the fire function called from `W_Attack`.
+The nailgun's and the lightning gun's chains fire for themselves (`player_nail1` calls
+`W_FireSpikes (4)` and sets `attack_finished`), so they fit no other weapon. A model of
+your own needs its own chain, as many frames as the model has (`model.inspect`).
 
 ## Trying it
 
 `project.compile`, then `preview.play` a map with the pickup in it, or give the weapon to
-the player with `preview.set_field` on its `items` and `weapon`. Press the impulse with
-`engine.console` (`impulse 9`), fire with `+attack` and stop with `-attack`;
+the player with `preview.set_field` on its `items` and `weapon`. Press the weapon's
+impulse with `engine.console` (`impulse` and its number); since the pickup selects the
+weapon in single player, select another first to test the impulse. For one shot, pause,
+send `+attack`, `preview.step` one frame, and send `-attack`: `+attack` and `-attack` in
+one console line fire nothing, and held while the game runs it fires again and again.
 `engine.inspect` reads `currentammo`, `weaponmodel` and the health of what you shot.
