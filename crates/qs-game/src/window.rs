@@ -34,6 +34,7 @@ use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
 use crate::contents::contents_at;
+use crate::demos::{DemoHost, Demos};
 use crate::game::{Eye, Game, PendingSwap, Placement, Screen};
 use crate::keys::{
     MouseLook, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
@@ -256,6 +257,7 @@ impl Viewer {
             audio,
             bridge,
             client,
+            demos: Demos::new(),
             bsp,
             describer,
             rand,
@@ -309,6 +311,8 @@ struct Viewer {
     /// The IDE's connection, when the host was started with `-bridge`.
     bridge: Option<Bridge>,
     client: Client,
+    /// The demo being recorded and the one being played (CLIENT-10).
+    demos: Demos,
     bsp: MapBsp,
     describer: Describer,
     rand: Rand,
@@ -457,13 +461,22 @@ impl Viewer {
         } else {
             self.steer(seconds);
         }
-        let frametime = self.advance(f64::from(seconds));
+        // CLIENT-10.6: while a demo plays the server stands still, and the client's frame is
+        // the host's.
+        let frametime = if self.demos.playing() {
+            f64::from(seconds)
+        } else {
+            self.advance(f64::from(seconds))
+        };
         // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
         self.client_commands();
         self.apply_settings();
         // PHYS-13.6: a level with what the player carries, a save, a load or quit.
         if let Some(action) = self.game.host_action() {
-            match self.args.act(&mut self.game, action) {
+            match self
+                .args
+                .act(&mut self.game, action, (&mut self.demos, &self.client))
+            {
                 Acted::Load(loaded) => {
                     self.change_level(*loaded);
                     return;
@@ -476,11 +489,13 @@ impl Viewer {
         // The client reads what the server wrote and advances its clock by the server's
         // frame, as the host does when both run in one process.
         let packets = self.game.world_mut().take_messages().packets;
-        match self.client.frame(
-            frametime_f32(frametime),
-            &packets,
-            &mut self.describer,
-            &mut self.rand,
+        // CLIENT-10.2, CLIENT-10.6: a demo being recorded takes each packet, and one being
+        // played is read in their place.
+        match self.demos.frame(
+            &mut self.client,
+            (frametime_f32(frametime), &packets),
+            (&mut self.describer, &mut self.rand),
+            &mut self.game,
         ) {
             Ok(events) => {
                 self.print_events(&events);
@@ -1144,6 +1159,18 @@ impl Viewer {
         self.audio.set_music_volume(read.music);
     }
 
+    /// Runs a demo command the console met (CLIENT-10).
+    fn demo_command(&mut self, command: &ClientCommand) {
+        let describer = &self.describer;
+        let mut host = DemoHost {
+            args: &self.args,
+            game: &mut self.game,
+            client: &self.client,
+            read: &|name| describer.read(name),
+        };
+        self.demos.command(command, &mut host);
+    }
+
     /// The client's commands the console met, run in order (CON-6.1).
     fn client_commands(&mut self) {
         for command in self.game.world_mut().take_client_commands() {
@@ -1191,6 +1218,15 @@ impl Viewer {
                 ClientCommand::Impulse(n) => {
                     self.input.set_impulse(n);
                     self.dest
+                }
+                ClientCommand::Record(_) | ClientCommand::StopDemo => {
+                    self.demo_command(&command);
+                    self.dest
+                }
+                // "get rid of the menu and/or console".
+                ClientCommand::PlayDemo(_) | ClientCommand::TimeDemo(_) => {
+                    self.demo_command(&command);
+                    KeyDest::Game
                 }
                 ClientCommand::Press(button, key) => {
                     let printed = self.input.press(button, key);

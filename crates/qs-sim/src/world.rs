@@ -296,6 +296,15 @@ pub enum ClientCommand {
     Press(Button, Option<i32>),
     /// `-<button>`, `KeyUp`, with the key's number when a key sent it.
     Release(Button, Option<i32>),
+    /// `record <demoname> [<map> [cd track]]`, `CL_Record_f`, with the command's words
+    /// (CLIENT-10.3).
+    Record(Vec<Vec<u8>>),
+    /// `stop`, `CL_Stop_f` (CLIENT-10.5).
+    StopDemo,
+    /// `playdemo <demoname>`, `CL_PlayDemo_f`, with the command's words (CLIENT-10.8).
+    PlayDemo(Vec<Vec<u8>>),
+    /// `timedemo <demoname>`, `CL_TimeDemo_f`, with the command's words (CLIENT-10.9).
+    TimeDemo(Vec<Vec<u8>>),
 }
 
 impl ClientCommand {

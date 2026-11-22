@@ -9,7 +9,7 @@ use std::rc::Rc;
 use qc_lno::LnoFile;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
-use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
+use qs_client::{Client, DemoRecorder, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{
@@ -26,6 +26,7 @@ use crate::AXES;
 use crate::Error;
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
+use crate::demos::{Connection, Demos};
 use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
 use crate::keys::{STARTUP, config_path, host_files};
 use crate::map_bsp::MapBsp;
@@ -398,16 +399,29 @@ pub(crate) enum Startup {
 impl Args {
     /// Carries out `action` (PHYS-13.6): a level loaded, the game saved or loaded as
     /// `Host_Savegame_f` and `Host_Loadgame_f` do, or the host stopped.
-    pub(crate) fn act(&self, game: &mut Game, action: HostAction) -> Acted {
+    pub(crate) fn act(
+        &self,
+        game: &mut Game,
+        action: HostAction,
+        (demos, client): (&mut Demos, &Client),
+    ) -> Acted {
         match action {
             HostAction::Level(next) => {
                 let watched = game.level_debugger().map(|debugger| Watched {
                     debugger,
                     level: next.clone(),
                 });
-                self.next_level(next, watched)
+                // CLIENT-10.3: a new game ends a demo, and `record`'s map starts its own.
+                demos.before_level(next.connection, game, client);
+                let mut acted = self.next_level(next, watched, demos.recorder());
+                let loaded = match &mut acted {
+                    Acted::Load(loaded) => Some(&mut loaded.client),
+                    Acted::Quit | Acted::Stay => None,
+                };
+                demos.after_level(loaded, game);
+                acted
             }
-            HostAction::Spawned(next) => self.next_level(next, None),
+            HostAction::Spawned(next) => self.next_level(next, None, demos.recorder()),
             HostAction::Save(name) => {
                 let path = self.save_path(&name);
                 game.console_line(&format!("Saving game to {}...\n", path.display()));
@@ -434,7 +448,16 @@ impl Args {
                     }
                 };
                 let host = game.world().host_state();
-                match self.load_map(&save.map, None, Start::Kept(host), Some(&save), None) {
+                // `Host_Loadgame_f`: "`CL_Disconnect_f ();`" first.
+                demos.before_level(Connection::New, game, client);
+                let recorder = Some(demos.recorder());
+                match self.load_map(
+                    &save.map,
+                    None,
+                    Start::Kept(host),
+                    (Some(&save), None),
+                    recorder,
+                ) {
                     Ok(loaded) => Acted::Load(Box::new(loaded)),
                     Err(error) => {
                         game.console_line(&format!("{error}\n"));
@@ -448,13 +471,18 @@ impl Args {
 
     /// Loads `next`, its spawning watched by `watched`'s breakpoints when given (WORLD-9.7);
     /// stays on this level when it does not load.
-    fn next_level(&self, next: NextLevel, watched: Option<Watched>) -> Acted {
+    fn next_level(
+        &self,
+        next: NextLevel,
+        watched: Option<Watched>,
+        recorder: &mut DemoRecorder,
+    ) -> Acted {
         match self.load_map(
             &next.map,
             next.carried,
             Start::Kept(next.host),
-            None,
-            watched,
+            (None, watched),
+            Some(recorder),
         ) {
             Ok(loaded) => Acted::Load(Box::new(loaded)),
             Err(error) => {
@@ -480,7 +508,7 @@ impl Args {
     /// and paused when [`Args::starts_paused`]. A map loaded later, by a level change or a
     /// `map` command, is paused when the game was (`Game::carry_from`).
     pub(crate) fn first_map(&self, startup: Startup) -> Result<Loaded, Error> {
-        let mut loaded = self.load_map(&self.map, None, Start::New(startup), None, None)?;
+        let mut loaded = self.load_map(&self.map, None, Start::New(startup), (None, None), None)?;
         if self.starts_paused() {
             loaded.game.start_paused();
         }
@@ -499,8 +527,8 @@ impl Args {
         map: &str,
         carried: Option<SpawnParms>,
         host: Start,
-        save: Option<&SaveGame>,
-        watched: Option<Watched>,
+        (save, watched): (Option<&SaveGame>, Option<Watched>),
+        recorder: Option<&mut DemoRecorder>,
     ) -> Result<Loaded, Error> {
         let map = map.to_owned();
         let engine = self.engine();
@@ -647,9 +675,14 @@ impl Args {
         let mut describer = Describer { read: reader()? };
         let mut rand = Rand(1);
         let packets = game.world_mut().take_messages().packets;
-        let events = client
-            .frame(0.0, &packets, &mut describer, &mut rand)
-            .map_err(|e| Error::Load(format!("client: {e}")))?;
+        // CLIENT-10.2: a demo being recorded takes the connection's messages as they are read.
+        let events = match recorder {
+            Some(recorder) => {
+                client.frame_recorded(0.0, &packets, recorder, &mut describer, &mut rand)
+            }
+            None => client.frame(0.0, &packets, &mut describer, &mut rand),
+        }
+        .map_err(|e| Error::Load(format!("client: {e}")))?;
         let sounds = reader()?;
         let output = if self.view_script.is_some() {
             Device::Capture
@@ -734,6 +767,15 @@ impl Args {
             camera,
             printed,
         })
+    }
+
+    /// The demo file `file` in the game directory, `q_snprintf (name, sizeof(name), "%s/%s",
+    /// com_gamedir, Cmd_Argv(1))` (CLIENT-10.3).
+    pub(crate) fn demo_path(&self, file: &str) -> PathBuf {
+        let mut path = self.game_dir().into_os_string();
+        path.push("/");
+        path.push(file);
+        PathBuf::from(path)
     }
 
     /// `<name>.sav` in the game directory, `COM_DefaultExtension (name, ".sav")`.

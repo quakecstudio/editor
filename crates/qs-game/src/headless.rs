@@ -26,6 +26,7 @@ use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
 use crate::contents::contents_at;
+use crate::demos::{DemoHost, Demos};
 use crate::game::{Eye, Game, PendingSwap, Screen};
 use crate::keys::focus;
 use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
@@ -74,17 +75,21 @@ impl Args {
             } else {
                 frametime_f32(FRAME)
             });
-            let ran = world.game.frame(FRAME);
+            // CLIENT-10.6: while a demo plays the server stands still.
+            let ran = world.demos.playing() || world.game.frame(FRAME);
             // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
-            world.client_commands();
+            world.client_commands(self);
             if let Some(action) = world.game.host_action() {
-                match self.act(&mut world.game, action) {
+                let demos = (&mut world.demos, &world.client);
+                match self.act(&mut world.game, action, demos) {
                     Acted::Load(loaded) => {
                         let next = Headless::new(*loaded, offscreen.as_ref());
                         let old = core::mem::replace(&mut world, next);
                         world.game.carry_from(old.game);
-                        // A button held stays held into the next level, as the window's.
+                        // A button held stays held into the next level, as the window's,
+                        // and so does a demo being recorded or played.
                         world.input = old.input;
+                        world.demos = old.demos;
                         continue;
                     }
                     Acted::Quit => return Ok(()),
@@ -380,6 +385,8 @@ struct Headless {
     /// there is no key and no mouse, so `+forward`, `+attack` and `impulse` typed at the
     /// console, or sent over the bridge, are all that moves the player.
     input: Input,
+    /// The demo being recorded and the one being played (CLIENT-10).
+    demos: Demos,
 }
 
 impl Headless {
@@ -427,6 +434,7 @@ impl Headless {
             audio,
             printed,
             input: Input::new(),
+            demos: Demos::new(),
         }
     }
 
@@ -452,9 +460,22 @@ impl Headless {
     /// The client's commands the console met, run in order (CON-6.1): the buttons and the
     /// impulse. The console, the menus and the bindings are the window's: with no screen and
     /// no key there is nothing for them to change.
-    fn client_commands(&mut self) {
+    fn client_commands(&mut self, args: &Args) {
         for command in self.game.world_mut().take_client_commands() {
             match command {
+                ClientCommand::Record(_)
+                | ClientCommand::StopDemo
+                | ClientCommand::PlayDemo(_)
+                | ClientCommand::TimeDemo(_) => {
+                    let describer = &self.describer;
+                    let mut host = DemoHost {
+                        args,
+                        game: &mut self.game,
+                        client: &self.client,
+                        read: &|name| describer.read(name),
+                    };
+                    self.demos.command(&command, &mut host);
+                }
                 ClientCommand::Impulse(n) => self.input.set_impulse(n),
                 ClientCommand::Press(button, key) => {
                     // What `KeyDown` prints goes to the console on the screen, which is the
@@ -600,10 +621,14 @@ impl Headless {
         self.game.take_printed();
         let packets = self.game.world_mut().take_messages().packets;
         let seconds = frametime_f32(frametime);
-        match self
-            .client
-            .frame(seconds, &packets, &mut self.describer, &mut self.rand)
-        {
+        // CLIENT-10.2, CLIENT-10.6: a demo being recorded takes each packet, and one being
+        // played is read in their place.
+        match self.demos.frame(
+            &mut self.client,
+            (seconds, &packets),
+            (&mut self.describer, &mut self.rand),
+            &mut self.game,
+        ) {
             // The sound is mixed only when it is kept, for `--view-script`.
             Ok(events) if self.audio.captures() => self.audio.handle(&events, &mut self.rand),
             Ok(_) => {}

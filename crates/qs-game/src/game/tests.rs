@@ -10,6 +10,7 @@
     reason = "test code: a failed unwrap, index or panic is a failed test"
 )]
 
+use crate::demos::Connection;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -1822,6 +1823,7 @@ fn a_breakpoint_in_a_spawn_function_stops_the_next_level() {
         map: "test".to_owned(),
         carried: None,
         host: world.host_state(),
+        connection: Connection::New,
     };
     let mut next = Game::new(world, bytes.clone(), Reporting::Bridge);
     next.set_lines(lines);
