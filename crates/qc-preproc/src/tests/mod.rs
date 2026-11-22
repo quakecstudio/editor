@@ -889,6 +889,45 @@ fn fs_loader_reads_files() {
     assert_eq!(pp.sources().files().len(), 2);
 }
 
+// No spec statement: the file system loader reads regular files only, so an `#include` of a
+// device that never ends, such as /dev/zero, is refused at once, as a directory is
+#[cfg(unix)]
+#[test]
+fn fs_loader_refuses_what_is_not_a_regular_file() {
+    use super::Loader as _;
+    let mut loader = super::FsLoader;
+    for path in ["/dev/zero", "/dev/null", "/"] {
+        let err = loader.load(Path::new(path)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{path}");
+        assert_eq!(err.to_string(), "not a regular file", "{path}");
+    }
+    // A link is judged by what it points at: one to a regular file is read, one to a device
+    // is refused as the device is.
+    let dir = std::env::temp_dir().join(format!("qc-preproc-zero-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("b.qc"), "b").unwrap();
+    std::os::unix::fs::symlink(dir.join("b.qc"), dir.join("linked.qc")).unwrap();
+    std::os::unix::fs::symlink("/dev/zero", dir.join("zero.qc")).unwrap();
+    assert_eq!(loader.load(&dir.join("linked.qc")).unwrap(), b"b");
+    let err = loader.load(&dir.join("zero.qc")).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    std::fs::write(
+        dir.join("a.qc"),
+        "#include \"/dev/zero\"\n#include \"zero.qc\"\n#include \"linked.qc\"\na",
+    )
+    .unwrap();
+    let mut pp = Preprocessor::new(super::FsLoader);
+    let out = pp.preprocess_file(&dir.join("a.qc")).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(tokens(&out), "b a");
+    let refused = out
+        .diagnostics
+        .iter()
+        .filter(|d| d.message.contains("not a regular file"))
+        .count();
+    assert_eq!(refused, 2, "{:?}", out.diagnostics);
+}
+
 // spec PRJ-7.2: the file system loader reads the stored name from the directory, the exact
 // entry first and otherwise the one that differs only in case, whatever the host's case rules
 #[test]

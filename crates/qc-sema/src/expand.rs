@@ -295,7 +295,9 @@ impl Loader for DbLoader<'_> {
         self.texts
             .get(path)
             .map(|text| text.to_vec())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such file"))
+            // The project graph did not read it, its own diagnostic says why: missing, or not
+            // a regular file (`FsLoader`).
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "it could not be read"))
     }
 }
 
