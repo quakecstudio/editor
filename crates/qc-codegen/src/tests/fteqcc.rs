@@ -6454,7 +6454,11 @@ fn a_local_structs_braces_store_each_member() {
          void(float x) d_narrow = { struct Pair s = { 1, x * 2 }; };\n\
          void() d_lit = { struct Pair s = { 1, 2 }; };\n\
          void(float x) d_name = { struct Pair s = { 1, x }; };\n\
-         void() d_short = { struct Pair s = { 1, {1, 2} }; };\n",
+         void() d_short = { struct Pair s = { 1, {1, 2} }; };\n\
+         void(float x) d_vl = { vector v = { x + 1, 2, 3 }; };\n\
+         void(float x) d_vm = { struct Pair p = { 1, { x * 2, 5, 6 }, \"q\" }; };\n\
+         void(float x) d_vs = { vector v = { x, 2 }; };\n\
+         void() d_const = { const struct Pair p = { 1, '0 0 1', \"x\" }; };\n",
     )
     .unwrap()
     .progs;
@@ -6491,6 +6495,14 @@ fn a_local_structs_braces_store_each_member() {
     assert_eq!(ops("d_name"), numbers([StoreF, MulFv, StoreS]));
     // A vector's braces of fewer than three floats store those, and fill no other word.
     assert_eq!(ops("d_short"), numbers([StoreF, StoreF, StoreF, StoreS]));
+    // A vector's braces, a local's or a member's, each value folded into what made it.
+    assert_eq!(ops("d_vl"), numbers([AddF, StoreF, StoreF]));
+    assert_eq!(ops("d_vm"), numbers([StoreF, MulF, StoreF, StoreF, StoreS]));
+    assert_eq!(ops("d_vs"), numbers([StoreF, StoreF]));
+    let vl = body(&progs, "d_vl");
+    assert_eq!((vl[1].b, vl[2].b), (vl[0].c + 1, vl[0].c + 2));
+    // A `const` local's braces are its value at compile time: no statement.
+    assert_eq!(ops("d_const"), Vec::<u32>::new());
     // Each value goes to its member's own words.
     let p = body(&progs, "d_two");
     assert_eq!(p[1].b, p[0].b + 1);
@@ -6505,6 +6517,19 @@ fn a_local_structs_braces_store_each_member() {
     // The sum is folded into the member, and the call's value stored from the return global.
     let values = body(&progs, "d_values");
     assert_eq!(values[1].c + 1, values[3].b);
+}
+
+// spec FTE-14.10: braces of a struct with a member that starts at no word, a bitfield, are not
+// followed and are refused, not stored to the wrong members; nor are designated and positional
+// parts mixed
+#[test]
+fn braces_the_model_cannot_place_are_refused() {
+    for body in [
+        "struct Bits { float a; int b:4; float c; };\nvoid() f = { struct Bits p = { 1, 2 }; };\n",
+        "struct P { float a; string s; };\nvoid() f = { struct P p = { 1, .s = \"y\" }; };\n",
+    ] {
+        assert!(compile_fteqcc(body).is_err(), "{body}");
+    }
 }
 
 // spec FTEF-18.7: `return = e;` stores the value to the `ret*` local, by the store of the
@@ -6525,7 +6550,9 @@ fn return_equals_stores_the_value_the_function_returns() {
          float(float x) d_end = { return = x + 1; };\n\
          vector() d_vec = { return = '1 2 3'; return; };\n\
          float(float x) d_twice = { return = 1; if (x) return = x * 2; };\n\
-         float(float x) d_early = { return = 1; if (x) return 9; };\n",
+         float(float x) d_early = { return = 1; if (x) return 9; };\n\
+         struct T3 { float a; float b; float c; };\nT3 gt;\n\
+         T3() d_struct = { local T3 t; t = gt; return = t; };\n",
     )
     .unwrap()
     .progs;
@@ -6542,6 +6569,8 @@ fn return_equals_stores_the_value_the_function_returns() {
     assert_eq!(ops("d_wide"), numbers([StoreV, StoreF, Return]));
     assert_eq!(ops("d_narrow"), numbers([StoreF, StoreV, Return]));
     assert_eq!(ops("d_ent"), numbers([StoreEnt, StoreF, Return, Return]));
+    // A struct is stored whole, by its size's store.
+    assert_eq!(ops("d_struct"), numbers([StoreV, StoreV, Return]));
     let if_not = u32::from(Opcode::IfNot as u16);
     let [store, mul, ret] = numbers([StoreF, MulF, Return])[..] else {
         panic!("three opcodes");

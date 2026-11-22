@@ -440,6 +440,7 @@ impl Checker<'_> {
             // the body's end then returns the local (FTE-18.10).
             self.ret_local = true;
             if value.ty == Type::Unknown || ret == Type::Unknown {
+                self.followed = false;
                 return Ok(());
             }
             self.store_mismatch(&value, ir::Name::RET_LOCAL, &ret, span)?;

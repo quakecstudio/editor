@@ -42,7 +42,9 @@ is compiled down to them, so none needs a newer engine.
   a field. An array is a global, not a field: for a value on each entity use a field.
 - **`typedef struct { string mdl; float frame; } pose;`**, `pose p;`, `p.mdl`, and `{ a, b }`
   to initialise one or each element of an array of them (FTE-14.1 to FTE-14.3), at file
-  level or in a function body, where each member left out is 0 (FTE-14.10).
+  level or in a function body (FTE-14.10). In a body a member left out is set to 0, but of an
+  array member only the first element, and a vector given fewer than three numbers keeps
+  whatever its other parts held: give every part you will read.
 - **`enum { A, B, C };`**, float constants from 0, with `A = n` to set the next value;
   `enum Name { ... }` also names a type that is a float (FTE-15.1, FTE-15.2, FTE-15.4).
 - **Parameters.** A default value, `void spawn_gib(string mdl, float speed = 200)`, used

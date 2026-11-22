@@ -29,6 +29,10 @@ use crate::check::truth::{Test, is_truth};
 use crate::check::{Constness, Fold, Reference, Sym, Value, ValueUse};
 use crate::ir;
 
+use crate::lower::{Qualifier, declares};
+use crate::ty::{SimpleType, Type};
+use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
+
 /// One part of an initialiser's braces: a value, or braces of its own.
 enum Part {
     /// An expression.
@@ -46,9 +50,6 @@ impl Part {
         }
     }
 }
-use crate::lower::{Qualifier, declares};
-use crate::ty::{SimpleType, Type};
-use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
 
 /// What a compound assignment updates in place through an address (FTEF-29.17, FTEF-29.22).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1086,12 +1087,12 @@ impl Checker<'_> {
         }
         let local = self.env.reference(start);
         let array = local.is_some_and(|def| self.env.is_array(def));
+        let ty = self.env.local_type(start);
         // A vector's own braces are its components'; an array of vectors' are its elements'.
         let vector = !array
-            && self
-                .env
-                .local_type(start)
-                .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
+            && ty
+                .as_ref()
+                .is_some_and(|ty| self.etype(ty) == Some(Etype::Vector));
         let nested = aggregate.syntax().children().count() != elements.len();
         if array && !nested && !self.env.local_static(start) {
             return self.array_aggregate(declarator, local, &elements);
@@ -1105,24 +1106,58 @@ impl Checker<'_> {
             }
             return Ok(());
         }
-        let ty = self.env.local_type(start);
         if let Some(ty) = ty.filter(|ty| !array && self.aggregate_type(ty)) {
+            // A `const` local's braces are its value at compile time, as an array's are.
+            if declarator
+                .syntax()
+                .parent()
+                .is_some_and(|decl| declares(&decl, &Qualifier::Const))
+            {
+                self.constant_local(local);
+                return Ok(());
+            }
             return self.struct_aggregate(aggregate, (local, 0), &ty);
         }
-        if !vector || elements.len() != qc_types::PROGS_VECTOR_SLOTS {
+        if !vector {
             self.followed = false;
             return Ok(());
         }
-        let local = self.env.reference(start);
-        for (word, element) in (0_u32..).zip(elements) {
-            let value = self.value(Some(element))?;
-            self.generated.push(ir::BodyStatement {
-                a: self.name_of(&value),
-                b: local.map(|def| ir::Name::Def(def, word)),
-                ..ir::BodyStatement::bare(Op::StoreF)
-            });
-            self.read_returned(&value);
-            self.last_temp = None;
+        let parts: Vec<Option<Part>> = aggregate.syntax().children().map(Part::of).collect();
+        self.vector_parts(parts, |word| local.map(|def| ir::Name::Def(def, word)))
+    }
+
+    /// The local `local`'s value at compile time, which the code generator writes from its
+    /// initialiser (FTEF-32.13).
+    fn constant_local(&mut self, local: Option<crate::DefId>) {
+        match local {
+            Some(local) => {
+                let at = self.next_made();
+                self.effects
+                    .push((at, ir::Effect::Constant(ir::Name::Def(local, 0))));
+            }
+            None => self.followed = false,
+        }
+    }
+
+    /// A vector's braces, read as an array of up to three floats ("vectors can be treated as
+    /// an array of 3 floats", FTE-14.10): each value cast to a float and stored to the word
+    /// `to` gives, or folded into the statement that made it; a word none is given is not
+    /// filled. More parts, or braces of their own, are not followed.
+    fn vector_parts(
+        &mut self,
+        parts: Vec<Option<Part>>,
+        to: impl Fn(u32) -> Option<ir::Name>,
+    ) -> Result<(), Fatal> {
+        if parts.len() > qc_types::PROGS_VECTOR_SLOTS {
+            self.followed = false;
+            return Ok(());
+        }
+        let float = Type::Simple(SimpleType::Float);
+        for (word, part) in (0_u32..).zip(parts) {
+            match part {
+                Some(Part::Value(element)) => self.store_part(&element, to(word), &float)?,
+                Some(Part::Braces(_)) | None => self.followed = false,
+            }
         }
         Ok(())
     }
@@ -1699,14 +1734,7 @@ impl Checker<'_> {
             .is_some_and(|decl| declares(&decl, &Qualifier::Const));
         // Its words are its value at compile time, which the code generator writes.
         if constant {
-            match local {
-                Some(local) => {
-                    let at = self.next_made();
-                    self.effects
-                        .push((at, ir::Effect::Constant(ir::Name::Def(local, 0))));
-                }
-                None => self.followed = false,
-            }
+            self.constant_local(local);
             return Ok(());
         }
         let Some(ty) = declarator
@@ -1732,7 +1760,7 @@ impl Checker<'_> {
         if value.temp.is_some() && value.temp == self.last_temp && !self.wider_than(ret) {
             self.fold_into(value, to);
         } else {
-            let op = self.store_or_refuse(None, ret, span);
+            let op = self.store_of(ret, span);
             self.generated.push(ir::BodyStatement {
                 a: self.store_source(op, value),
                 b: to,
@@ -1777,9 +1805,8 @@ impl Checker<'_> {
         } else {
             self.initialiser_cast(&value, part, ty)?
         };
-        // Cast to the member's type, the value is as wide as the member: one its statement made
-        // is folded into it.
-        if value.temp.is_some() && value.temp == self.last_temp {
+        // DIFF-14.11: no store folds into a statement whose result is wider than the member.
+        if value.temp.is_some() && value.temp == self.last_temp && !self.wider_than(ty) {
             self.fold_into(&value, to);
         } else {
             self.store_initialiser((&value, self.name_of(&value)), to, ty, span);
@@ -1806,6 +1833,11 @@ impl Checker<'_> {
             return Ok(());
         };
         let names = aggregate.designated_names();
+        // "designated initialisers require all members to be initialised the same way".
+        if !names.is_empty() && names.len() != aggregate.syntax().children().count() {
+            self.followed = false;
+            return Ok(());
+        }
         let span = aggregate.syntax().span();
         let word = |at: u32| local.map(|def| ir::Name::Def(def, base.saturating_add(at)));
         // `isinited`: the words a part has been stored at, a union's members sharing one.
@@ -1889,28 +1921,11 @@ impl Checker<'_> {
         if self.aggregate_type(&member.ty) {
             return self.struct_aggregate(braces, (local, base), &member.ty);
         }
-        // A vector's braces are up to three floats, each stored to its word; a word none is
-        // given is not filled.
-        let vector = self.etype(&member.ty) == Some(Etype::Vector);
-        if !vector || parts.len() > qc_types::PROGS_VECTOR_SLOTS {
+        if self.etype(&member.ty) != Some(Etype::Vector) {
             self.followed = false;
             return Ok(());
         }
-        for (at, part) in (0_u32..).zip(parts) {
-            let Some(Part::Value(element)) = part else {
-                self.followed = false;
-                continue;
-            };
-            let value = self.value(Some(element))?;
-            self.generated.push(ir::BodyStatement {
-                a: self.name_of(&value),
-                b: word(at),
-                ..ir::BodyStatement::bare(Op::StoreF)
-            });
-            self.read_returned(&value);
-            self.last_temp = None;
-        }
-        Ok(())
+        self.vector_parts(parts, word)
     }
 
     /// A store's read of `value`: a call's value is then out of the return global's keeping.
