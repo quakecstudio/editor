@@ -341,6 +341,7 @@ version = "2026.11.2"
 dependencies = [
  "qc-lexer",
  "qc-progs",
+ "qs-paths",
 ]
 
 [[package]]
