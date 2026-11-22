@@ -23,6 +23,13 @@ use qc_vm::convert::{double_to_float, double_to_int, int_to_float};
 
 use qc_edict::SoundEntity;
 
+mod demo;
+
+pub use demo::{
+    DEMO_MAX_MESSAGE, DEMO_NO_ANGLES, DEMO_NO_TRACK, Demo, DemoError, DemoFrame, DemoFrameError,
+    DemoMessage, DemoPace, DemoRecorder, DemoState, DemoTrack,
+};
+
 use crate::entity::{Baseline, Entity};
 use crate::hud::{CenterMode, CenterPrint, HUD_GAME_DEATHMATCH, HudInput, HudItem, Placed};
 use crate::message::Reader;
@@ -692,6 +699,8 @@ pub struct Client {
     view: ViewState,
     view_settings: ViewSettings,
     signon: i32,
+    /// A playing demo's view angles and pace (CLIENT-10.6), none while none plays.
+    playback: Option<demo::Playback>,
     intermission: i32,
     completed_time: f32,
     paused: bool,
@@ -772,6 +781,7 @@ impl Client {
             view: ViewState::default(),
             view_settings: ViewSettings::default(),
             signon: 0,
+            playback: None,
             intermission: 0,
             completed_time: 0.0,
             paused: false,
@@ -799,7 +809,15 @@ impl Client {
         let gravity = self.gravity;
         let screen = self.screen;
         let bar_lines = self.bar_lines;
+        // CLIENT-10.6: that a demo plays is the client's whole run's, `cls.demoplayback`; the
+        // angles of its messages are the cleared state's, `cl.mviewangles`.
+        let playback = self.playback.map(|playback| demo::Playback {
+            mviewangles: [demo::DEMO_NO_ANGLES; 2],
+            pace: playback.pace,
+            hold: playback.hold,
+        });
         *self = Self::with_limits(game, self.limits);
+        self.playback = playback;
         self.lerp = lerp;
         self.view_settings = view_settings;
         self.gravity = gravity;
@@ -1091,19 +1109,32 @@ impl Client {
         models: &mut dyn Models,
         rand: &mut dyn Random,
     ) -> Result<Vec<Event>, ParseError> {
-        self.oldtime = self.time;
-        self.time += frametime;
+        self.advance(frametime);
         let mut events = Vec::new();
         for packet in packets {
             self.read_message(packet, models, rand, &mut events)?;
         }
+        self.finish_frame(rand, &events);
+        Ok(events)
+    }
+
+    /// The start of a frame: the clock advances by `frametime`.
+    fn advance(&mut self, frametime: f32) {
+        self.oldtime = self.time;
+        self.time += frametime;
+    }
+
+    /// The frame's work once its messages are read: the relink, the temporary entities, the
+    /// lights, the particles, the palette and the centre print, for the `events` they
+    /// raised.
+    fn finish_frame(&mut self, rand: &mut dyn Random, events: &[Event]) {
         self.relink_entities(rand);
         self.update_temp_entities(rand);
         self.decay_lights();
         let frametime = self.time - self.oldtime;
         self.particles.update(self.time, frametime, self.gravity);
         self.update_palette(frametime);
-        for event in &events {
+        for event in events {
             if let Event::CenterPrint(text) = event {
                 self.center.set(text, self.time);
             }
@@ -1115,7 +1146,6 @@ impl Client {
             CenterMode::Intermission
         };
         self.center_items = self.center.draw(frametime, self.time, mode, width, height);
-        Ok(events)
     }
 
     /// The scene after [`Client::frame`]: what the renderer draws.
@@ -1193,10 +1223,17 @@ impl Client {
         let Some(entity) = self.entities.get(self.viewentity).copied() else {
             return Refdef::default();
         };
+        // CLIENT-10.7: "`if (noclip_anglehack || !cl.onground || cls.demoplayback )`": while a
+        // demo plays the pitch drifts no more than in the air, and the drift is forgotten.
+        let footing = if self.playback.is_some() {
+            Footing::InAir
+        } else {
+            self.onground
+        };
         self.view.drift_pitch(
             self.time,
             self.time - self.oldtime,
-            self.onground,
+            footing,
             self.forwardmove,
             self.idealpitch,
             &mut self.viewangles,
@@ -2042,7 +2079,11 @@ impl Client {
     /// deliberate divergence.
     fn lerp_point(&mut self) -> f32 {
         let mut f = self.mtime[0] - self.mtime[1];
-        if f == 0.0 {
+        // CLIENT-10.7: "`if (!f || cls.timedemo || sv.active)`", but for the local server.
+        let timedemo = self
+            .playback
+            .is_some_and(|playback| playback.pace == DemoPace::EveryFrame);
+        if f == 0.0 || timedemo {
             self.time = self.mtime[0];
             return 1.0;
         }
@@ -2080,6 +2121,20 @@ impl Client {
             .zip(self.mvelocity[0].iter().zip(self.mvelocity[1].iter()))
         {
             *v = m1 + frac * (m0 - m1);
+        }
+        // CLIENT-10.7: a playing demo's view turns between its last two messages' angles,
+        // the short way round.
+        if let Some(playback) = self.playback {
+            let [latest, before] = playback.mviewangles;
+            for (angle, (m0, m1)) in self.viewangles.iter_mut().zip(latest.iter().zip(before)) {
+                let mut d = m0 - m1;
+                if d > HALF_TURN {
+                    d -= FULL_TURN;
+                } else if d < -HALF_TURN {
+                    d += FULL_TURN;
+                }
+                *angle = m1 + frac * d;
+            }
         }
         let bobjrotate = anglemod(CLIENT_ROTATE_SPEED * self.time);
         let time = self.time;

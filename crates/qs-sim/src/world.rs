@@ -296,6 +296,22 @@ pub enum ClientCommand {
     Press(Button, Option<i32>),
     /// `-<button>`, `KeyUp`, with the key's number when a key sent it.
     Release(Button, Option<i32>),
+    /// `record <demoname> [<map> [cd track]]`, `CL_Record_f`, with the command's words
+    /// (CLIENT-10.3).
+    Record(Vec<Vec<u8>>),
+    /// `stop`, `CL_Stop_f` (CLIENT-10.5).
+    StopDemo,
+    /// `playdemo <demoname>`, `CL_PlayDemo_f`, with the command's words (CLIENT-10.8).
+    PlayDemo(Vec<Vec<u8>>),
+    /// `timedemo <demoname>`, `CL_TimeDemo_f`, with the command's words (CLIENT-10.9).
+    TimeDemo(Vec<Vec<u8>>),
+    /// `startdemos <demoname>...`, `Host_Startdemos_f`, with the command's words
+    /// (CLIENT-10.11).
+    StartDemos(Vec<Vec<u8>>),
+    /// `demos`, `Host_Demos_f` (CLIENT-10.12).
+    DemoLoop,
+    /// `stopdemo`, `Host_Stopdemo_f` (CLIENT-10.13).
+    StopPlayback,
 }
 
 impl ClientCommand {
@@ -932,6 +948,13 @@ impl World {
         call.run(change).map_err(WorldError::Frame)?;
         let parms = core::array::from_fn(|n| call.global(&format!("parm{}", n.saturating_add(1))));
         Ok(SpawnParms { serverflags, parms })
+    }
+
+    /// The string commands the client has sent that no frame has read, taken from the
+    /// server: what a host does with them when its client is not the server's, as while a
+    /// demo plays (CLIENT-10.10).
+    pub fn take_client_commands_sent(&mut self) -> Vec<Vec<u8>> {
+        core::mem::take(&mut self.commands)
     }
 
     /// A string command from the client, such as `god`, read at the start of the next frame

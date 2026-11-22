@@ -16,6 +16,7 @@ use serde_json::{Map, Value, json};
 
 use crate::AXES;
 use crate::Error;
+use crate::demos::Connection;
 use crate::screenshot::Frame;
 use crate::values::{from_json, named_json, to_json};
 
@@ -259,6 +260,9 @@ pub(crate) struct NextLevel {
     pub(crate) map: String,
     pub(crate) carried: Option<SpawnParms>,
     pub(crate) host: HostState,
+    /// Whether the client disconnects first, as `map` has it, or goes on to the level
+    /// (CLIENT-10.3).
+    pub(crate) connection: Connection,
 }
 
 /// A response the game sends after the command's request was answered later.
@@ -450,12 +454,14 @@ impl Game {
                 map: self.world.map().to_owned(),
                 carried: self.world.carried(),
                 host,
+                connection: Connection::Restarted,
             }),
             // PHYS-13.6: a new game, carrying nothing.
             HostCommand::Map(map) => HostAction::Level(NextLevel {
                 map,
                 carried: None,
                 host,
+                connection: Connection::New,
             }),
             HostCommand::Changelevel(map) => {
                 let kept = self
@@ -467,6 +473,7 @@ impl Game {
                         map,
                         carried: Some(kept),
                         host,
+                        connection: Connection::Changed,
                     }),
                     Err(error) => {
                         self.fail(None, &error);
@@ -572,6 +579,20 @@ impl Game {
                 true
             }
         }
+    }
+
+    /// Runs the console's buffer alone, `Cbuf_Execute`, in a host frame whose server stands
+    /// still because a demo plays (CLIENT-10.6); the commands it forwarded to the server,
+    /// which is not the one the client hears.
+    pub(crate) fn console_frame(&mut self) -> Vec<Vec<u8>> {
+        if self.state == State::Paused || self.loading.holds() {
+            return Vec::new();
+        }
+        let ran = self.with_progs(|game, progs| {
+            game.world.execute_console(progs);
+            game.world.take_client_commands_sent()
+        });
+        ran.unwrap_or_default()
     }
 
     /// Moves the player to `origin`, facing `angles`, at rest, as `player/spawn_at` does

@@ -414,3 +414,179 @@ CLIENT-1 to CLIENT-7 say, with QuakeSpasm's one addition for 15, Nehahra's alpha
   player's think interval (CLIENT-7.3), not 0.1. The blend over a `LERP_FINISH` span is
   "`(float)(cl.time - e->lerpstart) / (e->lerpfinish - e->lerpstart)`" clamped to 0 to 1, and
   the move lerp's the same over `movelerpstart` (CLIENT-7.4).
+
+## CLIENT-10 Demos
+
+**Source:** QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`):
+`Quake/cl_demo.c`, `CL_ClearSignons`, `CL_StopPlayback`, `CL_WriteDemoMessage`,
+`CL_GetDemoMessage`, `CL_GetMessage`, `CL_Stop_f`, `CL_Record_f`, `CL_PlayDemo_f`,
+`CL_FinishTimeDemo`, `CL_TimeDemo_f`; `Quake/cl_main.c`, `CL_Disconnect`, `CL_LerpPoint`,
+`CL_RelinkEntities`; `Quake/cl_parse.c`, `CL_ParseServerMessage`; `Quake/view.c`,
+`V_DriftPitch`; `Quake/host_cmd.c`, `Host_Pause_f`, `Host_Map_f`, `Host_Restart_f`, `Host_Changelevel_f`,
+`Host_Startdemos_f`, `Host_Demos_f`, `Host_Stopdemo_f`; `Quake/cl_main.c`, `CL_NextDemo`;
+`Quake/host.c`, `Host_EndGame`; `Quake/client.h`; `Quake/cmd.c`,
+`Cmd_ForwardToServer`; `Quake/quakedef.h`. A demo is the messages a client read, so it is in
+whichever of the three protocols the server wrote (NET-6, CLIENT-9), under
+[ADR-0026](../../adr/0026-preview-host-later-engine-improvements.md). Implemented by
+`qs-client` (the file, the recorder and the playing client) and `qs-game` (the console's
+commands).
+
+QuakeSpasm plays a demo with no server and no map of its own loaded by a server: its client is
+`ca_connected` to the file. The preview host has no state without a map (ADR-0004), so where a
+statement below says "the preview host" the behaviour is ours, with its reason.
+
+### Behaviour
+
+- **CLIENT-10.1** A demo file starts with the CD track it forces as decimal text and a line
+  feed, "`fprintf (cls.demofile, "%i\n", cls.forcetrack);`", -1 for none. `CL_PlayDemo_f` reads
+  it with "`if (fscanf (cls.demofile, "%i", &cls.forcetrack) != 1 || fgetc (cls.demofile) !=
+  '\n')`", and a file that fails either is refused: white space before the number is skipped,
+  the number is read as C's `%i` reads one (a sign, then decimal, octal after `0` or
+  hexadecimal after `0x`), and the byte after it must be the line feed. While a demo is
+  recorded or played with a track forced, that track is played in the place of the one
+  `svc_cdtrack` names (`CL_ParseServerMessage`): "`if ( (cls.demoplayback ||
+  cls.demorecording) && (cls.forcetrack != -1) ) BGM_PlayCDtrack ((byte)cls.forcetrack,
+  true); else BGM_PlayCDtrack ((byte)cl.cdtrack, true);`".
+- **CLIENT-10.2** `CL_GetMessage`, with no demo playing, takes each message from the server
+  and discards one that is a single `svc_nop`, "`if (net_message.cursize == 1 &&
+  net_message.data[0] == svc_nop)`". While recording, each message kept is written by
+  `CL_WriteDemoMessage`: its length as a little-endian long, the client's three view angles
+  as little-endian floats, "`f = LittleFloat (cl.viewangles[i]);`", then its bytes. While
+  "`if (cls.signon < 2)`" each message is also kept in memory, "so that a demo record can
+  happen after connection is done"; `CL_ClearSignons` forgets them and sets the signon to 0.
+- **CLIENT-10.3** `CL_Record_f`, `record <demoname> [<map> [cd track]]`. In order: while a
+  demo plays, "`Can't record during demo playback`"; a recording under way is stopped
+  (CLIENT-10.5); a count of words other than 2, 3 or 4 prints the usage; a name holding `..`
+  prints "`Relative pathnames are not allowed.`"; with no map, connected and
+  "`if (cls.signon < 2)`", "`Can't record - try again when connected`"; with a track, "`Forcing
+  CD track to %i`" prints the track forced before, "`cls.forcetrack`", and the track is
+  `atoi` of the word, else -1. With a map the map is started as the `map` command starts it,
+  and the recording is of its connection from the first message; a map that does not load
+  records nothing, "`if (cls.state != ca_connected) return;`". The file is the game
+  directory's `<demoname>`, given `.dem` by `COM_AddExtension` unless that is its extension:
+  "`recording to %s.`", and "`ERROR: couldn't create %s`" when it cannot be made. The header
+  is written (CLIENT-10.1). With no map and connected, the messages kept (CLIENT-10.2) are
+  written, then one message of the client's state: for each client slot its name, frags and
+  colours (`svc_updatename`, `svc_updatefrags`, `svc_updatecolors`), every light style to
+  `MAX_LIGHTSTYLES`, the stats `STAT_TOTALSECRETS`, `STAT_TOTALMONSTERS`, `STAT_SECRETS`
+  and `STAT_MONSTERS` as `svc_updatestat`, `svc_setview` with the view entity, and
+  "`MSG_WriteByte (&net_message, svc_signonnum); MSG_WriteByte (&net_message, 3);`". `map`
+  disconnects the client first (`Host_Map_f`), which stops a recording; `changelevel` and
+  `restart` do not, so a recording goes on into the next level. The preview host's map loads
+  after the command, where QuakeSpasm's loads within it, so it writes the recording of
+  `record <demoname> <map>` from the map's first message to a file beside the name,
+  `<demoname>.dem.loading`, which takes the name once the map has loaded and is removed when
+  the map does not load: the file recorded is the same, and a map that does not load costs
+  no demo of that name already there. The messages kept for a later recording are those of
+  the connection the host is on: they are forgotten when a level loads, not when one is
+  asked for.
+- **CLIENT-10.4** `CL_GetDemoMessage` reads a message as CLIENT-10.2 wrote it. The angles
+  read become the latest of two kept, "`VectorCopy (cl.mviewangles[0], cl.mviewangles[1]);`".
+  "`if (net_message.cursize > MAX_MSGLEN) Sys_Error ("Demo message > MAX_MSGLEN");`". A file
+  that ends inside the angles or the bytes stops the demo with no error, "`if (r != 1) {
+  CL_StopPlayback (); return 0; }`", as does a length of 0 or below, of which `fread` reads
+  no item. A file that ends where a length should be is "`Sys_Error ("Demo read error");`".
+  The preview host does not end on either `Sys_Error`: the demo stops, the error is logged and
+  the map played before starts again (CLIENT-10.8), since a damaged file is no reason to
+  close the modder's game.
+- **CLIENT-10.5** `CL_Stop_f`, `stop`: with nothing recording, "`Not recording a demo.`";
+  else a message of the one byte `svc_disconnect` is written (CLIENT-10.2), the file is
+  closed, and "`Completed demo`". `CL_Disconnect` stops a recording the same way.
+- **CLIENT-10.6** While a demo plays, `CL_GetMessage` is `CL_GetDemoMessage`: the messages
+  come from the file and nothing is sent, "`if (cls.demoplayback) { SZ_Clear (&cls.message);
+  return; }`". Until the client is fully connected every message is read, "always grab until
+  fully connected"; then a message is read only when the client's time has passed the last
+  one's, "`else if (/* cl.time > 0 && */ cl.time <= cl.mtime[0]) { return 0; // don't need
+  another message yet }`". That a demo plays is `cls.demoplayback`, which the serverinfo's
+  clearing of the client's state leaves; `cl.mviewangles` is cleared with the rest. The demo
+  ends at its `svc_disconnect` (`Host_EndGame`, then `CL_Disconnect`) or where the file runs
+  out (CLIENT-10.4), by `CL_StopPlayback`. While a demo plays `restart` does nothing, "`if
+  (cls.demoplayback || !sv.active) return;`", and `changelevel` prints "`Only the server may
+  changelevel`", "`if (!sv.active || cls.demoplayback)`". In the preview host the server
+  stands still while a demo plays, the console's commands still run, and the client's frame
+  is the host's; while the game is paused from the IDE, or stopped at a breakpoint, a
+  playing demo stands still too, no time passing and no message read.
+- **CLIENT-10.7** `CL_RelinkEntities`, while a demo plays, turns the view between the angles
+  of the last two messages by the frame's fraction, the short way round: "`d =
+  cl.mviewangles[0][j] - cl.mviewangles[1][j]; if (d > 180) d -= 360; else if (d < -180) d
+  += 360; cl.viewangles[j] = cl.mviewangles[1][j] + frac*d;`". `CL_LerpPoint` gives 1 and
+  sets the time to the last message's in a timedemo, "`if (!f || cls.timedemo || sv.active)
+  { cl.time = cl.mtime[0]; return 1; }`"; the preview host's client interpolates beside its
+  local server (CLIENT-5), so of that test it takes the first two terms. The pitch does not
+  drift while a demo plays, and the drift is forgotten (`V_DriftPitch`, `Quake/view.c`):
+  "`if (noclip_anglehack || !cl.onground || cls.demoplayback ) { cl.driftmove = 0;
+  cl.pitchvel = 0; return; }`".
+- **CLIENT-10.8** `CL_PlayDemo_f`, `playdemo <demoname>`: any other count of words prints
+  "`playdemo <demoname> : plays a demo`". The client disconnects, which stops a demo playing
+  and ends a recording. The name is given `.dem` as CLIENT-10.3 and the file is found on the
+  game's search path: "`Playing demo from %s.`", then "`ERROR: couldn't open %s`" when it is
+  not there, or "`ERROR: demo \"%s\" is invalid`" when its first line is not CLIENT-10.1's.
+  The preview host draws a demo over the map it is of: it reads the world's model,
+  `maps/<map>.bsp`, from the serverinfo of the demo's first message, starts that map as
+  `map` does, and plays the demo with a client of its own in the place of the map's; a demo
+  whose first message holds no serverinfo after its prints, or whose map does not load, is
+  not played, and says so. The keys go to the game, "get rid of the menu and/or console",
+  only when the demo has opened, as `CL_PlayDemo_f` sets `key_dest` after its checks. When
+  the demo ends the map played before it starts again, where QuakeSpasm is left
+  disconnected at its console; so it does whenever a demo stops with its own map loaded:
+  stopped by `stopdemo`, or by a demo asked for in its place that does not open or whose
+  map does not load. A demo that does not start over a game leaves the game as it was. A
+  map that loads while a demo plays stops the demo, as the disconnect of `Host_Map_f` does;
+  one that does not load leaves it playing, since the host stays where it was. A demo that
+  goes on to a level of another map, recorded through a `changelevel` (CLIENT-10.3), has
+  that map loaded when its serverinfo is read, and the level is then read again from that
+  message.
+- **CLIENT-10.9** `CL_TimeDemo_f`, `timedemo <demoname>`: any other count of words prints
+  "`timedemo <demoname> : gets demo speeds`"; else the demo is played as CLIENT-10.8 with
+  one message read each host frame once fully connected, "`if (host_framecount ==
+  cls.td_lastframe) return 0; // already read this frame's message`". When it ends,
+  `CL_FinishTimeDemo` prints "`%i frames %5.1f seconds %5.1f fps`": the frames after the
+  first, "the first frame didn't count", the seconds of the host's clock since the second
+  frame, "so the bogus time on the first frame doesn't count", taken as 1 when 0, "`if
+  (!time) time = 1;`", and their quotient. QuakeSpasm's host runs a timedemo's frames with no
+  frame limit, "`if (!cls.timedemo && realtime - oldrealtime < 1.0/maxfps)`"; the preview
+  host's window draws at its display's rate, so its rate is the display's at most.
+- **CLIENT-10.10** `Host_Pause_f`, `pause`, while a demo plays: "`cls.demopaused =
+  !cls.demopaused; cl.paused = cls.demopaused;`", and `CL_GetDemoMessage` reads nothing
+  while it holds, "`if (cls.demopaused) return 0;`". Any other command the console forwards
+  to the server while a demo plays is dropped, "`if (cls.demoplayback) return; // not really
+  connected`" (`Cmd_ForwardToServer`).
+- **CLIENT-10.11** `Host_Startdemos_f`, `startdemos <demoname>...`: the words after the
+  command are the loop's demos, at most `MAX_DEMOS`, with "`Max %i demos in demoloop`" when
+  there are more, then "`%i demo(s) in loop`"; each name is kept to `MAX_DEMONAME` less one
+  bytes (`q_strlcpy (cls.demos[i-1], Cmd_Argv(i), sizeof(cls.demos[0]));`), and a name past
+  the words given keeps what it was. The loop starts only with no server running, "`if
+  (!sv.active && cls.demonum != -1 && !cls.demoplayback)`", and else is stopped, "`cls.demonum
+  = -1;`". The preview host's server always runs, so `startdemos`, which `quake.rc` runs at
+  start, lists the demos and starts none: the host starts on its map.
+- **CLIENT-10.12** `Host_Demos_f`, `demos`: "`if (cls.demonum == -1) cls.demonum = 1;`", so
+  a loop that was not running starts at its second demo; the client disconnects; then
+  `CL_NextDemo` plays the loop's next demo. `CL_NextDemo` does nothing with no loop running;
+  where the next name is empty, or the number is `MAX_DEMOS`, it goes round to the first,
+  "`if (!cls.demos[cls.demonum][0] || cls.demonum == MAX_DEMOS)`", and with no first name
+  prints "`No demos listed with startdemos`" and stops the loop; else it runs `playdemo` of
+  the name and moves on, "`cls.demonum++;`". When a demo of a running loop ends it is
+  followed by the next, but not a timedemo: "`if (cls.demonum != -1 && !cls.timedemo)
+  CL_NextDemo ();`" (`Host_EndGame`). A demo that does not open or is invalid stops the loop
+  (CLIENT-10.8: "`cls.demonum = -1; // stop demo loop`"), and so does `map`, "stop demo loop
+  in case this fails". The preview host keeps the map played before the loop's first demo
+  and starts it again when the loop ends.
+- **CLIENT-10.13** `Host_Stopdemo_f`, `stopdemo`: "`if (!cls.demoplayback) return;
+  CL_StopPlayback (); CL_Disconnect ();`". In the preview host the map played before the
+  demo starts again.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `MAX_DEMOS` | 8 | `Quake/client.h`: "`#define MAX_DEMOS 8`" |
+| `MAX_DEMONAME` | 16 | `Quake/client.h`: "`#define MAX_DEMONAME 16`" |
+| `MAX_MSGLEN` | 64000 | `Quake/quakedef.h`: "`#define MAX_MSGLEN 64000 // max length of a reliable message //ericw -- was 32000`" |
+| Signon stage a recording needs | 2 | `Quake/cl_demo.c`, `CL_Record_f`: "`if (cls.signon < 2)`" |
+| Signon stage a recording started late writes | 3 | `Quake/cl_demo.c`, `CL_Record_f`: "`MSG_WriteByte (&net_message, 3);`" |
+| No forced CD track | -1 | `Quake/cl_demo.c`, `CL_Record_f`: "`track = -1;`" |
+
+### Not covered
+
+The console's completion of demo names (`DemoList_Rebuild`, `Quake/host_cmd.c`) is the
+console's (CON), and is not part of this section.
