@@ -361,4 +361,4 @@ pub fn register_tests<C: HasWorkbench + 'static>(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -67,9 +67,9 @@ an edit, so both commands run outside the edit history
   replaces every match in one file and saves it, one undoable step per file, so replacing across
   a project is the command once per file; `file.replace_range` changes one range of a file's
   text, unsaved, as an edit in a multibuffer excerpt does.
-- The agent reference (`reference`, L-45, AGT-9): `project.reference` answers one topic of
-  `docs/agent-reference/` (the language, the engine's entity model, monsters, maps, the
-  workflow), so an agent that reaches the IDE over MCP reads what the built-in agent's prompt
+- The agent reference (`reference`, L-45, L-46, AGT-9): `project.reference` answers one topic
+  of `docs/agent-reference/` (the language in short and in each dialect, the engine's entity
+  model, monsters, weapons, items, triggers, models, maps, the workflow), so an agent that reaches the IDE over MCP reads what the built-in agent's prompt
   is built from.
 - Entity definitions (`entity_classes`, P5-03, MAP-1): `project.entities` lists the entity
   classes the project's server QuakeC defines, read from its spawn functions by `qc-sema`, and
