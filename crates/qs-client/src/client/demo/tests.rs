@@ -529,6 +529,7 @@ fn a_demos_first_line_is_a_number_and_a_newline() {
     assert_eq!(scan_int(b"017 "), Some((15, 3)));
     assert_eq!(scan_int(b"08"), Some((0, 1)), "8 is no octal digit");
     assert_eq!(scan_int(b"0x"), Some((0, 1)), "no digit after the x");
+    assert_eq!(scan_int(b"0xg"), Some((0, 1)), "no hex digit after the x");
     assert_eq!(scan_int(b"4294967298"), Some((2, 10)), "wrapped to 32 bits");
     for none in [&b""[..], b"-", b"x", b"\n"] {
         assert_eq!(scan_int(none), None, "{none:?}");
@@ -630,4 +631,72 @@ fn a_damaged_demo_ends_or_is_refused() {
         )
         .unwrap_err();
     assert!(matches!(error, DemoFrameError::Parse(_)), "{error}");
+}
+
+/// A demo file of one message, `data`, after the header of no track.
+fn file_of(data: &[u8]) -> Vec<u8> {
+    let mut bytes = b"-1\n".to_vec();
+    bytes.extend_from_slice(&i32::try_from(data.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(&[0; 12]);
+    bytes.extend_from_slice(data);
+    bytes
+}
+
+// spec CLIENT-10.8: the map a demo is of is the world's model of its first message's
+// serverinfo, past any nop and print before it, in each protocol; a demo with no message, one
+// whose first holds something else first, or whose world is no map of `maps/`, names none
+#[test]
+fn a_demo_names_the_map_it_is_of() {
+    for protocol in PROTOCOLS {
+        let mut first = command(protocol, 1, &[]);
+        first.extend(command(protocol, 8, b"hello\n\0"));
+        first.extend(serverinfo(protocol));
+        let demo = Demo::open(file_of(&first)).unwrap();
+        assert_eq!(demo.map().as_deref(), Some("test"), "{protocol:?}");
+        // Asking does not read the demo on.
+        assert_eq!(demo.map().as_deref(), Some("test"));
+    }
+    let protocol = Protocol::NETQUAKE;
+    assert_eq!(Demo::open(b"-1\n".to_vec()).unwrap().map(), None);
+    let light = command(protocol, 12, b"\0m\0");
+    assert_eq!(Demo::open(file_of(&light)).unwrap().map(), None);
+    // A serverinfo of a protocol there is none of, and worlds that are no `maps/<map>.bsp`.
+    let mut unknown = msg(protocol);
+    unknown.write_byte(11);
+    unknown.write_long(3);
+    assert_eq!(Demo::open(file_of(&unknown.take())).unwrap().map(), None);
+    for world in ["progs/test.bsp", "maps/test.mdl", "maps/.bsp"] {
+        let mut m = msg(protocol);
+        m.write_byte(11);
+        m.write_long(protocol.version().number());
+        m.write_byte(1);
+        m.write_byte(0);
+        m.write_string(b"The Test");
+        m.write_string(world.as_bytes());
+        m.write_byte(0);
+        assert_eq!(
+            Demo::open(file_of(&m.take())).unwrap().map(),
+            None,
+            "{world}"
+        );
+    }
+}
+
+// spec CLIENT-10.2: a recorder says how many messages it keeps and whether it records
+#[test]
+fn a_recorder_shows_what_it_holds() {
+    let mut recorder = DemoRecorder::new();
+    recorder.got(0, [0.0; 3], b"x").unwrap();
+    recorder.got(1, [0.0; 3], b"y").unwrap();
+    assert_eq!(
+        format!("{recorder:?}"),
+        "DemoRecorder { head: 2, recording: false }"
+    );
+    recorder
+        .record(Box::new(File::default()), DemoTrack::None, None)
+        .unwrap();
+    assert_eq!(
+        format!("{recorder:?}"),
+        "DemoRecorder { head: 2, recording: true }"
+    );
 }

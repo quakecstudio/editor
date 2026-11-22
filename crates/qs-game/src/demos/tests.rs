@@ -569,3 +569,78 @@ fn no_level_follows_the_one_a_demo_plays_over() {
     assert!(!host.demos.refuses(Connection::New, &mut host.game));
     assert!(host.demos.playing());
 }
+
+// spec CLIENT-10.3: with no map named, a client connected to signon stage 2 may record and
+// one before it may not
+#[test]
+fn record_waits_for_the_second_signon_stage() {
+    let mut host = Host::new("signon");
+    let packets = host.game.world_mut().take_messages().packets;
+    let mut stages = Vec::new();
+    for packet in &packets {
+        host.client
+            .frame(
+                0.0,
+                core::slice::from_ref(packet),
+                &mut Brushes,
+                &mut NoRand,
+            )
+            .unwrap();
+        stages.push(host.client.signon());
+        if host.client.signon() == 1 {
+            assert_eq!(
+                host.say("record early"),
+                ["Can't record - try again when connected\n"]
+            );
+        }
+        if host.client.signon() == 2 {
+            break;
+        }
+    }
+    assert_eq!(host.client.signon(), 2, "{stages:?}");
+    let path = host.root.file("ready.dem");
+    assert_eq!(
+        host.say("record ready"),
+        [format!("recording to {}.\n", path.display())]
+    );
+}
+
+// spec CLIENT-10.8: a demo that does not start while another plays over another map leaves
+// the host on the map played before the first
+#[test]
+fn a_demo_that_does_not_start_goes_back_to_the_map_before() {
+    let mut host = Host::connected("back");
+    host.recorded("run", 3);
+    host.say("playdemo run");
+    host.asked();
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    host.demos
+        .after_level(Some(&mut host.client), &mut host.game);
+    // As when the first demo was started from another map than its own.
+    host.demos.playing.as_mut().unwrap().back = "elsewhere".to_owned();
+    host.game.world_mut().console("playdemo none\n");
+    Demos::console_frame(&mut host.game, &mut host.client);
+    for command in host.game.world_mut().take_client_commands() {
+        let mut demo_host = DemoHost {
+            args: &host.args,
+            game: &mut host.game,
+            client: &host.client,
+            read: &|_| None,
+        };
+        host.demos.command(&command, &mut demo_host);
+    }
+    assert!(!host.demos.playing());
+    assert_eq!(
+        host.printed(),
+        [
+            "Playing demo from none.dem.\n",
+            "ERROR: couldn't open none.dem\n"
+        ]
+    );
+    Demos::console_frame(&mut host.game, &mut host.client);
+    match host.game.host_action() {
+        Some(HostAction::Level(level)) => assert_eq!(level.map, "elsewhere"),
+        other => panic!("{:?}", other.is_some()),
+    }
+}
