@@ -401,12 +401,22 @@ pub enum DemoPace {
     EveryFrame,
 }
 
+/// Whether a playing demo's messages are being read, `cls.demopaused` (CLIENT-10.10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DemoHold {
+    /// They are.
+    Running,
+    /// `pause` holds them.
+    Held,
+}
+
 /// A playing demo's state in the client: the view angles of its last two messages,
-/// `cl.mviewangles`, and its pace.
+/// `cl.mviewangles`, its pace, and whether `pause` holds it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Playback {
     pub(super) mviewangles: [[f32; 3]; 2],
     pub(super) pace: DemoPace,
+    pub(super) hold: DemoHold,
 }
 
 /// How a frame of a playing demo left it.
@@ -439,6 +449,22 @@ impl Client {
     /// `CL_StopPlayback`'s part in the client: no demo is playing.
     pub const fn stop_playback(&mut self) {
         self.playback = None;
+    }
+
+    /// `Host_Pause_f` while a demo plays: "`cls.demopaused = !cls.demopaused; cl.paused =
+    /// cls.demopaused;`". The demo's messages are held, or read again, and the client is
+    /// paused with them. With no demo playing nothing changes.
+    ///
+    /// Implements CLIENT-10.10.
+    pub const fn pause_demo(&mut self) {
+        let Some(playback) = self.playback.as_mut() else {
+            return;
+        };
+        playback.hold = match playback.hold {
+            DemoHold::Running => DemoHold::Held,
+            DemoHold::Held => DemoHold::Running,
+        };
+        self.paused = matches!(playback.hold, DemoHold::Held);
     }
 
     /// The state a recording started while connected writes after the kept messages
@@ -542,6 +568,7 @@ impl Client {
         let mut playback = self.playback.unwrap_or(Playback {
             mviewangles: [self.viewangles; 2],
             pace,
+            hold: DemoHold::Running,
         });
         playback.pace = pace;
         self.playback = Some(playback);
@@ -550,6 +577,10 @@ impl Client {
         let mut read = 0_usize;
         let mut state = DemoState::Playing;
         loop {
+            // CLIENT-10.10: "`if (cls.demopaused) return 0;`".
+            if playback.hold == DemoHold::Held {
+                break;
+            }
             // "decide if it is time to grab the next message": always until fully connected.
             if self.signon == CLIENT_SIGNONS {
                 let enough = match pace {

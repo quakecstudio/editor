@@ -581,6 +581,20 @@ impl Game {
         }
     }
 
+    /// Runs the console's buffer alone, `Cbuf_Execute`, in a host frame whose server stands
+    /// still because a demo plays (CLIENT-10.6); the commands it forwarded to the server,
+    /// which is not the one the client hears.
+    pub(crate) fn console_frame(&mut self) -> Vec<Vec<u8>> {
+        if self.state == State::Paused || self.loading.holds() {
+            return Vec::new();
+        }
+        let ran = self.with_progs(|game, progs| {
+            game.world.execute_console(progs);
+            game.world.take_client_commands_sent()
+        });
+        ran.unwrap_or_default()
+    }
+
     /// Moves the player to `origin`, facing `angles`, at rest, as `player/spawn_at` does
     /// (BRIDGE-4.9): for `--view-script`'s `place` (VIEWDIFF-1.4).
     ///

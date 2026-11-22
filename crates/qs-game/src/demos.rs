@@ -28,6 +28,8 @@ const RECORD_FROM_SIGNON: i32 = 2;
 const RECORD_WORDS: core::ops::RangeInclusive<usize> = 2..=4;
 /// The words of `playdemo` and `timedemo`: the command and a name.
 const PLAY_WORDS: usize = 2;
+/// The command that holds a playing demo.
+const PAUSE: &[u8] = b"pause";
 /// The extension a demo's name is given when it has another or none.
 const DEMO_EXTENSION: &str = "dem";
 
@@ -128,6 +130,23 @@ impl Demos {
         self.playing
             .as_ref()
             .is_some_and(|playing| playing.stage == Stage::Playing)
+    }
+
+    /// The host's frame while a demo plays, in the server's place: the console's buffer
+    /// runs, and of what it forwards to the server `pause` holds the demo or lets it go and
+    /// the rest is dropped, "`if (cls.demoplayback) return; // not really connected`".
+    ///
+    /// Implements CLIENT-10.10.
+    pub(crate) fn console_frame(game: &mut Game, client: &mut Client) {
+        for command in game.console_frame() {
+            let name = command
+                .split(|byte| byte.is_ascii_whitespace())
+                .next()
+                .unwrap_or_default();
+            if name.eq_ignore_ascii_case(PAUSE) {
+                client.pause_demo();
+            }
+        }
     }
 
     /// The recorder, which a map's loader gives the connection's first messages.

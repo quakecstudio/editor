@@ -464,6 +464,7 @@ impl Viewer {
         // CLIENT-10.6: while a demo plays the server stands still, and the client's frame is
         // the host's.
         let frametime = if self.demos.playing() {
+            Demos::console_frame(&mut self.game, &mut self.client);
             f64::from(seconds)
         } else {
             self.advance(f64::from(seconds))

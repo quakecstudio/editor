@@ -482,3 +482,66 @@ fn a_demo_with_a_message_too_long_stops_with_the_error() {
     assert!(!host.demos.playing());
     assert_eq!(host.asked(), Some(("test".to_owned(), Connection::New)));
 }
+
+// spec CLIENT-10.6: the console's commands run while a demo plays, the server standing still.
+// spec CLIENT-10.10: `pause` holds a playing demo and lets it go, the client paused with
+// it, and any other command for the server is dropped.
+#[test]
+fn pause_holds_a_playing_demo() {
+    let mut host = Host::connected("pause");
+    host.recorded("run", 6);
+    host.say("playdemo run");
+    // The host starts the demo's map.
+    host.asked();
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    host.demos
+        .after_level(Some(&mut host.client), &mut host.game);
+    host.frame(0.0).unwrap();
+    let time = host.game.world().time();
+
+    host.game.world_mut().console("pause; god\n");
+    Demos::console_frame(&mut host.game, &mut host.client);
+    assert!(host.client.paused());
+    // The server did not run, and nothing waits for it.
+    assert_eq!(host.game.world().time().to_bits(), time.to_bits());
+    assert!(host.game.world_mut().take_client_commands_sent().is_empty());
+    for _ in 0..20 {
+        host.frame(0.0).unwrap();
+    }
+    assert!(host.demos.playing());
+
+    host.game.world_mut().console("pause\n");
+    Demos::console_frame(&mut host.game, &mut host.client);
+    assert!(!host.client.paused());
+    let mut frames = 0;
+    while host.demos.playing() {
+        host.frame(0.0).unwrap();
+        frames += 1;
+        assert!(frames < 100, "the demo does not end");
+    }
+}
+
+// spec CLIENT-10.8: a command typed while a demo plays that starts a map stops the demo.
+#[test]
+fn a_map_started_while_a_demo_plays_stops_it() {
+    let mut host = Host::connected("leave");
+    host.recorded("run", 6);
+    host.say("playdemo run");
+    // The host starts the demo's map.
+    host.asked();
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    host.demos
+        .after_level(Some(&mut host.client), &mut host.game);
+    host.frame(0.0).unwrap();
+    host.game.world_mut().console("map test\n");
+    Demos::console_frame(&mut host.game, &mut host.client);
+    assert!(matches!(
+        host.game.host_action(),
+        Some(HostAction::Level(_))
+    ));
+    host.demos
+        .before_level(Connection::New, &mut host.game, &host.client);
+    assert!(!host.demos.playing());
+}

@@ -943,6 +943,13 @@ impl World {
         Ok(SpawnParms { serverflags, parms })
     }
 
+    /// The string commands the client has sent that no frame has read, taken from the
+    /// server: what a host does with them when its client is not the server's, as while a
+    /// demo plays (CLIENT-10.10).
+    pub fn take_client_commands_sent(&mut self) -> Vec<Vec<u8>> {
+        core::mem::take(&mut self.commands)
+    }
+
     /// A string command from the client, such as `god`, read at the start of the next frame
     /// (PHYS-11).
     pub fn client_command(&mut self, text: &str) {

@@ -814,6 +814,7 @@ impl Client {
         let playback = self.playback.map(|playback| demo::Playback {
             mviewangles: [[0.0; 3]; 2],
             pace: playback.pace,
+            hold: playback.hold,
         });
         *self = Self::with_limits(game, self.limits);
         self.playback = playback;

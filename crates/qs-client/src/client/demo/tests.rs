@@ -267,6 +267,44 @@ fn a_playing_demo_takes_its_messages_by_its_pace() {
     assert_eq!(play(DemoPace::EveryFrame, 0.0, 5), [4, 1, 1, 1, 1]);
 }
 
+// spec CLIENT-10.10: `pause` while a demo plays holds its messages and pauses the client,
+// and again lets them go; with no demo playing it changes nothing
+#[test]
+fn pause_holds_a_playing_demos_messages() {
+    let frames = game(Protocol::NETQUAKE, 8);
+    let file = File::default();
+    let mut recorder = DemoRecorder::new();
+    recorder
+        .record(Box::new(file.clone()), DemoTrack::None, None)
+        .unwrap();
+    live(&frames, &mut recorder, &mut client(), 0);
+    let mut demo = Demo::open(file.0.borrow().clone()).unwrap();
+    let mut playing = client();
+    playing.pause_demo();
+    assert!(!playing.paused());
+    let mut frame = |playing: &mut Client| {
+        playing
+            .demo_frame(
+                FRAME,
+                &mut demo,
+                DemoPace::EveryFrame,
+                &mut TestModels,
+                &mut NoRandom,
+            )
+            .unwrap()
+    };
+    assert_eq!(frame(&mut playing).read, 4);
+    playing.pause_demo();
+    assert!(playing.paused());
+    for _ in 0..3 {
+        let held = frame(&mut playing);
+        assert_eq!((held.read, held.state), (0, DemoState::Playing));
+    }
+    playing.pause_demo();
+    assert!(!playing.paused());
+    assert_eq!(frame(&mut playing).read, 1);
+}
+
 // spec CLIENT-10.7: a playing demo's view turns between the angles of its last two messages
 // by the frame's fraction, the short way round; in a timedemo it is at the last message's
 #[test]

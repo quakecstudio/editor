@@ -77,7 +77,12 @@ impl Args {
                 frametime_f32(FRAME)
             });
             // CLIENT-10.6: while a demo plays the server stands still.
-            let ran = world.demos.playing() || world.game.frame(FRAME);
+            let ran = if world.demos.playing() {
+                Demos::console_frame(&mut world.game, &mut world.client);
+                true
+            } else {
+                world.game.frame(FRAME)
+            };
             // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
             world.client_commands(self);
             if let Some(action) = world.game.host_action() {
