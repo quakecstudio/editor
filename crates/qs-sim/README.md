@@ -53,7 +53,10 @@ server runs them. Collision, monster movement, physics and the player all follow
 - `World::console(text)`, `World::execute_console(progs)`, `World::take_console_output()` and
   `World::take_host_command()`: id's console (PHYS-13), run in each frame before the server
   frame as `_Host_Frame` runs `Cbuf_Execute`; what it printed, a line each; and the `map`,
-  `changelevel`, `restart`, `save`, `load` or `quit` it left for the host (PHYS-13.6).
+  `changelevel`, `restart`, `save`, `load` or `quit` it left for the host (PHYS-13.6). The
+  demo commands (`record`, `stop`, `playdemo`, `timedemo`) come to the host as
+  `ClientCommand`s, and `World::take_client_commands_sent()` takes the commands forwarded to
+  the server that no frame has read, for a host whose client is playing a demo (CLIENT-10).
 - `World::reload(old, new)`: a progs loaded again over the running map (WORLD-10), the edicts
   kept and each global and field carried by name and type, its values translated into the new
   progs; the `Migration` it returns counts what was carried and lists what was lost or added.

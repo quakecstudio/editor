@@ -56,5 +56,9 @@ debugger stops a frame before a statement and goes on by replaying the frame fro
 the world taken before it (WORLD-9); `progs.lno` beside the progs gives it files and lines.
 `console` runs id's console (PHYS-13): its commands, aliases and settings, the commands it
 forwards to the server, and `map`, `changelevel`, `restart`, `save`, `load` and `quit`, which
-the host carries out, saving to `<basedir>/<game>/<name>.sav`. The commands' conformance tests
+the host carries out, saving to `<basedir>/<game>/<name>.sav`. `record <name> [<map> [track]]`
+and `stop` record a demo to `<basedir>/<game>/<name>.dem`, and `playdemo <name>` and
+`timedemo <name>` play one from the game's files, in whichever protocol it was recorded
+(CLIENT-10): the demo's map is loaded, the demo plays over it with the server standing still,
+and the map played before starts again when it ends. `pause` holds a playing demo. The commands' conformance tests
 are in `crates/qs-game/src/game/tests.rs`.
