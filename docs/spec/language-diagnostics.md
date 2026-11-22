@@ -480,6 +480,13 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   a diagnostic under the vanilla profile.
 - **QCD-6.11** `E0511` "Bad op code name NAME": under an FTEQCC profile, an instruction of an
   `asm` statement whose first token is no opcode's name, at the token (FTEF-20.5).
+- **QCD-6.12** `E0512` "too many globals for progs.dat: ...", "too many fields for progs.dat:
+  ..." or "the TABLE table is too large for progs.dat": a program that does not fit the format
+  it is written in (PROGS-22.4), whose writer would refuse it. A global or field definition
+  whose slot its 16-bit offset cannot hold is reported at the declaration of that name, the
+  message naming it and the slot; a statement whose operand its 16-bit operands cannot hold, at
+  the source statement it was compiled from, the message naming the operand; a table whose count
+  or offset its header cannot hold, with no place. Nothing is written.
 
 ## QCD-7 Warnings
 

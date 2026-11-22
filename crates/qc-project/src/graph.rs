@@ -77,7 +77,8 @@ pub struct GraphIndex(usize);
 
 impl GraphIndex {
     /// The entry at `index`.
-    pub(crate) const fn new(index: usize) -> Self {
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
         Self(index)
     }
 

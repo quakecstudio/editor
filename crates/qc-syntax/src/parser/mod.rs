@@ -397,6 +397,12 @@ pub(crate) struct Parser<'a> {
     /// levels it unwinds through would otherwise go on wrapping what they hold, and the tree
     /// would grow past the limit after all.
     too_deep: bool,
+    /// How many statements, declarations or members are being read, one inside another: past
+    /// the nesting limit those inside the outermost are skipped with it (QC-27.16).
+    open_items: usize,
+    /// Whether the rest of the statement or declaration that went past the nesting limit was
+    /// skipped (QC-27.16), so the constructs it unwinds through read nothing more.
+    rest_skipped: bool,
     /// FTEQCC's `qcc_usefulstatement`: whether a call, an assignment or a prefix `++` or `--`
     /// has been read since the flag was last cleared (FTEF-18.25).
     useful: bool,
@@ -514,6 +520,8 @@ impl<'a> Parser<'a> {
             labels: Vec::new(),
             depth: 0,
             too_deep: false,
+            open_items: 0,
+            rest_skipped: false,
             bodies: 0,
             block_depth: 0,
             params: Vec::new(),
@@ -931,6 +939,56 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Inside a statement that went past the nesting limit, skips a block's statements to the
+    /// `}` that closes it, not taken, so each block it had opened closes on its own brace
+    /// (QC-27.16).
+    fn skip_too_deep_block(&mut self) {
+        if !self.too_deep || self.open_items == 0 {
+            return;
+        }
+        let mut depth = 0_usize;
+        self.skip_into_error(|parser| match parser.current().map(|t| t.kind) {
+            Some(K::LBrace) => {
+                depth = depth.saturating_add(1);
+                Skip::Take
+            }
+            Some(K::RBrace) if depth == 0 => Skip::Stop,
+            Some(K::RBrace) => {
+                depth = depth.saturating_sub(1);
+                Skip::Take
+            }
+            Some(_) => Skip::Take,
+            None => Skip::Stop,
+        });
+    }
+
+    /// Where the nesting limit is passed (QC-27.16), skips the rest of what is being read into
+    /// an error node, as after any error (QCD-1.4): a `{ ... }` to the `}` that closes it, taken,
+    /// and anything else to the `;` that ends its statement or declaration, taken, or to a `}`
+    /// that closes a block around it, not taken, so each block it is in closes on its own brace.
+    fn skip_too_deep_rest(&mut self) {
+        let group = self.at(K::LBrace);
+        let mut depth = 0_usize;
+        self.skip_into_error(|parser| match parser.current().map(|t| t.kind) {
+            Some(K::LBrace) => {
+                depth = depth.saturating_add(1);
+                Skip::Take
+            }
+            Some(K::RBrace) if depth == 0 => Skip::Stop,
+            Some(K::RBrace) => {
+                depth = depth.saturating_sub(1);
+                if group && depth == 0 {
+                    Skip::TakeAndStop
+                } else {
+                    Skip::Take
+                }
+            }
+            Some(K::Semicolon) if depth == 0 => Skip::TakeAndStop,
+            Some(_) => Skip::Take,
+            None => Skip::Stop,
+        });
+    }
+
     /// Puts the current token, if any, in an error node.
     fn bump_error(&mut self) {
         if self.current().is_some() {
@@ -1054,24 +1112,39 @@ impl<'a> Parser<'a> {
     }
 
     /// Starts a statement, declaration or member: the errors of the last one no longer mute
-    /// this one's (QC-24.2), and its nesting starts afresh (QC-27.16).
+    /// this one's (QC-24.2), and its nesting starts afresh (QC-27.16), unless it is inside one
+    /// that went past the nesting limit, whose rest is skipped. Each call is paired with a
+    /// [`Parser::end_item`].
     fn start_item(&mut self) {
-        self.recovering = false;
-        self.muted = false;
-        self.too_deep = false;
+        let inside_too_deep = self.too_deep && self.open_items > 0;
+        if !inside_too_deep {
+            self.recovering = false;
+            self.muted = false;
+            self.too_deep = false;
+            self.rest_skipped = false;
+        }
+        self.open_items = self.open_items.saturating_add(1);
+    }
+
+    /// Ends what [`Parser::start_item`] started.
+    fn end_item(&mut self) {
+        self.open_items = self.open_items.saturating_sub(1);
     }
 
     fn leave(&mut self, levels: usize) {
         self.depth = self.depth.saturating_sub(levels);
     }
 
-    /// `f` one level of nesting deeper (QC-27.15, QC-27.16): past the limit the current token
-    /// goes into an error node instead, and `f` gives nothing.
+    /// `f` one level of nesting deeper (QC-27.15, QC-27.16): past the limit the rest of the
+    /// statement or declaration goes into an error node instead, once, and `f` gives nothing.
     fn nested<T: Default>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
         let result = if self.enter() {
             f(self)
         } else {
-            self.bump_error();
+            if !self.rest_skipped {
+                self.skip_too_deep_rest();
+                self.rest_skipped = true;
+            }
             T::default()
         };
         self.leave(1);
@@ -1132,6 +1205,7 @@ impl<'a> Parser<'a> {
             self.start_item();
             let before = self.pos;
             self.item();
+            self.end_item();
             if self.pos == before {
                 self.bump_error();
             }
@@ -1274,6 +1348,7 @@ impl<'a> Parser<'a> {
                 self.start_item();
                 let before = self.pos;
                 self.block_item(site);
+                self.end_item();
                 if self.pos == before {
                     self.bump_error();
                 }
@@ -2393,10 +2468,22 @@ impl<'a> Parser<'a> {
     }
 
     fn block_inner(&mut self, block: BlockKind) {
+        // QC-27.16: a function body's statements are the outermost, whatever declares it.
+        let outer_items = self.open_items;
+        if block == BlockKind::FunctionBody {
+            self.open_items = 0;
+        }
+        self.block_statements(block);
+        self.open_items = outer_items;
+    }
+
+    /// [`Parser::block_inner`]'s block.
+    fn block_statements(&mut self, block: BlockKind) {
         self.start_node(K::Block);
         self.expect(K::LBrace, "{");
         let mut count = 0_usize;
         loop {
+            self.skip_too_deep_block();
             let Some(kind) = self.current().map(|t| t.kind) else {
                 // `PR_ParseStatement` reads the end of the file as an expression.
                 self.not_a_name();
@@ -2418,6 +2505,7 @@ impl<'a> Parser<'a> {
             self.start_item();
             let before = self.pos;
             self.statement();
+            self.end_item();
             if self.pos == before {
                 self.bump_error();
             }
@@ -2694,6 +2782,7 @@ impl<'a> Parser<'a> {
             return;
         }
         loop {
+            self.skip_too_deep_block();
             let Some(kind) = self.current().map(|t| t.kind) else {
                 self.not_a_name();
                 break;
@@ -2713,6 +2802,7 @@ impl<'a> Parser<'a> {
             self.start_item();
             let before = self.pos;
             self.statement();
+            self.end_item();
             if self.pos == before {
                 self.bump_error();
             }
@@ -2723,6 +2813,12 @@ impl<'a> Parser<'a> {
     /// `case e:` or `default:` (FTE-3.1).
     fn case_label(&mut self) {
         self.start_item();
+        self.case_label_inner();
+        self.end_item();
+    }
+
+    /// [`Parser::case_label`]'s label.
+    fn case_label_inner(&mut self) {
         self.start_node(K::CaseLabel);
         if self.kw(0, Keyword::Default) {
             self.bump_as(K::DefaultKw);

@@ -5,8 +5,10 @@
 //! -game <mod>`, `-kpf` where the run root cannot link the file, and `-bridge <socket>`.
 
 use std::fmt;
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, ChildStderr, Command, ExitStatus, Stdio};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::client::{Client, ClientError};
@@ -14,6 +16,8 @@ use crate::run_root::RunRoot;
 
 /// The preview host's executable name.
 const HOST_NAME: &str = "quakec-engine";
+/// What the host puts before the error it stops with, on its last line (`apps/quakec-engine`).
+const HOST_ERROR_PREFIX: &str = "quakec-engine: ";
 
 /// How often, and how far apart, the client tries the host's socket while it starts: for a
 /// minute, since the host loads the whole map before it listens.
@@ -72,8 +76,14 @@ pub enum LaunchError {
     NotFound(PathBuf),
     /// The process did not start.
     Spawn(std::io::Error),
-    /// The host stopped before its bridge connected, with this status.
-    Exited(ExitStatus),
+    /// The host stopped before its bridge connected.
+    Exited {
+        /// Its status.
+        status: ExitStatus,
+        /// The error it said it stopped with, its last line on its error output; `None` when
+        /// it said nothing.
+        said: Option<String>,
+    },
     /// The bridge did not connect or initialize.
     Bridge(ClientError),
     /// The game did not start in the app's own process (ADR-0028), with why.
@@ -85,7 +95,12 @@ impl fmt::Display for LaunchError {
         match self {
             Self::NotFound(path) => write!(f, "no preview host at {}", path.display()),
             Self::Spawn(error) => write!(f, "the preview host did not start: {error}"),
-            Self::Exited(status) => write!(f, "the preview host stopped as it started: {status}"),
+            Self::Exited {
+                said: Some(said), ..
+            } => write!(f, "the preview host stopped as it started: {said}"),
+            Self::Exited { status, said: None } => {
+                write!(f, "the preview host stopped as it started: {status}")
+            }
             Self::Bridge(error) => write!(f, "{error}"),
             Self::Embedded(why) => write!(f, "the game did not start: {why}"),
         }
@@ -97,7 +112,7 @@ impl std::error::Error for LaunchError {
         match self {
             Self::Spawn(error) => Some(error),
             Self::Bridge(error) => Some(error),
-            Self::NotFound(_) | Self::Exited(_) | Self::Embedded(_) => None,
+            Self::NotFound(_) | Self::Exited { .. } | Self::Embedded(_) => None,
         }
     }
 }
@@ -169,9 +184,17 @@ impl LaunchSpec {
     /// [`LaunchError`] when the process does not start or the bridge does not connect; a host
     /// that started is stopped again.
     pub fn launch(&self, client_name: &str) -> Result<Running, LaunchError> {
-        let mut child = self.command().spawn().map_err(LaunchError::Spawn)?;
+        let mut command = self.command();
+        command.stderr(Stdio::piped());
+        let mut child = command.spawn().map_err(LaunchError::Spawn)?;
+        let said = child.stderr.take().map(relay);
         match connect(&mut child, &self.socket, client_name) {
             Ok(client) => Ok(Running { child, client }),
+            Err(LaunchError::Exited { status, .. }) => {
+                // The host has exited, so its error output ends and what it said is whole.
+                let said = said.and_then(|relay| relay.join().ok()).flatten();
+                Err(LaunchError::Exited { status, said })
+            }
             Err(error) => {
                 // The host is of no use without its bridge; it is waited for, so it leaves no
                 // process behind.
@@ -184,13 +207,38 @@ impl LaunchSpec {
     }
 }
 
+/// Passes the host's error output on to the app's, line by line, as when it was inherited,
+/// and gives, once it ends, the error the host stopped with: its last line that starts with
+/// [`HOST_ERROR_PREFIX`], without it, else its last line that is not blank.
+fn relay(stderr: ChildStderr) -> JoinHandle<Option<String>> {
+    std::thread::spawn(move || {
+        let mut said = None;
+        let mut last = None;
+        let mut out = std::io::stderr();
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            if writeln!(out, "{line}").is_err() {
+                tracing::debug!("the preview host's error output could not be passed on");
+            }
+            if let Some(error) = line.strip_prefix(HOST_ERROR_PREFIX) {
+                said = Some(error.to_owned());
+            } else if !line.trim().is_empty() {
+                last = Some(line);
+            }
+        }
+        said.or(last)
+    })
+}
+
 /// Connects to the host `child` starts at `socket` and initializes the bridge, trying while
 /// the host runs; a host that stops first is [`LaunchError::Exited`].
 fn connect(child: &mut Child, socket: &Path, client_name: &str) -> Result<Client, LaunchError> {
     let mut last = ClientError::Timeout;
     for _ in 0..CONNECT_ATTEMPTS {
         if let Some(status) = child.try_wait().map_err(LaunchError::Spawn)? {
-            return Err(LaunchError::Exited(status));
+            return Err(LaunchError::Exited { status, said: None });
         }
         match Client::connect(socket, 1, Duration::ZERO) {
             Ok(mut client) => {

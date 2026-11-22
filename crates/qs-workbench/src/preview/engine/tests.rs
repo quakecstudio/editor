@@ -25,7 +25,7 @@ use super::{
     console_output, inspect, next_screenshot_path, register_engine, screenshot_to,
 };
 use crate::ids::Edict;
-use crate::preview::{HasPreview, Preview, PreviewConfig, PreviewError};
+use crate::preview::{HasPreview, Preview, PreviewConfig, PreviewError, register_preview};
 use crate::{Config, HasWorkbench, Workbench};
 
 /// The eight bytes a PNG starts with, in base64.
@@ -267,4 +267,63 @@ fn the_engine_commands_need_a_running_game() {
             .execute(ENGINE_INSPECT, json!({ "what": "nothing" }))
             .is_err()
     );
+}
+
+// spec BRIDGE-4.9: with no game running, preview.breakpoint refuses a line where the project's
+// program has no statement, as the game would, and adds one where it has, which the next call
+// takes away; nothing is written to build it
+#[test]
+fn a_breakpoint_on_a_line_with_no_statement_is_refused() {
+    let mut registry = Registry::new();
+    register_preview(&mut registry).unwrap();
+    let dir = std::env::temp_dir().join(format!("qs-workbench-break-{}", std::process::id()));
+    let mut loader = MemoryLoader::new();
+    for (name, text) in [
+        ("progs.src", "progs.dat\nworld.qc\n"),
+        (
+            "world.qc",
+            "float x;\n\nvoid() worldspawn = {\n\n    x = 1;\n};\n",
+        ),
+    ] {
+        loader.insert(dir.join(name), text.as_bytes().to_vec());
+    }
+    let mut workbench = Workbench::new(loader, Config::default());
+    workbench.open_project(&dir).unwrap();
+    let context = Context {
+        workbench,
+        preview: Preview::new(PreviewConfig {
+            host: None,
+            app: Path::new("/nowhere/app").to_path_buf(),
+            game: None,
+            extra: Vec::new(),
+        }),
+    };
+    let mut session = Commands::new(context, registry);
+    for _ in 0..2 {
+        let error = session
+            .execute(crate::BREAKPOINT, json!({ "file": "world.qc", "line": 4 }))
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "preview.breakpoint failed: no statement is on line 4 of world.qc, so a breakpoint \
+             there would never stop the game"
+        );
+        assert!(
+            session
+                .context()
+                .preview
+                .debugger()
+                .breakpoints()
+                .is_empty()
+        );
+    }
+    let set = |session: &mut Commands<Context>| {
+        session
+            .execute(crate::BREAKPOINT, json!({ "file": "world.qc", "line": 5 }))
+            .unwrap();
+        session.context().preview.debugger().breakpoints().len()
+    };
+    assert_eq!(set(&mut session), 1);
+    assert_eq!(set(&mut session), 0, "the second call takes it away");
+    assert!(!dir.join("build").exists());
 }

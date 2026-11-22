@@ -57,6 +57,10 @@ compiles `progs.src` in its source directory when given no file (`QCC_main`).
   the root, that holds `quakec.toml` or `progs.src`; a file with no such directory above it
   has none. Opening a file from outside the app (Finder) opens that project, as Cargo finds
   the `Cargo.toml` above the current directory.
+- **PRJ-1.7** The project directory's name, for PRJ-1.4 and a `quakec.toml` with no `name` or
+  `mod`, is that of the directory a path names: `.` or a path ending in `..` names a directory
+  of the working directory, whose own name it is, so `quakec-ide build` run in `mymod` builds
+  to `build/mymod/`. Only a directory with no name, a file system's root, has none.
 
 ## PRJ-2 quakec.toml
 
@@ -119,6 +123,9 @@ command = "make pak"       # required; run by the user's shell in the project di
 - **PRJ-2.11** A task runs its `command` as one command line of the user's shell, in the
   project directory: on Unix `$SHELL -c` (`/bin/sh` when `SHELL` is unset or empty), on
   Windows `%COMSPEC% /C` (`cmd.exe` when unset). It ends with the shell's exit status.
+- **PRJ-2.12** A module whose `src` cannot be read is error `E0402` on line 0 of
+  `quakec.toml`, its message naming the module and the file. The project still opens, with
+  the module's other problems and the other modules, and the module builds nothing (PRJ-6.6).
 
 ## PRJ-3 Modules and output paths
 

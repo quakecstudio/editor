@@ -553,3 +553,61 @@ fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
     shown.stop();
     let _gone = std::fs::remove_dir_all(&dir);
 }
+
+/// A connection's read side that never gives a byte while the sender lives.
+struct Silent(std::sync::mpsc::Receiver<Vec<u8>>);
+
+impl std::io::Read for Silent {
+    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+        // Blocks until the test ends and drops the sender.
+        drop(self.0.recv());
+        Ok(0)
+    }
+}
+
+// spec BRIDGE-7.1: after one command the host does not answer, the preview says the host is not
+// answering, later commands fail at once, and Stop ends the host without waiting for it
+#[cfg(unix)]
+#[test]
+fn a_host_that_stops_answering_is_shown_and_stopped_at_once() {
+    let (_keep, silent) = std::sync::mpsc::channel();
+    let child = std::process::Command::new("/bin/sleep")
+        .arg("600")
+        .spawn()
+        .unwrap();
+    let client = Client::over(Silent(silent), std::io::sink()).answering_within(Duration::ZERO);
+    let mut preview = Preview::playing(Running { child, client }, "start", &[]);
+    assert_eq!(crate::PreviewStatus::of(&preview).state, "playing");
+    let first = preview.client().unwrap().initialize("test").unwrap_err();
+    assert!(
+        first.to_string().contains("did not answer in time"),
+        "{first}"
+    );
+    assert_eq!(preview.state(), crate::PlayState::NotAnswering);
+    assert_eq!(crate::PreviewStatus::of(&preview).state, "not answering");
+    let next = preview.pause().unwrap_err().to_string();
+    assert!(next.contains("is not answering"), "{next}");
+    preview.stop();
+    assert_eq!(preview.state(), crate::PlayState::Stopped);
+}
+
+// spec BRIDGE-4.9: a breakpoint the running game refuses is not kept, so asking again is refused
+// again rather than taking away one that was never set
+#[cfg(unix)]
+#[test]
+fn a_breakpoint_the_game_refuses_is_not_kept() {
+    let (_keep, silent) = std::sync::mpsc::channel();
+    let child = std::process::Command::new("/bin/sleep")
+        .arg("600")
+        .spawn()
+        .unwrap();
+    // A host that offers nothing refuses every breakpoint before it is sent.
+    let client = Client::over(Silent(silent), std::io::sink()).answering_within(Duration::ZERO);
+    let mut preview = Preview::playing(Running { child, client }, "start", &[]);
+    for _ in 0..3 {
+        let refused = preview.toggle_breakpoint(std::path::Path::new("weapons.qc"), 285);
+        assert!(refused.is_err());
+        assert!(preview.debugger().breakpoints().is_empty());
+    }
+    preview.stop();
+}

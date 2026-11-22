@@ -269,6 +269,8 @@ pub enum Text {
     PreviewRunning,
     /// The status bar while the game is paused.
     PreviewPaused,
+    /// The status bar while the preview host does not answer.
+    PreviewNotAnswering,
     /// The Play button while the game runs.
     Playing,
     /// The Play button's hint while the game runs.
@@ -1119,7 +1121,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 551] = [
+    pub const ALL: [Self; 552] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1183,6 +1185,7 @@ impl Text {
         Self::PreviewStopped,
         Self::PreviewRunning,
         Self::PreviewPaused,
+        Self::PreviewNotAnswering,
         Self::Playing,
         Self::StopHint,
         Self::Resume,
@@ -1745,6 +1748,7 @@ impl Text {
             Self::PreviewStopped => "Preview host stopped",
             Self::PreviewRunning => "Preview host running",
             Self::PreviewPaused => "Preview host paused",
+            Self::PreviewNotAnswering => "Preview host not answering",
             Self::Playing => "Playing",
             Self::StopHint => "Stop the game",
             Self::Resume => "Resume",

@@ -49,16 +49,9 @@ impl<L: Loader> AnalysisHost<L> {
             }
             graph.extend(module.graph_diagnostics.iter().cloned());
         }
-        for d in graph {
-            let path = normalize(&d.file);
-            let span = self
-                .text(&path)
-                .map_or(Span::new(0, 0), |text| line_span(&text, d.line));
-            out.entry(path).or_default().push(Diagnostic {
-                code: d.code,
-                message: d.message,
-                span,
-            });
+        for d in &graph {
+            let placed = self.graph_diagnostic(d);
+            out.entry(placed.path).or_default().push(placed.diagnostic);
         }
         for list in out.values_mut() {
             list.sort_by(|a, b| {
@@ -67,6 +60,36 @@ impl<L: Loader> AnalysisHost<L> {
             list.dedup();
         }
         out
+    }
+}
+
+/// A project graph diagnostic (PRJ-6.5) placed in its file: the line it names as a span of
+/// the file's current text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraphDiagnostic {
+    /// The file, normalized.
+    pub path: PathBuf,
+    /// The diagnostic, its span the line's.
+    pub diagnostic: Diagnostic,
+    /// The file's text the span is in; empty when it cannot be read.
+    pub text: Vec<u8>,
+}
+
+impl<L: Loader> AnalysisHost<L> {
+    /// `d` placed in its file's current text.
+    pub(crate) fn graph_diagnostic(&mut self, d: &qc_project::Diagnostic) -> GraphDiagnostic {
+        let path = normalize(&d.file);
+        let text = self.text(&path).unwrap_or_default();
+        let span = line_span(&text, d.line);
+        GraphDiagnostic {
+            path,
+            diagnostic: Diagnostic {
+                code: d.code,
+                message: d.message.clone(),
+                span,
+            },
+            text,
+        }
     }
 }
 

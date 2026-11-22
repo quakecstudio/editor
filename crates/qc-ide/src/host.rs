@@ -12,6 +12,7 @@
 //! own, so a scratch file still gets answers.
 
 use crate::actions::editor_diagnostics;
+use crate::diagnostics::GraphDiagnostic;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -95,6 +96,9 @@ pub struct ModuleBuild<'a> {
     pub kind: ModuleKind,
     /// The dialect it is read in.
     pub dialect: qc_syntax::Dialect,
+    /// The project graph's diagnostics for it (PRJ-6.5); an error among them stops its build
+    /// as a compile error does (COMP-2).
+    pub graph: Vec<GraphDiagnostic>,
 }
 
 /// Where a module comes from.
@@ -545,8 +549,20 @@ impl<L: Loader> AnalysisHost<L> {
 
     /// The project's modules, in the order declared or found, each as the build compiles it.
     pub fn project_modules(&mut self) -> Vec<ModuleBuild<'_>> {
+        let mut graphs = Vec::with_capacity(self.modules.len());
+        for index in 0..self.modules.len() {
+            let found = self
+                .modules
+                .get(index)
+                .map_or_default(|module| module.graph_diagnostics.clone());
+            let mut placed = Vec::with_capacity(found.len());
+            for d in &found {
+                placed.push(self.graph_diagnostic(d));
+            }
+            graphs.push(placed);
+        }
         let mut builds = Vec::new();
-        for module in &mut self.modules {
+        for (module, graph) in self.modules.iter_mut().zip(graphs) {
             let Some(output) = &module.output else {
                 continue;
             };
@@ -569,6 +585,7 @@ impl<L: Loader> AnalysisHost<L> {
                 engine: module.engine,
                 kind: module.kind,
                 dialect: module.dialect,
+                graph,
             });
         }
         builds

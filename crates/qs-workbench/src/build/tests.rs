@@ -21,12 +21,14 @@ use crate::{
 /// What a test project holds; the default is one that builds.
 struct ProjectSpec {
     world: String,
+    progs_src: String,
 }
 
 impl Default for ProjectSpec {
     fn default() -> Self {
         Self {
             world: "void() worldspawn = { local float x; x = speed * 2; };\n".to_owned(),
+            progs_src: "progs.dat\ndefs.qc\nworld.qc\n".to_owned(),
         }
     }
 }
@@ -46,7 +48,7 @@ fn root(name: &str) -> PathBuf {
 fn workbench(root: &Path, spec: &ProjectSpec) -> Workbench<MemoryLoader> {
     let mut loader = MemoryLoader::new();
     for (name, text) in [
-        ("progs.src", "progs.dat\ndefs.qc\nworld.qc\n"),
+        ("progs.src", spec.progs_src.as_str()),
         ("defs.qc", "float speed = 300;\n"),
         ("world.qc", spec.world.as_str()),
     ] {
@@ -111,6 +113,7 @@ fn a_module_with_an_error_writes_nothing() {
     let dir = root("error");
     let spec = ProjectSpec {
         world: "void() worldspawn = {\n  missing = 1;\n};\n".to_owned(),
+        ..ProjectSpec::default()
     };
     let mut workbench = opened(&dir, &spec);
     let built = workbench.build().unwrap();
@@ -174,6 +177,7 @@ fn the_build_reads_the_project_in_the_editors_dialect() {
     let dir = root("dialect");
     let spec = ProjectSpec {
         world: "void() worldspawn = { float x = 1; x += 2; };\n".to_owned(),
+        ..ProjectSpec::default()
     };
     let mut vanilla = opened(&dir, &spec);
     assert!(!vanilla.build().unwrap()[0].built);
@@ -205,6 +209,7 @@ fn a_kex_program_keeps_its_localized_keys() {
     let dir = root("kex");
     let spec = ProjectSpec {
         world: "string msg;\nvoid() worldspawn = { msg = \"$qc_need_silver_key\"; };\n".to_owned(),
+        ..ProjectSpec::default()
     };
     let mut workbench = for_kex(&dir, &spec);
     let built = workbench.build().unwrap();
@@ -236,7 +241,10 @@ fn a_program_kex_cannot_load_is_not_written() {
         writeln!(world, "float g{n};").unwrap();
     }
     world.push_str("void() worldspawn = { g0 = 1; };\n");
-    let spec = ProjectSpec { world };
+    let spec = ProjectSpec {
+        world,
+        ..ProjectSpec::default()
+    };
     let mut workbench = for_kex(&dir, &spec);
     let built = workbench.build().unwrap();
     assert!(!built[0].built);
@@ -254,4 +262,78 @@ fn a_program_kex_cannot_load_is_not_written() {
         refused.message
     );
     assert!(!built[0].output.exists(), "nothing written");
+}
+
+// spec PRJ-6.5, PRJ-6.6: a module whose progs.src names a file that cannot be read reports the
+// graph's E0402 and writes nothing, as `project.check` reports it
+#[test]
+fn a_missing_source_file_stops_the_build() {
+    let dir = root("missing");
+    let spec = ProjectSpec {
+        progs_src: "progs.dat\ndefs.qc\nworld.qc\nmissing.qc\n".to_owned(),
+        ..ProjectSpec::default()
+    };
+    let mut workbench = opened(&dir, &spec);
+    let built = workbench.build().unwrap();
+    assert_eq!(built.len(), 1);
+    assert!(!built[0].built);
+    let problem = &built[0].problems[0];
+    assert_eq!(problem.code, "E0402");
+    assert_eq!(problem.gravity, Gravity::Error);
+    assert!(
+        problem.message.contains("missing.qc"),
+        "{}",
+        problem.message
+    );
+    let place = problem.place.as_ref().unwrap();
+    assert!(place.path.ends_with("progs.src"));
+    assert_eq!(place.location.line(), 4);
+    assert!(!built[0].output.exists());
+}
+
+// spec PRJ-5.2: a file a list-form progs.src includes is compiled at that point, under each
+// dialect: its errors are the check's and the build's, and without them its functions are in
+// the program
+#[test]
+fn a_file_a_list_includes_is_compiled() {
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        let dir = root(&format!("include-{dialect:?}"));
+        let open = |world: &str| {
+            let spec = ProjectSpec {
+                world: world.to_owned(),
+                progs_src: "progs.dat\ndefs.qc\n#include \"world.qc\"\n".to_owned(),
+            };
+            let mut workbench = workbench(&dir, &spec);
+            workbench.set_config(Config {
+                dialect: Some(dialect),
+                ..Config::default()
+            });
+            workbench.open_project(&dir).unwrap();
+            workbench
+        };
+        let mut broken = open("void() worldspawn = { x = ; };\n");
+        let problems = broken.check().unwrap();
+        assert!(
+            problems.iter().any(|p| p.gravity == Gravity::Error
+                && p.place
+                    .as_ref()
+                    .is_some_and(|place| place.path.ends_with("world.qc"))),
+            "{dialect:?}: {problems:?}"
+        );
+        assert!(!broken.build().unwrap()[0].built, "{dialect:?}");
+        let mut fine = open("void() worldspawn = { speed = 1; };\n");
+        let built = fine.build().unwrap();
+        assert!(built[0].built, "{dialect:?}: {:?}", built[0].problems);
+        let progs = std::fs::read(&built[0].output).unwrap();
+        let options = ReadOptions {
+            check_header_crc: false,
+        };
+        let read = Progs::read_with(&progs, options).unwrap();
+        assert!(
+            read.functions()
+                .iter()
+                .any(|f| read.string(f.s_name) == Some(&b"worldspawn"[..])),
+            "{dialect:?}"
+        );
+    }
 }

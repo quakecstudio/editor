@@ -44,6 +44,7 @@ pub mod scenario;
 
 use debug::{Debugger, Location, StopReason, Watch};
 use dock::DockFrame;
+use qs_sim::debug::resolve;
 
 use entities::Entities;
 
@@ -65,6 +66,10 @@ pub enum PlayState {
     Playing,
     /// The host is paused between frames, or stopped in one at a breakpoint.
     Paused,
+    /// The host runs but has not answered a command in time, so none is sent to it until it
+    /// does; Stop ends it at once.
+    #[serde(rename = "not answering")]
+    NotAnswering,
 }
 
 /// How a game starts once its map has loaded.
@@ -168,6 +173,14 @@ pub enum PreviewError {
     NoRoom([f64; 3]),
     /// The player's box fits nowhere near the map's own player start, whose origin this is.
     NoRoomAtStart([f64; 3]),
+    /// The project's program has no statement on the line, so a breakpoint there would never
+    /// stop the game (BRIDGE-4.9).
+    NoStatement {
+        /// The file.
+        file: PathBuf,
+        /// The line.
+        line: u32,
+    },
 }
 
 impl core::fmt::Display for PreviewError {
@@ -206,6 +219,12 @@ impl core::fmt::Display for PreviewError {
                 "there is no room for the player at the map's player start, ({x} {y} {z}), or \
                  above or below it: move the info_player_start out of the wall, the floor or \
                  the door or other entity it is in"
+            ),
+            Self::NoStatement { file, line } => write!(
+                f,
+                "no statement is on line {line} of {}, so a breakpoint there would never stop \
+                 the game",
+                file.display()
             ),
         }
     }
@@ -394,9 +413,25 @@ impl Preview {
                 }
                 Ok(())
             }
-            None if self.live.is_some() => self.set_breakpoint(file, line),
+            // BRIDGE-4.9: the list follows the host's answer, so one it refuses is not kept.
+            None if self.live.is_some() => {
+                let set = self.set_breakpoint(file, line);
+                if set.is_err() {
+                    self.debugger.toggle(file, line);
+                }
+                set
+            }
             None => Ok(()),
         }
+    }
+
+    /// Whether a breakpoint is at `line` of `file`.
+    #[must_use]
+    pub fn has_breakpoint(&self, file: &Path, line: u32) -> bool {
+        self.debugger
+            .breakpoints()
+            .iter()
+            .any(|b| b.file == file && b.line == line)
     }
 
     /// Sets the breakpoint at `line` of `file` in the running game, keeping its id.
@@ -629,8 +664,11 @@ impl Preview {
 
     /// Whether the game runs, is paused or is stopped.
     #[must_use]
-    pub const fn state(&self) -> PlayState {
-        self.state
+    pub fn state(&self) -> PlayState {
+        match &self.live {
+            Some(live) if !live.client.is_answering() => PlayState::NotAnswering,
+            Some(_) | None => self.state,
+        }
     }
 
     /// The last thing the loop did.
@@ -869,16 +907,24 @@ impl Preview {
         let Some(mut live) = self.live.take() else {
             return;
         };
-        if let Err(error) = live.client.shutdown() {
-            tracing::debug!(%error, "the preview host did not answer shutdown");
-        }
+        // A host that does not answer is not asked to shut down, and one that did not take
+        // `shutdown` is not waited for.
+        let asked = live.client.is_answering()
+            && match live.client.shutdown() {
+                Ok(_) => true,
+                Err(error) => {
+                    tracing::debug!(%error, "the preview host did not answer shutdown");
+                    false
+                }
+            };
         match &mut live.host {
             Host::Process(child) => {
+                let wait = if asked { SHUTDOWN_WAIT } else { Duration::ZERO };
                 let started = Instant::now();
                 loop {
                     match child.try_wait() {
                         Ok(Some(_)) => break,
-                        Ok(None) if started.elapsed() < SHUTDOWN_WAIT => {
+                        Ok(None) if started.elapsed() < wait => {
                             std::thread::sleep(SHUTDOWN_POLL);
                         }
                         Ok(None) | Err(_) => {
@@ -1324,6 +1370,35 @@ impl Drop for Preview {
 impl<L: Loader> Workbench<L> {
     /// Builds the project; its root, its first program and the mod folder it is in, or why there
     /// is none.
+    /// Whether the project's server program has a statement on `line` of `file`, as the
+    /// running game finds a breakpoint's (BRIDGE-4.9): compiled in memory, nothing written;
+    /// `None` when it does not compile, so cannot tell.
+    pub(crate) fn statement_on_line(&mut self, file: &Path, line: u32) -> Option<bool> {
+        self.root()?;
+        let line = i32::try_from(line).ok()?;
+        let name = file.to_string_lossy().replace('\\', "/");
+        for module in self.host.project_modules() {
+            if module.kind != qc_project::ModuleKind::Ssqc {
+                continue;
+            }
+            let names = module.names;
+            let compiled = qc_codegen::compile_module(module.db, module.input, |id| {
+                names.get(id.index()).cloned().unwrap_or_default()
+            })
+            .ok()?;
+            let bytes = qc_progs::write(&compiled.progs).ok()?;
+            let progs = qc_progs::Progs::read_with(
+                &bytes,
+                qc_progs::ReadOptions {
+                    check_header_crc: false,
+                },
+            )
+            .ok()?;
+            return Some(resolve(&progs, &compiled.lno.lines, &name, line).is_some());
+        }
+        None
+    }
+
     pub(super) fn built_program(&mut self) -> Result<BuiltProgram, PreviewError> {
         let project = self
             .root()
@@ -1825,6 +1900,12 @@ pub struct Stopped {
     pub reason: StopReason,
     /// The statement it stopped at.
     pub location: Location,
+    /// The run error's message, when it stopped at one (`qc/error`, BRIDGE-3.1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// The call stack, the innermost frame first (BRIDGE-4.9).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stack: Vec<Location>,
 }
 
 /// A field set while paused, waiting for the game to resume (BRIDGE-4.4).
@@ -1844,6 +1925,7 @@ impl PreviewStatus {
             PlayState::Stopped => "stopped",
             PlayState::Playing => "playing",
             PlayState::Paused => "paused",
+            PlayState::NotAnswering => "not answering",
         };
         Self {
             state: state.to_owned(),
@@ -1856,6 +1938,11 @@ impl PreviewStatus {
                 .map(|(reason, location)| Stopped {
                     reason: *reason,
                     location: location.clone(),
+                    message: match reason {
+                        StopReason::Error => preview.debugger.error().map(str::to_owned),
+                        StopReason::Breakpoint | StopReason::Step => None,
+                    },
+                    stack: preview.debugger.stack().to_vec(),
                 }),
             watches: preview.debugger.watches().to_vec(),
             held: preview
@@ -2097,14 +2184,38 @@ trait Act: Send + Sync {
     fn act(preview: &mut Preview, params: Self::Params) -> Result<(), PreviewError>;
 }
 
-struct BreakpointAct;
-impl Act for BreakpointAct {
+/// `preview.breakpoint`: a breakpoint added or taken away. One the running game refuses is not
+/// added; with no game running, one on a line where the project's program has no statement is
+/// refused, and one the project does not build to tell is added.
+struct BreakpointCommand;
+
+impl<C: HasPreview + 'static> Command<C> for BreakpointCommand {
     const ID: &'static str = BREAKPOINT;
     const SUMMARY: &'static str = "Adds a breakpoint at a line of a file, or takes it away \
-        when there is one; set in the running game too and in each game that starts.";
+        when there is one; set in the running game too and in each game that starts. A line \
+        with no statement is refused.";
     type Params = BreakpointParams;
-    fn act(preview: &mut Preview, p: BreakpointParams) -> Result<(), PreviewError> {
-        preview.toggle_breakpoint(&p.file, p.line)
+    type Output = PreviewStatus;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        p: BreakpointParams,
+    ) -> Result<Outcome<PreviewStatus, C>, PreviewError> {
+        let (workbench, preview) = context.workbench_and_preview();
+        let adding = !preview.has_breakpoint(&p.file, p.line);
+        if adding
+            && preview.state() == PlayState::Stopped
+            && workbench.statement_on_line(&p.file, p.line) == Some(false)
+        {
+            return Err(PreviewError::NoStatement {
+                file: p.file,
+                line: p.line,
+            });
+        }
+        preview.toggle_breakpoint(&p.file, p.line)?;
+        Ok(Outcome::outside_history(PreviewStatus::of(preview)))
     }
 }
 
@@ -2452,7 +2563,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(MapProfiles)?;
     registry.register(MapRunProfile)?;
     registry.register(SetFieldCommand)?;
-    registry.register(ActCommand::<BreakpointAct>(core::marker::PhantomData))?;
+    registry.register(BreakpointCommand)?;
     registry.register(ActCommand::<ConsoleAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<WatchAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<DockAct>(core::marker::PhantomData))?;

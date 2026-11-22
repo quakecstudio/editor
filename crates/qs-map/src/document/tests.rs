@@ -758,3 +758,20 @@ fn a_submodel_makes_a_brush_entity() {
     let brush: Vec<_> = map.entities.iter().map(Entity::is_brush_entity).collect();
     assert_eq!(brush, [false, true, false, false]);
 }
+
+// spec MAP-8.10: an empty classname is not written, as a new key or over an existing one; the
+// entity keeps what it had, and an empty value of any other key is written
+#[test]
+fn an_empty_classname_is_refused() {
+    let mut entity = Entity::new();
+    assert_eq!(entity.set(b"classname", b""), Err(MapError::EmptyClassname));
+    assert_eq!(entity.classname(), None);
+    entity.set(b"classname", b"light").unwrap();
+    assert_eq!(entity.set(b"classname", b""), Err(MapError::EmptyClassname));
+    assert_eq!(entity.classname(), Some(&b"light"[..]));
+    entity.set(b"target", b"").unwrap();
+    assert_eq!(
+        MapError::EmptyClassname.to_string(),
+        "an empty classname stops the game as the level loads: give the entity a class"
+    );
+}

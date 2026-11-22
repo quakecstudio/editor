@@ -276,7 +276,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.ungroup` | needs a value | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | `paths.open` | needs a value | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
 | `paths.take_opened` | run by the window | Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths. |
-| `preview.breakpoint` | needs a value | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
+| `preview.breakpoint` | needs a value | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. A line with no statement is refused. |
 | `preview.choose_game` | needs a value | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | `preview.console` | needs a value | Runs a command in the running game's console. |
 | `preview.dock` | needs a value | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |

@@ -11,6 +11,7 @@
 )]
 
 use crate::demos::Connection;
+use crate::load::load_failure;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -1937,5 +1938,65 @@ fn only_a_new_windowed_host_runs_quake_rc() {
     assert_eq!(
         Start::Kept(host.clone()).host_and_startup(),
         (Some(host), Vec::new())
+    );
+}
+
+// spec BRIDGE-3.4: a level whose spawn function fails says so with the function, file and line
+// it stopped at, as a failed frame's qc/error names them
+#[test]
+fn a_failed_load_names_where_it_stopped() {
+    let (bytes, lines) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"broken\"\n}\n";
+    let map = floor(Box::leak(lump.as_bytes().to_vec().into_boxed_slice()));
+    let Err(error) = World::load(
+        &progs,
+        "test",
+        &map,
+        Rc::new(|_| None),
+        LoadOptions::default(),
+    ) else {
+        panic!("the spawn function fails");
+    };
+    let line = SOURCE
+        .lines()
+        .position(|text| text.starts_with("void() broken"))
+        .unwrap()
+        + 1;
+    let said = load_failure(&progs, &lines, &error);
+    assert!(said.starts_with("a spawn function failed: "), "{said}");
+    assert!(
+        said.ends_with(&format!(", in broken at t.qc:{line}")),
+        "{said}"
+    );
+    assert_eq!(
+        load_failure(&progs, &[], &error),
+        format!("{error}, in broken"),
+        "no .lno, no line"
+    );
+}
+
+// spec EDICT-8.10: an empty classname is not freed as classless: the engine calls function 0 for
+// it, a NULL function, and the map does not load
+#[test]
+fn an_empty_classname_stops_the_load() {
+    let (bytes, _) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"\"\n}\n";
+    let map = floor(Box::leak(lump.as_bytes().to_vec().into_boxed_slice()));
+    let Err(error) = World::load(
+        &progs,
+        "test",
+        &map,
+        Rc::new(|_| None),
+        LoadOptions::default(),
+    ) else {
+        panic!("the load stops");
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("PR_ExecuteProgram: NULL function"),
+        "{error}"
     );
 }

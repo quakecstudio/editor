@@ -48,6 +48,9 @@ pub enum ClientError {
     Unsupported(String),
     /// No answer came within the time given.
     Timeout,
+    /// The host has not answered an earlier request, so this one was not sent: a host that
+    /// stopped answering is not waited for again.
+    NotAnswering,
     /// The host's answer to the command, named here, is not what the command answers.
     Unreadable(&'static str),
 }
@@ -64,6 +67,9 @@ impl fmt::Display for ClientError {
                 write!(f, "the preview host does not offer {method}")
             }
             Self::Timeout => f.write_str("the preview host did not answer in time"),
+            Self::NotAnswering => f.write_str(
+                "the preview host is not answering: it has not answered an earlier command",
+            ),
             Self::Unreadable(method) => {
                 write!(f, "the preview host's answer to {method} does not read")
             }
@@ -79,6 +85,7 @@ impl std::error::Error for ClientError {
             | Self::Rpc { .. }
             | Self::Unsupported(_)
             | Self::Timeout
+            | Self::NotAnswering
             | Self::Unreadable(_) => None,
         }
     }
@@ -175,6 +182,11 @@ pub struct Client {
     capabilities: BTreeMap<String, bool>,
     /// For a host in this process (ADR-0028): lets it answer while the client waits.
     pump: Option<Box<dyn FnMut()>>,
+    /// The request the host has not answered in time, if any; until its answer comes no
+    /// other is sent.
+    overdue: Option<i64>,
+    /// How long a request waits for its answer.
+    answer_within: Duration,
 }
 
 impl Client {
@@ -215,7 +227,17 @@ impl Client {
             events: VecDeque::new(),
             capabilities: BTreeMap::new(),
             pump: None,
+            overdue: None,
+            answer_within: ANSWER_WITHIN,
         }
+    }
+
+    /// The client waiting `within` for each answer instead of the default, as a test of a
+    /// host that does not answer waits for none.
+    #[must_use]
+    pub const fn answering_within(mut self, within: Duration) -> Self {
+        self.answer_within = within;
+        self
     }
 
     /// The client of a host that runs in this process, on this thread (ADR-0028): while the
@@ -266,13 +288,29 @@ impl Client {
     /// [`ClientError::Unsupported`] before sending a command the host does not offer, and the
     /// other [`ClientError`]s for its answer.
     pub fn request(&mut self, method: &str, params: Value) -> Result<Value, ClientError> {
+        self.check_answering()?;
         if !self.offers(method) {
             return Err(ClientError::Unsupported(method.to_owned()));
         }
         self.send(method, params)
     }
 
+    /// [`ClientError::NotAnswering`] while a request is overdue, after reading, without
+    /// waiting, whether its answer has come.
+    fn check_answering(&mut self) -> Result<(), ClientError> {
+        if self.overdue.is_none() {
+            return Ok(());
+        }
+        let events = self.poll_events()?;
+        self.events.extend(events);
+        if self.overdue.is_some() {
+            return Err(ClientError::NotAnswering);
+        }
+        Ok(())
+    }
+
     fn send(&mut self, method: &str, params: Value) -> Result<Value, ClientError> {
+        self.check_answering()?;
         self.next_id = self.next_id.saturating_add(1);
         let id = self.next_id;
         let message = Message::Request {
@@ -281,9 +319,17 @@ impl Client {
             params,
         };
         write_frame(&mut self.write, &message.to_bytes()).map_err(ClientError::Io)?;
-        let deadline = deadline_after(ANSWER_WITHIN);
+        let deadline = deadline_after(self.answer_within);
         loop {
-            match self.next_message(deadline)? {
+            let message = match self.next_message(deadline) {
+                Ok(message) => message,
+                Err(ClientError::Timeout) => {
+                    self.overdue = Some(id);
+                    return Err(ClientError::Timeout);
+                }
+                Err(error) => return Err(error),
+            };
+            match message {
                 Message::Response {
                     id: Some(Id::Number(answered)),
                     outcome,
@@ -334,6 +380,13 @@ impl Client {
         }
     }
 
+    /// Whether the host answers: false once a request went unanswered in time, until its
+    /// answer comes.
+    #[must_use]
+    pub const fn is_answering(&self) -> bool {
+        self.overdue.is_none()
+    }
+
     /// The events received so far, oldest first.
     pub fn take_events(&mut self) -> Vec<BridgeEvent> {
         self.events.drain(..).collect()
@@ -353,6 +406,10 @@ impl Client {
                 Ok(Some(Message::Notification { method, params })) => {
                     self.events.push_back(BridgeEvent { method, params });
                 }
+                Ok(Some(Message::Response {
+                    id: Some(Id::Number(answered)),
+                    ..
+                })) if self.overdue == Some(answered) => self.overdue = None,
                 Ok(Some(Message::Response { .. } | Message::Request { .. })) => {}
                 Ok(None) | Err(TryRecvError::Disconnected) => {
                     closed = true;

@@ -47,6 +47,7 @@ use std::path::PathBuf;
 
 pub use actions::CodeAction;
 pub use completion::Completion;
+pub use diagnostics::GraphDiagnostic;
 pub use format::format;
 pub use highlight::{Highlight, HighlightKind, Modifier, Modifiers, SyntaxClass};
 pub use hints::ParameterHint;

@@ -259,6 +259,11 @@ fn a_read_only_project_refuses_writing_tools() {
         ],
     );
     assert_eq!(answers["1"]["result"]["isError"], true);
+    assert_eq!(
+        answers["1"]["result"]["content"][0]["text"],
+        "the server is read only (--read-only): project.compile writes, and nothing may be \
+         written"
+    );
     assert!(!root.join("build").exists(), "nothing was built");
     assert_eq!(answers["2"]["result"]["isError"], false);
 }
@@ -746,7 +751,8 @@ fn a_repeated_map_edit_is_made_at_once() {
 }
 
 // No spec statement: P6-36, P4-13: a read-only server refuses every map tool that writes,
-// map.open included, which replaces the open map; a map tool that reads is not refused
+// map.open included, which replaces the open map, saying it is read only; a map tool that
+// reads is not refused
 #[test]
 fn a_read_only_server_refuses_the_map_tools_that_write() {
     let (server, map) = map_server("map-read-only", true);
@@ -776,7 +782,14 @@ fn a_read_only_server_refuses_the_map_tools_that_write() {
         let answer = &answers[&n.to_string()]["result"];
         assert_eq!(answer["isError"], true, "{id}: {answer}");
         let text = answer["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("outside the roots"), "{id}: {text}");
+        // The refusal names the read-only server, not the project as outside its roots.
+        assert!(!text.contains("outside the roots"), "{id}: {text}");
+        assert!(
+            text.contains(&format!(
+                "the server is read only (--read-only): {id} writes"
+            )),
+            "{id}: {text}"
+        );
     }
 }
 

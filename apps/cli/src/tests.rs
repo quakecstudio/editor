@@ -694,3 +694,41 @@ fn the_servers_own_game_is_headless() {
             .any(|flag| flag == "--headless")
     );
 }
+
+// spec PRJ-6.6: `build` of a project whose progs.src names a missing file prints E0402,
+// writes nothing and exits 1, as `check` does
+#[test]
+fn build_stops_on_a_missing_source_file() {
+    let dir = project("missing-file", &ProjectSpec::default());
+    std::fs::write(
+        dir.join("progs.src"),
+        "progs.dat\ndefs.qc\nworld.qc\nmissing.qc\n",
+    )
+    .unwrap();
+    for verb in ["build", "check"] {
+        let (exit, out, err) = cli(&[verb, text(&dir)]);
+        assert_eq!(exit, Exit::Problems, "{verb}: {out}{err}");
+        assert!(out.contains("E0402"), "{verb}: {out}");
+        assert!(out.contains("missing.qc"), "{verb}: {out}");
+    }
+    assert!(!dir.join("build").exists());
+}
+
+// spec PRJ-2.12: a quakec.toml module whose src is missing is reported against the manifest,
+// not as a directory with no project
+#[test]
+fn a_manifest_module_with_a_missing_src_says_so() {
+    let dir = project("missing-src", &ProjectSpec::default());
+    std::fs::remove_file(dir.join("progs.src")).unwrap();
+    std::fs::write(
+        dir.join("quakec.toml"),
+        "[[module]]\nkind = \"ssqc\"\nsrc = \"nope.src\"\n",
+    )
+    .unwrap();
+    let (exit, out, err) = cli(&["build", text(&dir)]);
+    assert_eq!(exit, Exit::Problems, "{out}{err}");
+    assert!(!err.contains("no QuakeC project here"), "{err}");
+    assert!(out.contains("quakec.toml"), "{out}");
+    assert!(out.contains("module ssqc: "), "{out}");
+    assert!(out.contains("nope.src"), "{out}");
+}

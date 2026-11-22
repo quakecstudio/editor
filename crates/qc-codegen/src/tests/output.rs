@@ -407,9 +407,10 @@ fn a_global_past_32767_is_written_as_its_low_bits() {
     assert!(qc_progs::write(&p).is_ok());
 }
 
-// spec PROGS-22.4: a vanilla program whose statement names a global past 32767 is refused
-// with the writer's error, where one at 32767 is written; the vanilla profile never wraps an
-// operand as FTEQCC's does (FTE-24.2).
+// spec PROGS-22.4: a vanilla program whose statement names a global past 32767 is refused,
+// where one at 32767 is written; the vanilla profile never wraps an operand as FTEQCC's does
+// (FTE-24.2).
+// spec QCD-6.12: the statement is E0512 at the source statement it came from
 #[test]
 fn a_vanilla_operand_past_32767_is_refused() {
     let program = |count: i32| {
@@ -424,10 +425,84 @@ fn a_vanilla_operand_past_32767_is_refused() {
     let compiled = program(last).unwrap();
     assert_eq!(global(&compiled.progs, &format!("g{last}")), 32_767);
     assert!(qc_progs::write(&compiled.progs).is_ok());
-    assert!(matches!(
-        program(last + 1),
-        Err(crate::CompileError::Write(_))
-    ));
+    let source_of = |count: i32| {
+        let mut source = String::new();
+        for n in 1..=count {
+            _ = writeln!(source, "float g{n};");
+        }
+        source
+    };
+    let Err(crate::CompileError::Diagnostics(found)) = program(last + 1) else {
+        panic!("E0512 expected");
+    };
+    let [refused] = found.as_slice() else {
+        panic!("one diagnostic: {found:?}");
+    };
+    assert_eq!(refused.diagnostic.code, qc_diag::Code::E0512);
+    assert!(
+        refused.diagnostic.message.contains("operand 32768"),
+        "{}",
+        refused.diagnostic.message
+    );
+    // The statement `g = g;` in `f`, after the declarations.
+    assert_eq!(
+        refused.diagnostic.span.start,
+        source_of(last + 1).len() + "void() f = { ".len()
+    );
+}
+
+// spec QCD-6.12: a global or field past what a definition's 16-bit offset holds is E0512 at its
+// declaration, naming it, and nothing is written; the program without it is written
+#[test]
+fn a_definition_past_the_format_is_e0512_at_its_declaration() {
+    // Each float and field takes a global, and a field's global is at least as many slots as
+    // its field, so the globals' limit is the one a program passes.
+    for (declare, count, kind) in [
+        ("float g{n};", 65_600_usize, "globals"),
+        (".vector g{n};", 16_400, "globals"),
+    ] {
+        let program = |count: usize| {
+            let mut source = String::new();
+            for n in 1..=count {
+                _ = writeln!(source, "{}", declare.replace("{n}", &n.to_string()));
+            }
+            source
+        };
+        let source = program(count);
+        let Err(crate::CompileError::Diagnostics(found)) = compile_source(&source) else {
+            panic!("{kind}: E0512 expected");
+        };
+        let [refused] = found.as_slice() else {
+            panic!("{kind}: one diagnostic: {found:?}");
+        };
+        assert_eq!(refused.diagnostic.code, qc_diag::Code::E0512, "{kind}");
+        let message = &refused.diagnostic.message;
+        let prefix = format!("too many {kind} for progs.dat: g");
+        let named = message
+            .strip_prefix(&prefix)
+            .and_then(|rest| rest.split(' ').next())
+            .unwrap_or_else(|| panic!("{kind}: {message}"));
+        let n: usize = named.parse().unwrap();
+        let at = source
+            .match_indices(&format!(" g{n}"))
+            .map(|(at, _)| at + 1)
+            .find(|&at| {
+                !source
+                    .as_bytes()
+                    .get(at + 1 + named.len())
+                    .is_some_and(u8::is_ascii_digit)
+            })
+            .unwrap();
+        assert_eq!(
+            refused.diagnostic.span,
+            qc_diag::Span::new(at, at + 1 + named.len()),
+            "{kind}"
+        );
+        if declare.starts_with("float") {
+            let fits = compile_source(&program(n - 1)).unwrap();
+            assert!(qc_progs::write(&fits.progs).is_ok(), "{kind}");
+        }
+    }
 }
 
 // spec FTEF-27.5: an opcode the target has is not refused: a build reads each file at the target

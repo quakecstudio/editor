@@ -473,9 +473,15 @@ fn execute<L: Loader + 'static>(
             .to_str()
             .ok_or_else(|| Stopped::NotUnicode(open.path.clone()))?;
         let opened = call(OPEN_PROJECT, json!({ "path": path }))?;
-        match opened.get("files").and_then(Value::as_u64) {
-            Some(0) => Err(Stopped::NoProject(open.path.clone())),
-            _ => Ok(()),
+        if opened.get("files").and_then(Value::as_u64) != Some(0) {
+            return Ok(());
+        }
+        // A project whose every module's source is missing reads no file, but its problems
+        // say why (PRJ-2.12); only a directory with none has no project.
+        let problems = call(CHECK_PROJECT, json!({}))?;
+        match problems.as_array() {
+            Some(found) if !found.is_empty() => Ok(()),
+            _ => Err(Stopped::NoProject(open.path.clone())),
         }
     };
     match request {

@@ -747,3 +747,34 @@ fn a_compiled_map_is_put_where_the_game_reads_it() {
         "room's two, arena and home's two"
     );
 }
+
+// spec BRIDGE-3.1, BRIDGE-3.3: a game stopped at a run error answers the error's message with
+// where it stopped; one stopped at a breakpoint after it gives no message
+#[test]
+fn a_run_error_stop_carries_its_message() {
+    let mut game = preview(None, None);
+    let location = json!({ "function": "StartFrame", "file": "world.qc", "line": 358 });
+    game.take_event(
+        "qc/error",
+        &json!({ "message": "assignment to world entity" }),
+    );
+    game.take_event(
+        "state/changed",
+        &json!({ "state": "paused", "reason": "error", "location": location }),
+    );
+    let stopped = PreviewStatus::of(&game).stopped.unwrap();
+    assert_eq!(stopped.reason, StopReason::Error);
+    assert_eq!(stopped.location.function, "StartFrame");
+    assert_eq!(
+        stopped.message.as_deref(),
+        Some("assignment to world entity")
+    );
+    let answer = serde_json::to_value(PreviewStatus::of(&game)).unwrap();
+    assert_eq!(answer["stopped"]["message"], "assignment to world entity");
+    game.take_event("state/changed", &json!({ "state": "playing" }));
+    game.take_event(
+        "state/changed",
+        &json!({ "state": "paused", "reason": "breakpoint", "location": location }),
+    );
+    assert_eq!(PreviewStatus::of(&game).stopped.unwrap().message, None);
+}

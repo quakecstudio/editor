@@ -86,6 +86,8 @@ pub struct MapDiagnostic {
 pub enum MapDiagnosticKind {
     /// An entity with no `classname` (MAP-8.1).
     NoClassname,
+    /// An entity whose `classname` is empty, which stops the map loading (MAP-8.10).
+    EmptyClassname,
     /// A `classname` naming no function, and the closest one (MAP-8.1).
     UnknownClass {
         /// The classname.
@@ -131,6 +133,10 @@ impl fmt::Display for MapDiagnosticKind {
         };
         match self {
             Self::NoClassname => f.write_str("an entity with no classname, which the game frees"),
+            Self::EmptyClassname => f.write_str(
+                "an empty classname, which stops the game as the level loads: the engine calls \
+                 function 0 for it (PR_ExecuteProgram: NULL function)",
+            ),
             Self::UnknownClass {
                 classname,
                 suggestion,
@@ -299,6 +305,14 @@ impl EntitySchema {
             .pairs()
             .find(|pair| pair.key() == b"classname")
             .map_or_else(|| entity.line(), qs_map::Pair::line);
+        if classname.is_empty() {
+            out.push(MapDiagnostic {
+                entity: EntityPlace::new(index),
+                line,
+                kind: MapDiagnosticKind::EmptyClassname,
+            });
+            return;
+        }
         let suggestion = closest(&classname, self.functions.iter(), |_| false);
         out.push(MapDiagnostic {
             entity: EntityPlace::new(index),

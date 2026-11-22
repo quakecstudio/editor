@@ -1004,6 +1004,7 @@ impl Parser<'_> {
             let before = self.pos;
             self.start_item();
             self.class_member();
+            self.end_item();
             if self.pos == before {
                 self.bump_error();
             }
@@ -1212,6 +1213,7 @@ impl Parser<'_> {
                 let before = self.pos;
                 self.start_item();
                 self.accessor_member(Member::Accessor);
+                self.end_item();
                 if self.at(K::Comma) || self.at(K::Semicolon) {
                     self.bump();
                 }

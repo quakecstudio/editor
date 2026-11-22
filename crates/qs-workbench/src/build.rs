@@ -120,8 +120,33 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
         input,
         names,
         engine,
+        graph,
         ..
     } = module;
+    // COMP-2: the graph's errors are the build's, so a module whose `progs.src` names a file
+    // that cannot be read is not compiled without it.
+    if graph.iter().any(|d| d.diagnostic.is_error()) {
+        let problems = graph
+            .iter()
+            .map(|d| Reported {
+                place: Some(Place {
+                    path: d.path.clone(),
+                    start: d.diagnostic.span.start,
+                    end: d.diagnostic.span.end,
+                    location: Location::of(&d.text, d.diagnostic.span.start),
+                }),
+                gravity: Gravity::of(&d.diagnostic),
+                code: d.diagnostic.code.as_str().to_owned(),
+                message: d.diagnostic.message.clone(),
+            })
+            .collect();
+        return Ok(ModuleBuilt {
+            name: name.to_owned(),
+            output: output.to_path_buf(),
+            built: false,
+            problems,
+        });
+    }
     let compiled = compile_module(db, input, |id| {
         names.get(id.index()).cloned().unwrap_or_default()
     });

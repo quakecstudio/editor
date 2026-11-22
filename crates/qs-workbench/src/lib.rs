@@ -745,6 +745,15 @@ pub enum WorkbenchError {
         /// The file's length in bytes.
         len: usize,
     },
+    /// A range that ends before it starts.
+    Reversed {
+        /// The file.
+        path: PathBuf,
+        /// The range's start.
+        start: usize,
+        /// The range's end, before its start.
+        end: usize,
+    },
     /// No map is open in the map view.
     NoMap,
     /// A `.map` that does not parse, or a key it cannot hold.
@@ -867,6 +876,11 @@ impl fmt::Display for WorkbenchError {
                 "{}: offset {offset} is past the end of the file, {len} bytes",
                 path.display()
             ),
+            Self::Reversed { path, start, end } => write!(
+                f,
+                "{}: the range ends at {end}, before its start at {start}",
+                path.display()
+            ),
             Self::NoMap => f.write_str("no map is open"),
             Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
             Self::NotBuilt => f.write_str("the project's server QuakeC does not compile"),
@@ -931,6 +945,7 @@ impl Error for WorkbenchError {
             | Self::NoHunk { .. }
             | Self::Pattern { .. }
             | Self::Offset { .. }
+            | Self::Reversed { .. }
             | Self::NoMap
             | Self::NotBuilt => None,
             Self::Wad { error, .. } => Some(error),

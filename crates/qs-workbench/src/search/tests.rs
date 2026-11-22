@@ -293,15 +293,18 @@ fn replace_range_edits_an_excerpt_unsaved() {
         .execute(crate::READ_FILE, json!({ "path": path }))
         .unwrap();
     assert!(read.to_string().contains("float health;"), "{read}");
-    for (start, end) in [(6, 99), (8, 6)] {
-        assert!(
-            session
-                .execute(
-                    REPLACE_RANGE,
-                    json!({ "path": path, "start": start, "end": end, "text": "x" }),
-                )
-                .is_err(),
-            "{start}..{end}"
-        );
+    for (start, end, says) in [
+        (6, 99, "offset 99 is past the end of the file, 14 bytes"),
+        (8, 6, "the range ends at 6, before its start at 8"),
+        (99, 6, "the range ends at 6, before its start at 99"),
+    ] {
+        let error = session
+            .execute(
+                REPLACE_RANGE,
+                json!({ "path": path, "start": start, "end": end, "text": "x" }),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(says), "{start}..{end}: {error}");
     }
 }

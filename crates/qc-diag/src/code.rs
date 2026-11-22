@@ -404,6 +404,8 @@ pub enum Code {
     E0510,
     /// "Bad op code name NAME" (QCD-6.11).
     E0511,
+    /// "too many NAME for progs.dat: ..." (QCD-6.12).
+    E0512,
     /// "No destination filename.  qcc -help for info." (QCD-5.1).
     E0401,
     /// "Error opening PATH: REASON" (QCD-5.2).
@@ -646,7 +648,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 283] = [
+    pub const ALL: [Self; 284] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -830,6 +832,7 @@ impl Code {
         Self::E0509,
         Self::E0510,
         Self::E0511,
+        Self::E0512,
         Self::W0101,
         Self::W0102,
         Self::W0103,
@@ -1197,6 +1200,7 @@ impl Code {
             Self::E0378 => "E0378",
             Self::E0379 => "E0379",
             Self::E0511 => "E0511",
+            Self::E0512 => "E0512",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
             Self::E0310 => "E0310",
@@ -1437,6 +1441,7 @@ impl Code {
             | Self::E0312
             | Self::E0313
             | Self::E0511
+            | Self::E0512
             | Self::E0404
             | Self::E0302
             | Self::E0314

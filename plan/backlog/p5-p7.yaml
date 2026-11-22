@@ -2870,3 +2870,281 @@ groups:
     - 'The compiler differential (`cargo xtask compiler-diff`) stays green'
     verify:
     - 'cargo nextest run -p qc-codegen -p qc-sema -p qs-workbench; cargo xtask compiler-diff --fast'
+  - key: L-58
+    title: '`build` writes a progs.dat when progs.src names a missing file'
+    labels:
+    - L5-commands
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - COMP-2
+    - GOAL-2
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1108). When `progs.src` names a file that does not exist, `quakec-ide check` reports E0402, but `quakec-ide build` writes a `progs.dat` without the file's definitions and exits 0.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build
+    deliverable:
+    - 'crates/qs-workbench/src/build.rs: a module whose progs.src graph has an error is not written, as a module with a compile error is not, and the graph''s errors are the build''s'
+    - 'crates/qc-ide: the graph''s diagnostics, placed in their files, are part of each module the build compiles'
+    acceptance:
+    - 'A test builds a project whose progs.src names a missing file: E0402 is reported and nothing is written'
+    - '`quakec-ide build` on that project prints E0402 and exits 1'
+    verify:
+    - 'cargo nextest run -p qs-workbench -p quakec-ide'
+  - key: L-59
+    title: 'A quakec.toml module with a missing src reports that there is no quakec.toml'
+    labels:
+    - L2-syntax
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - GOAL-4
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1109). A `quakec.toml` whose `[[module]]` names a `src` that does not exist makes `quakec-ide build` say there is no QuakeC project here at all.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build
+    deliverable:
+    - 'crates/qc-project: a module whose src cannot be read is E0402 on quakec.toml, naming the module and the file (PRJ-2.12)'
+    - 'apps/cli: a project whose modules read no file but report problems is opened, not reported as no project'
+    acceptance:
+    - 'A test opens such a manifest: the project opens with E0402 on quakec.toml naming the module'
+    - '`quakec-ide build` prints that error and exits 1'
+    verify:
+    - 'cargo nextest run -p qc-project -p quakec-ide'
+  - key: L-60
+    title: 'file.replace_range reports a reversed range as past the end of the file'
+    labels:
+    - L5-commands
+    - area:editor
+    - type:bug
+    size: S
+    reqs:
+    - PRIN-3
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1110). `file.replace_range` with a start after its end inside the file says the offset is past the end of the file.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build
+    deliverable:
+    - 'crates/qs-workbench: a reversed range is its own error, naming both ends'
+    acceptance:
+    - 'A test: a reversed range, inside and past the file, is reported as reversed; a range past the end as past the end'
+    verify:
+    - 'cargo nextest run -p qs-workbench'
+  - key: L-61
+    title: 'quakec-ide build in a project directory writes build/mod, not build/<project>'
+    labels:
+    - L2-syntax
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - PLAT-6
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1111). Run inside a bare project as `quakec-ide build`, the project opens as `.`, which has no directory name, so the mod is `mod` and the program goes to `build/mod/`, where export, Play and the IDE do not look.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build
+    deliverable:
+    - 'crates/qc-project: a project directory named by `.`, the empty path or `..` takes the name of the directory it names (PRJ-1.7)'
+    acceptance:
+    - 'A test opens a project as `.`, the empty path and `..`: each is named after the working directory or its parent, and builds to build/<that name>/'
+    verify:
+    - 'cargo nextest run -p qc-project'
+  - key: L-62
+    title: 'Statements nested past the limit report nesting too deep thousands of times'
+    labels:
+    - L2-syntax
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - GOAL-1
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1112). 5000 nested `if`s give 24,379 lines of E0509: past the nesting limit each nested statement starts afresh and reports again.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build
+    deliverable:
+    - 'crates/qc-syntax/src/parser: where the limit is passed the rest of the outermost statement is skipped, each block it opened closing on its own brace, and the statements inside it are muted (QC-27.16)'
+    acceptance:
+    - 'A test: 1024 nested if, block, while, if-with-block and switch statements each give one E0509, under both dialects, and the next statement nests afresh'
+    verify:
+    - 'cargo nextest run -p qc-syntax'
+  - key: L-63
+    title: 'A program past a progs.dat table limit stops the compiler with an internal error'
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - GOAL-2
+    - PRIN-7
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1113). A program that outgrows one of progs.dat's 16-bit fields gives `error internal: the compiler stopped: Write(DefOutOfRange { ... })`, with no location.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build
+    deliverable:
+    - 'crates/qc-diag: E0512 (QCD-6.12)'
+    - 'crates/qc-codegen: the writer''s DefOutOfRange, StatementOutOfRange and TooLarge are E0512, a definition at its declaration and a statement at its source'
+    acceptance:
+    - 'Tests: too many globals, field globals and an operand past 32767 each report E0512 at the declaration or statement, and one fewer global is written'
+    verify:
+    - 'cargo nextest run -p qc-codegen -p qc-diag'
+  - key: L-64
+    title: 'A file included from a list-form progs.src is never compiled'
+    labels:
+    - L3-semantics
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - GOAL-1
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1114). An `#include` line in a list-form `progs.src` puts its file in the graph, but the file is never compiled or checked.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build
+    deliverable:
+    - 'crates/qc-sema/src/expand.rs: a graph entry an `#include` brought in with no including file, one a list-form progs.src includes, is compiled where it appears (PRJ-5.2)'
+    acceptance:
+    - 'Tests: the module input compiles such an entry; under each dialect its errors are the check''s and the build''s, and without them its functions are in the program'
+    verify:
+    - 'cargo nextest run -p qc-sema -p qs-workbench'
+  - key: L-65
+    title: 'A read-only MCP server says the project is outside its roots'
+    labels:
+    - L6-agent
+    - area:agent
+    - type:bug
+    size: S
+    reqs:
+    - AGT-7
+    - PRIN-6
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1115). Under `quakec-ide mcp <project> --read-only` every tool that writes is refused with a message saying the project itself is outside the roots.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build, `quakec-ide mcp <project> --read-only`
+    deliverable:
+    - 'crates/qs-mcp: a writing tool on a server with no write root is refused as read only, naming --read-only'
+    acceptance:
+    - 'Tests: project.compile and every map tool that writes are refused with the read-only message on a read-only server'
+    verify:
+    - 'cargo nextest run -p qs-mcp'
+  - key: L-66
+    title: 'A QuakeC error while a level loads reaches the caller only as exit status 1'
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - GOAL-3
+    - ENG-4
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1116). When the preview host stops while a level loads because a spawn function failed, `preview.play` and `map.play_from_here` answer only `the preview host stopped as it started: exit status: 1`.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build, `quakec-ide mcp <project> --game <install>`
+    deliverable:
+    - 'crates/qs-game/src/load.rs: a load the QuakeC stops says the function, file and line it stopped at'
+    - 'crates/qs-engine/src/launch.rs: the host''s error output is passed on and its last error is the launch''s error when it exits before its bridge connects'
+    acceptance:
+    - 'Tests: a failed spawn names the function and its file and line; a host that exits printing its error is reported with it, one that prints nothing with its status'
+    verify:
+    - 'cargo nextest run -p qs-game -p qs-engine'
+  - key: L-67
+    title: 'preview.poll leaves out a run error''s message and stack'
+    labels:
+    - L5-commands
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - ENG-4
+    - AGT-1
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1117). When the game stops on a run error, `preview.poll` says where but not what the error was, though the bridge's `qc/error` carries it.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build, MCP over `quakec-ide mcp`
+    deliverable:
+    - 'crates/qs-workbench/src/preview.rs: `stopped` carries the run error''s message when the reason is an error, and the call stack'
+    acceptance:
+    - 'A test: after qc/error and the pause, preview.poll answers the message; a later breakpoint stop answers none'
+    verify:
+    - 'cargo nextest run -p qs-workbench'
+  - key: L-68
+    title: 'An entity with an empty classname passes map.issues and stops the level'
+    labels:
+    - L5-commands
+    - area:map
+    - type:bug
+    size: S
+    reqs:
+    - MAP-7
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1118). `map.place_entity` accepts an empty classname and `map.issues` calls it an entity with no spawn function, but id's engine calls function 0 for it and the level does not load (`PR_ExecuteProgram: NULL function`).
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build, MCP over `quakec-ide mcp`
+    deliverable:
+    - 'docs/spec/edicts.md: EDICT-8.10, from id''s ED_ParseEpair, ED_FindFunction and PR_ExecuteProgram'
+    - 'docs/spec/map.md: MAP-8.10'
+    - 'crates/qs-map: an empty classname is not written'
+    - 'crates/qc-entities: an empty classname is reported as stopping the load'
+    acceptance:
+    - 'Tests: the load of a map with an empty classname stops with NULL function; map.issues reports it as such; map.place_entity and map.set_key refuse it and leave the map unchanged'
+    verify:
+    - 'cargo nextest run -p qs-map -p qc-entities -p qs-game -p qs-map-edit'
+  - key: L-69
+    title: 'A preview host that stops answering is still shown as playing'
+    labels:
+    - L5-commands
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - ENG-1
+    - PRIN-7
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1119). After `alias a a` and `a` the host loops, as id's does; the IDE keeps reporting it as playing, every later command waits the full 30 s, and Stop takes 35 s.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build, `quakec-ide mcp <project> --game <install>`
+    deliverable:
+    - 'crates/qs-engine/src/client.rs: a request not answered in time is remembered, and until its answer comes no other is sent'
+    - 'crates/qs-workbench/src/preview.rs: a host that does not answer is the play state `not answering`, and Stop kills it without asking or waiting'
+    - 'apps/desktop: the status bar and toolbar show it'
+    acceptance:
+    - 'Tests: after one timeout the client refuses at once and answers again once the late answer comes; the preview reports not answering and stops at once'
+    verify:
+    - 'cargo nextest run -p qs-engine -p qs-workbench'
+  - key: L-70
+    title: 'A breakpoint the preview host refuses stays in the list and the next toggle removes it'
+    labels:
+    - L5-commands
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - ENG-4
+    - PRIN-3
+    depends: []
+    summary: |
+      Filed by hand on 2026-11-22 while playtesting for v2026.11.2 (#1120). A breakpoint the running game refuses is kept, so the next `preview.breakpoint` on that line silently takes it away; with no game every line is accepted.
+    environment: |
+      macOS 27.2 (Apple silicon), main 8e8da0df, release build, the desktop app with `quakec-ide mcp --connect`
+    deliverable:
+    - 'crates/qs-workbench/src/preview.rs: a breakpoint the running game refuses is not kept; with no game running, one on a line where the project''s program, compiled in memory, has no statement is refused'
+    acceptance:
+    - 'Tests: a refused breakpoint toggled three times is refused each time and the list stays empty; with no game a line with no statement is refused and one with a statement is added and taken away'
+    verify:
+    - 'cargo nextest run -p qs-workbench'

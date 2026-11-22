@@ -226,3 +226,16 @@ fn distance_counts_edits() {
     assert_eq!(distance("wait", "wiat"), 2);
     assert_eq!(distance("kitten", "sitting"), 3);
 }
+
+// spec MAP-8.10: an empty classname is reported as stopping the map loading, not as a class
+// with no spawn function
+#[test]
+fn an_empty_classname_is_reported_as_stopping_the_load() {
+    let map = format!("{WORLD}{{\n\"classname\" \"\"\n\"origin\" \"0 0 0\"\n}}\n");
+    assert_eq!(check(&map), [(1, 6, MapDiagnosticKind::EmptyClassname)]);
+    assert!(
+        MapDiagnosticKind::EmptyClassname
+            .to_string()
+            .contains("stops the game as the level loads")
+    );
+}

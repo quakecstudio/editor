@@ -326,8 +326,9 @@ impl<L: Loader> Workbench<L> {
     ///
     /// # Errors
     ///
-    /// [`WorkbenchError::NoFile`] when the file has no text; [`WorkbenchError::Offset`] when the
-    /// range is not within it.
+    /// [`WorkbenchError::NoFile`] when the file has no text; [`WorkbenchError::Reversed`] when
+    /// the range ends before it starts, and [`WorkbenchError::Offset`] when it ends past the
+    /// file's end.
     pub fn replace_range(
         &mut self,
         path: &Path,
@@ -339,20 +340,16 @@ impl<L: Loader> Workbench<L> {
             .host
             .text(&path)
             .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
+        if start > end {
+            return Err(WorkbenchError::Reversed { path, start, end });
+        }
         let (Some(head), Some(tail)) = (before.get(..start), before.get(end..)) else {
             return Err(WorkbenchError::Offset {
                 path,
-                offset: end.max(start),
+                offset: end,
                 len: before.len(),
             });
         };
-        if start > end {
-            return Err(WorkbenchError::Offset {
-                path,
-                offset: start,
-                len: before.len(),
-            });
-        }
         let mut after = Vec::with_capacity(before.len());
         after.extend_from_slice(head);
         after.extend_from_slice(text.as_bytes());
