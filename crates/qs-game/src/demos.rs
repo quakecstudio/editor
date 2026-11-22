@@ -30,6 +30,9 @@ use crate::game::Game;
 const RECORD_FROM_SIGNON: i32 = 2;
 /// The words of `record`: the command and a name, with a map, with a map and a track.
 const RECORD_WORDS: core::ops::RangeInclusive<usize> = 2..=4;
+/// Where `record`'s words have the map and the CD track.
+const RECORD_MAP: usize = 2;
+const RECORD_TRACK: usize = 3;
 /// The words of `playdemo` and `timedemo`: the command and a name.
 const PLAY_WORDS: usize = 2;
 /// The command that holds a playing demo.
@@ -225,14 +228,14 @@ impl Demos {
                 .console_line("Relative pathnames are not allowed.\n");
             return;
         }
-        let map = words.get(2).map(|_| word(words, 2));
+        let map = words.get(RECORD_MAP).map(|_| word(words, RECORD_MAP));
         if map.is_none() && host.client.signon() < RECORD_FROM_SIGNON {
             host.game
                 .console_line("Can't record - try again when connected\n");
             return;
         }
         // "write the forced cd track number, or -1": the track said is the one before.
-        let track = match words.get(3) {
+        let track = match words.get(RECORD_TRACK) {
             Some(track) => {
                 let said = format!("Forcing CD track to {}\n", self.forcetrack);
                 host.game.console_line(&said);
@@ -407,7 +410,8 @@ impl Demos {
             && loaded.is_none()
             && waiting.started
         {
-            if let Err(error) = self.recorder.stop([0.0; 3]) {
+            // No client read the map: the recording ends with no view to say.
+            if let Err(error) = self.recorder.stop(qs_client::DEMO_NO_ANGLES) {
                 tracing::debug!(%error, "the demo of a map that did not load");
             }
             if let Err(error) = std::fs::remove_file(&waiting.path) {

@@ -31,8 +31,8 @@ pub use client::{
     CLIENT_MAX_MODELS, CLIENT_MAX_SCOREBOARD, CLIENT_MAX_SOUNDS, CLIENT_MAX_STATIC_ENTITIES,
     CLIENT_MAX_STATS, CLIENT_MAX_TEMP_ENTITIES, CLIENT_MAX_VISEDICTS, CLIENT_ROTATE_SPEED,
     CLIENT_SIGNONS, CLIENT_TELEPORT_DISTANCE, CLIENT_TENT_SOUNDS, Client, ClientLimits,
-    DEMO_MAX_MESSAGE, DEMO_NO_TRACK, Demo, DemoError, DemoFrame, DemoFrameError, DemoMessage,
-    DemoPace, DemoRecorder, DemoState, DemoTrack, Event, Game, HUD_DEFAULT_LINES, Hud,
+    DEMO_MAX_MESSAGE, DEMO_NO_ANGLES, DEMO_NO_TRACK, Demo, DemoError, DemoFrame, DemoFrameError,
+    DemoMessage, DemoPace, DemoRecorder, DemoState, DemoTrack, Event, Game, HUD_DEFAULT_LINES, Hud,
     LerpSettings, ModelIndex, ParseError, Score, Scores, SoundRef, SoundStart, stat,
 };
 pub use console::{

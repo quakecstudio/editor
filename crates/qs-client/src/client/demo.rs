@@ -85,13 +85,22 @@ impl core::fmt::Display for DemoFrameError {
 
 impl core::error::Error for DemoFrameError {}
 
+/// The bases `%i` reads a number in: 16 after `0x`, 8 after `0`, else 10.
+const HEXADECIMAL: u32 = 16;
+const OCTAL: u32 = 8;
+const DECIMAL: u32 = 10;
+/// The vertical tab, white space to C's `isspace` and not to `u8::is_ascii_whitespace`.
+const VERTICAL_TAB: u8 = 0x0b;
+/// A view's angles with nothing read: pitch, yaw and roll of 0.
+pub const DEMO_NO_ANGLES: [f32; 3] = [0.0; 3];
+
 /// The whole number `fscanf`'s `%i` reads at the start of `bytes`, and how many bytes it
 /// took: white space, a sign, then digits in base 16 after `0x`, 8 after `0`, else 10. A
 /// number too great wraps to 32 bits, as the store to an `int` does.
 fn scan_int(bytes: &[u8]) -> Option<(i32, usize)> {
     let mut rest = bytes;
     while let Some((first, tail)) = rest.split_first()
-        && (first.is_ascii_whitespace() || *first == 0x0b)
+        && (first.is_ascii_whitespace() || *first == VERTICAL_TAB)
     {
         rest = tail;
     }
@@ -107,9 +116,11 @@ fn scan_int(bytes: &[u8]) -> Option<(i32, usize)> {
         _ => false,
     };
     let (radix, digits) = match rest {
-        [b'0', b'x' | b'X', digit, ..] if digit.is_ascii_hexdigit() => (16_u32, rest.get(2..)?),
-        [b'0', ..] => (8, rest),
-        _ => (10, rest),
+        [b'0', b'x' | b'X', digit, ..] if digit.is_ascii_hexdigit() => {
+            (HEXADECIMAL, rest.get(2..)?)
+        }
+        [b'0', ..] => (OCTAL, rest),
+        _ => (DECIMAL, rest),
     };
     let mut value = 0_i64;
     let mut taken = 0_usize;
@@ -200,7 +211,7 @@ impl Demo {
         let length = word(&self.bytes, self.at).ok_or(DemoError::Read)?;
         let length = i32::from_le_bytes(length);
         let mut at = self.at.saturating_add(WORD);
-        let mut viewangles = [0.0_f32; 3];
+        let mut viewangles = DEMO_NO_ANGLES;
         for angle in &mut viewangles {
             // The file ending within the angles leaves no message to read after them.
             let Some(bytes) = word(&self.bytes, at) else {

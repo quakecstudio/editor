@@ -26,8 +26,8 @@ use qc_edict::SoundEntity;
 mod demo;
 
 pub use demo::{
-    DEMO_MAX_MESSAGE, DEMO_NO_TRACK, Demo, DemoError, DemoFrame, DemoFrameError, DemoMessage,
-    DemoPace, DemoRecorder, DemoState, DemoTrack,
+    DEMO_MAX_MESSAGE, DEMO_NO_ANGLES, DEMO_NO_TRACK, Demo, DemoError, DemoFrame, DemoFrameError,
+    DemoMessage, DemoPace, DemoRecorder, DemoState, DemoTrack,
 };
 
 use crate::entity::{Baseline, Entity};
@@ -812,7 +812,7 @@ impl Client {
         // CLIENT-10.6: that a demo plays is the client's whole run's, `cls.demoplayback`; the
         // angles of its messages are the cleared state's, `cl.mviewangles`.
         let playback = self.playback.map(|playback| demo::Playback {
-            mviewangles: [[0.0; 3]; 2],
+            mviewangles: [demo::DEMO_NO_ANGLES; 2],
             pace: playback.pace,
             hold: playback.hold,
         });
