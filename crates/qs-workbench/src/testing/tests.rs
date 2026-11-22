@@ -20,10 +20,13 @@ use super::{
 use crate::vm_run::tests::system_defs;
 use crate::{Config, Workbench, register};
 
-/// What a test project holds; the default has passing, failing and erroring tests.
-struct ProjectSpec {
-    code: String,
-    scenarios: Vec<(&'static str, &'static str)>,
+/// What a test project holds; the default has passing, failing and erroring tests, in the
+/// vanilla dialect with no project file.
+pub(crate) struct ProjectSpec {
+    pub(crate) code: String,
+    pub(crate) scenarios: Vec<(&'static str, &'static str)>,
+    /// The project's `quakec.toml`, when it has one.
+    pub(crate) manifest: Option<&'static str>,
 }
 
 impl Default for ProjectSpec {
@@ -40,13 +43,14 @@ void() test_null_entity = { local entity e; e.health = 1; };\n\
 void() test_sees_a_fresh_vm = { if (counter != 0) error(\"counter leaked\"); };\n"
                 .to_owned(),
             scenarios: Vec::new(),
+            manifest: None,
         }
     }
 }
 
 /// A fresh directory for test `name` holding `spec`'s scenarios, and a workbench over its
 /// project, open; its program is written there.
-fn project(name: &str, spec: &ProjectSpec) -> (PathBuf, Workbench<MemoryLoader>) {
+pub(crate) fn project(name: &str, spec: &ProjectSpec) -> (PathBuf, Workbench<MemoryLoader>) {
     let root = std::env::temp_dir().join(format!(
         "qs-workbench-testing-{name}-{}",
         std::process::id()
@@ -62,6 +66,9 @@ fn project(name: &str, spec: &ProjectSpec) -> (PathBuf, Workbench<MemoryLoader>)
     }
     let mut loader = MemoryLoader::new();
     loader.insert(root.join("progs.src"), b"progs.dat\ncode.qc\n".to_vec());
+    if let Some(manifest) = spec.manifest {
+        loader.insert(root.join("quakec.toml"), manifest.as_bytes().to_vec());
+    }
     loader.insert(
         root.join("code.qc"),
         format!("{}{}", system_defs(), spec.code).into_bytes(),
@@ -165,6 +172,7 @@ fn scenario_tests_are_found_and_skipped_without_a_game() {
             ("tests/notes.txt", "not a scenario"),
             ("other.scenario", "map start\n"),
         ],
+        manifest: None,
     };
     let (root, mut workbench) = project("scenarios", &spec);
     let no_game = root.join("no-game-here");
@@ -206,6 +214,7 @@ fn scenario_tests_play_over_the_game_given() {
             ("tests/own.scenario", "map own\nframes 1\n"),
             ("tests/unreadable.scenario", "frobnicate\n"),
         ],
+        manifest: None,
     };
     let (root, mut workbench) = project("scenarios-game", &spec);
     std::fs::create_dir_all(root.join("maps")).unwrap();

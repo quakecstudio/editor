@@ -2818,7 +2818,7 @@ groups:
       macOS, commit f30d24cd, `quakec-ide test` over the rerelease's QuakeC with one more file, target `rerelease` and target `fte`
     deliverable:
     - 'crates/qc-sema and crates/qc-codegen: a local struct''s brace initialiser followed and written as FTE-14.9 says, with tests citing it'
-    - 'docs/agent-reference/language-fteqcc.md no longer tells an agent to assign the members instead'
+    - 'docs/agent-reference/language-fteqcc.md and language-rerelease.md no longer tell an agent to assign the members instead'
     acceptance:
     - 'The issue''s program compiles and its test passes for the targets `rerelease` and `fte`, in a test'
     - 'The compiler differential (`cargo xtask compiler-diff`) stays green'
@@ -2847,3 +2847,26 @@ groups:
     - 'A `preview.watch` value comes back from `preview.poll` when the game stops; in a test'
     verify:
     - 'cargo nextest run -p qs-game -p qs-workbench; cargo xtask bridge-client on LibreQuake'
+  - key: L-57
+    title: 'FTEQCC: return = e returns nothing, and a multi-dimensional array''s element does not parse'
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:bug
+    size: S
+    reqs:
+    - COMP-3
+    depends:
+    - L-01
+    summary: |
+      Filed by hand on 2026-11-21, found by the review of L-46's pull request and confirmed with `quakec-ide test` over the rerelease's QuakeC. `return = e;` (FTEF-18.7) compiles with no message and the function returns 0: `float pick(float x) { return = 4; return; }` gives 0. A multi-dimensional array (FTEF-5.2) declares, `float m[4][4];`, but `m[1][2] = 5;` is `E0204: expected ;, found [`. The agent reference's `fteqcc` topic leaves both out until they work.
+    environment: |
+      macOS, main 77dd4d28, `dialect = "fteqcc"`, target `rerelease`
+    deliverable:
+    - 'crates/qc-syntax, crates/qc-sema and crates/qc-codegen: `return = e` sets the value a later bare `return` gives, and an element of an array of more than one dimension is read and stored, each as its statement says, with tests citing FTEF-18.7 and FTEF-5.2'
+    - 'docs/agent-reference/language-fteqcc.md names both again, and `the_dialect_topics_hold_when_run` runs them'
+    acceptance:
+    - 'The issue''s two programs compile and their tests pass, in a test'
+    - 'The compiler differential (`cargo xtask compiler-diff`) stays green'
+    verify:
+    - 'cargo nextest run -p qc-codegen -p qc-sema -p qs-workbench; cargo xtask compiler-diff --fast'

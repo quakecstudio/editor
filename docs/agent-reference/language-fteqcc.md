@@ -2,17 +2,21 @@
 
 Sources: [`docs/spec/dialect-fteqcc.md`](../spec/dialect-fteqcc.md) (the `FTEF-` statements
 cited below), written from FTEQCC, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e
-`engine/qclib`, and from the mods that use it (Nuclide, FreeCS, FreeHL). This is the dialect
-of a project whose `project.info` says `fteqcc`, with whatever target it names. It holds
+`engine/qclib`, and from the mods that use it (Nuclide, FreeCS, FreeHL). Read it for a
+project whose `project.info` says `fteqcc` and whose own code uses what follows. It holds
 everything of the `rerelease` topic (C-style functions, `for` and `switch`, `++` and `+=`,
 `?:`, arrays, `typedef struct`, `enum`, locals that hide globals, calls that keep their
 values), and what follows. Read the `rerelease` topic first; its "what stays as in vanilla"
 holds here too unless the project turns a flag on, which its own files will show.
 
 What the program may use is the target's, not the dialect's: no construct chooses the progs
-format (FTEF-1.5). `project.info` names the target, and `engine.builtins` its builtins. A
-mod for id's VM writes with the same syntax and is compiled to id's opcodes; do not assume
-an FTE builtin or a class works on the rerelease's engine because the compiler read it.
+format (FTEF-1.5). The opcodes the compiler may write are the standard target's, id's,
+unless the source says otherwise with `#pragma target fte` (FTEF-25.1): look for one in the
+project. With it integers and pointers compile, and the program is one id's VM and the
+rerelease do not load; without it they are errors, each saying "Consider the use of:
+#pragma target fte". `engine.builtins` lists the builtins of the engine `project.info`
+names. Do not assume an FTE builtin or a class works on the rerelease's engine because the
+compiler read it.
 
 ## Types beyond float
 
@@ -20,14 +24,13 @@ an FTE builtin or a class works on the rerelease's engine because the compiler r
   for the other widths (FTEF-2.12, FTEF-2.13). A number with a suffix has that type: `12i` is
   an integer, `1u` unsigned, `3.5d` a double, `1.0f` a float (FTEF-3.1). A plain `12` is a
   float, as ever, and `5 / 2` is 2.5. Integer arithmetic needs a target with the integer
-  opcodes: for id's VM, `i + 1i` is the error `E0320`, "Opcode \"+|ADD_I\" not valid for
+  opcodes: for the standard target `i + 1i` is the error `E0320`, "Opcode \"+|ADD_I\" not valid for
   target". There, count in floats.
 - **Casts.** `(type) e` converts to any type (FTEF-16.2).
 - **Pointers.** `T *p`, `&lvalue`, `*p` and `p->member` (FTEF-4.1 to FTEF-4.4). They need a
   target with the opcodes: for id's VM the address of a global is the error `E0331`
   (FTEF-4.6). There, use a field or an array.
-- **Arrays** with a size, `float xs[8];`, and more than one dimension, `float m[4][4];`
-  (FTEF-5.1, FTEF-5.2).
+- **Arrays** with a size, `float xs[8];` (FTEF-5.1).
 - **`struct` and `union`** by name: `struct Name { float a; vector b; };`, a child `struct
   Child : Parent { ... }`, members that are arrays, pointers, functions or bitfields, and
   `{ .a = 1, .b = '0 0 1' }` to initialise by member (FTEF-6.1 to FTEF-6.5, FTEF-16.11).
@@ -55,6 +58,11 @@ void() Barrel::Explode =
 {
     charge = 0;
 };
+
+void() Barrel::Barrel =
+{
+    charge = 3;
+};
 ```
 
 - A class is an entity type whose members are entity fields; `class Name : Parent` inherits
@@ -76,7 +84,6 @@ void() Barrel::Explode =
 - `if not (e)` and `if !(e)` take the statement when `e` is false (FTEF-16.5, FTEF-18.8).
 - `case a .. b:` matches a range (FTEF-18.10).
 - `a ?: b` is `a` when `a` is true, else `b` (FTEF-18.11).
-- `return = e;` sets what the function will return and goes on (FTEF-18.7).
 - `sizeof` takes a type or an expression (FTEF-18.12).
 - Adjacent string literals are one string: `"a" "b"` (FTEF-16.8).
 - A `for` header may hold several expressions separated by `,` (FTEF-16.9), and so may an

@@ -3,9 +3,10 @@
 Sources: [`docs/spec/dialect-fteqcc-rerelease.md`](../spec/dialect-fteqcc-rerelease.md) (the
 `FTE-` statements cited below), written from the 2021 rerelease's QuakeC and from FTEQCC,
 fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e `engine/qclib`; the vanilla rules it
-keeps are [`docs/spec/language.md`](../spec/language.md)'s. This is the dialect of a project
-whose `project.info` says `fteqcc` with the target `rerelease` (or another engine with id's
-VM): the rerelease's own code, its mission packs, and mods built on them. Everything of the
+keeps are [`docs/spec/language.md`](../spec/language.md)'s. Read it for any project whose
+`project.info` says `fteqcc`: it is the whole dialect of the rerelease's own code, its
+mission packs and mods built on them, which run on id's VM, and the part of FTEQCC every
+other FTEQCC project starts from. Everything of the
 `vanilla` topic still compiles here; this topic is what is added, and what stays as it was.
 
 The program is still a version 6 `progs.dat` of id's opcodes (FTE-1.1): each construct below
@@ -40,7 +41,9 @@ is compiled down to them, so none needs a newer engine.
   function the compiler writes for the array (FTE-13.12, FTE-13.11): correct, and slower than
   a field. An array is a global, not a field: for a value on each entity use a field.
 - **`typedef struct { string mdl; float frame; } pose;`**, `pose p;`, `p.mdl`, and `{ a, b }`
-  to initialise one or each element of an array of them (FTE-14.1 to FTE-14.3).
+  to initialise one or each element of an array of them (FTE-14.1 to FTE-14.3). Give a
+  struct its `{ ... }` at file level; in a function body declare it and assign its members,
+  since this compiler stops on a local struct with a brace initialiser.
 - **`enum { A, B, C };`**, float constants from 0, with `A = n` to set the next value;
   `enum Name { ... }` also names a type that is a float (FTE-15.1, FTE-15.2, FTE-15.4).
 - **Parameters.** A default value, `void spawn_gib(string mdl, float speed = 200)`, used
@@ -75,8 +78,9 @@ These were checked by running this compiler on the rerelease's own code with the
   `!(a == b)`, and `?:` binds tighter than `&&` and `||` (FTE-8.4). Use parentheses.
 - An `if` on a string still tests whether it is the null string: `if ("")` is true. An `if`
   on a vector is true when any component is not 0, where vanilla tests only x.
-- No `int`: numbers are floats. `enum : int` is accepted and its names are floats (FTE-15.2).
-  `7 / 2` is 3.5.
+- Numbers are floats: `7 / 2` is 3.5, and `enum : int` is accepted with its names floats
+  (FTE-15.2). `int` is a type the compiler reads, but id's VM has no integer opcodes, so
+  arithmetic on one is an error: count in floats.
 - A file is still a list of declarations, a name is still declared before it is used unless
   `autoproto` is on, and `progs.src` still lists the files in order.
 - A field is still declared at file level for every entity, `.float charge;`, though a body
@@ -88,8 +92,9 @@ These were checked by running this compiler on the rerelease's own code with the
 | --- | --- | --- |
 | `if (a && b ())` to guard `b` | `b` always runs | nested `if`s |
 | `if (s)` to test for an empty string | `""` is true | `if (s != "")` |
-| `int i`, `i / 2` expected to truncate | a float; 3.5 | `floor (i / 2)` |
+| `int i`, `i / 2` | an error: id's VM has no integer opcodes | `float i`, and `floor (i / 2)` to truncate |
 | `a + b & c`, `!a == b` | `a + (b & c)`, `!(a == b)`: not C's | parentheses |
+| `pose p = { "a", 1 };` in a body | this compiler stops | declare, then assign the members |
 | an array as an entity's own data | one array for every entity | a field, `.float charge;` |
 | `float count = 0;` at file level for a counter | FTEQCC takes an initialised global for a constant (FTE-11.2) | `var float count = 0;` or `float count;` |
 | a new file not in `progs.src` | never compiled | add it after the files it uses |

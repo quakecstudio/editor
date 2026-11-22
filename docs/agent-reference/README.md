@@ -16,8 +16,9 @@ topic here to any agent, the built-in one and one that reaches the IDE over MCP 
 - [`language-vanilla.md`](language-vanilla.md), [`language-rerelease.md`](language-rerelease.md)
   and [`language-fteqcc.md`](language-fteqcc.md): each dialect the compiler takes, in full,
   from its spec, with the mistakes a model makes in it (topics `vanilla`, `rerelease` and
-  `fteqcc`). `the_dialect_topics_hold_when_run` (`qs-workbench`) runs what they say of the
-  operators, conditions and calls.
+  `fteqcc`). `the_dialect_topics_hold_when_run` (`qs-workbench`) runs what the first two
+  say of the operators, conditions and calls, and the `fteqcc` topic's constructs that
+  compile for id's VM.
 
 - [`entities.md`](entities.md): what the engine calls, how an entity moves and collides, the
   builtins by what they are for, what the language does that C does not, and debugging.

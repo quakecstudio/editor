@@ -45,7 +45,8 @@ Sources: id's `qcc/v101qc` (`world.qc`, `client.qc`, `subs.qc`, `combat.qc`).
 - Keep the project's existing style and file order; add new files to `progs.src`.
 - `&&` and `||` run both sides, `&` and `|` bind as tightly as `*`, and `!a == b` is
   `!(a == b)` (QC-15): use parentheses, and nest `if`s where the second test must not run.
-- More, when the task needs it, from `project.reference`: the project's dialect in full,
-  topic `vanilla`, `rerelease` or `fteqcc` as `project.info` names it, with the mistakes a
-  model makes in each; `entities` (the engine's entity model, the builtins, debugging); and
+- More, when the task needs it, from `project.reference`: the dialect in full, with the
+  mistakes a model makes in it: topic `vanilla` when `project.info` says `vanilla`; when it
+  says `fteqcc`, topic `rerelease`, and topic `fteqcc` too where the project's own code uses
+  integers, pointers or classes; `entities` (the engine's entity model, the builtins, debugging); and
   `monsters`, `weapons`, `items` or `triggers` before adding one.

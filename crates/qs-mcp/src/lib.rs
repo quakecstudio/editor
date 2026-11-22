@@ -532,8 +532,9 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     to open and what changed on disk. A server connected to the running app (--connect) \
     also has the app's window: view.*, editor.*, settings.* and help.*. Before you write or \
     debug QuakeC, read project.reference: topic quakec for the language and how a mod runs; \
-    the project's dialect in full, which project.info names, topic vanilla, topic rerelease \
-    or topic fteqcc, each with the mistakes a model makes in it; \
+    the dialect in full, with the mistakes a model makes in it: topic vanilla when \
+    project.info says vanilla; when it says fteqcc, topic rerelease, and topic fteqcc too \
+    where the project's own code uses integers, pointers or classes; \
     topic entities for what the engine calls, how entities move and collide, the builtins \
     and debugging; topic monsters, topic weapons, topic items or topic triggers before \
     adding one; topic models before changing how \

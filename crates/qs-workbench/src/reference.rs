@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The reference an agent reads before it works (L-45, AGT-9): `project.reference` answers
-//! one topic of `docs/agent-reference/`, the same text the built-in agent's prompt is built
-//! from and more of it, so an agent that reaches the IDE over MCP, with no prompt of ours,
-//! knows the language, the engine's entity model and how a monster is written as well as the
-//! project's own code lets it.
+//! The reference an agent reads before it works (L-45, L-46, AGT-9): `project.reference`
+//! answers one topic of `docs/agent-reference/`, the same text the built-in agent's prompt is
+//! built from and more of it, so an agent that reaches the IDE over MCP, with no prompt of
+//! ours, knows the language in the project's dialect, the engine's entity model and how a
+//! monster, a weapon, an item and a trigger are written as well as the project's own code
+//! lets it.
 
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
@@ -111,9 +112,10 @@ impl<C: 'static> Command<C> for ProjectReference {
     const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "The reference to read before writing or debugging QuakeC or \
         building a map, by topic: quakec (the language in short, how a mod runs, pitfalls); \
-        the project's dialect in full, which project.info names: vanilla (id's QuakeC), \
-        rerelease (FTEQCC for id's VM) or fteqcc (all of FTEQCC), each with the mistakes a \
-        model makes in it; entities (what the engine calls, movetype and solid, the builtins \
+        the dialect in full, with the mistakes a model makes in it: vanilla (id's QuakeC) \
+        when project.info says vanilla; when it says fteqcc, rerelease (what FTEQCC adds for \
+        id's VM), and fteqcc too (integers, pointers, classes) where the project's own code \
+        uses them; entities (what the engine calls, movetype and solid, the builtins \
         by purpose, debugging); monsters, weapons, items and triggers (how each is written, \
         from id's own, and every place a new one is added); models (what a model is, and how \
         to recolour, scale and reframe one); maps; workflow (tests and scenarios). Written \
@@ -156,13 +158,11 @@ mod tests {
     use qs_commands::{Registry, Session};
     use serde_json::json;
 
-    use qc_project::MemoryLoader;
-
     use super::{REFERENCE, Reference, Topic, register_reference};
     use crate::map_compile::tests::Context;
+    use crate::testing::tests::{ProjectSpec, project};
     use crate::testing::{RunTestsParams, Verdict};
-    use crate::vm_run::tests::system_defs;
-    use crate::{Config, Workbench, register, register_preview};
+    use crate::{register, register_preview};
 
     // No spec statement: L-45, AGT-9: every topic of the agent reference is served whole, by
     // its name, with no project open; a topic there is none of is refused
@@ -229,16 +229,16 @@ mod tests {
 float hits;\n\
 void(string e) error = #10;\n\
 float(float v) side = { hits = hits + 1; return v; };\n\
-float(float a, float b) second = { return b; };\n\
+float(float a, float b) first = { return a; };\n\
 void() test_and_runs_both_sides = { hits = 0; if (0 && side(1)) hits = 100; if (hits != 1) error(\"&& skipped its right side\"); };\n\
 void() test_or_runs_both_sides = { hits = 0; if (1 || side(1)) hits = hits + 0; if (hits != 1) error(\"|| skipped its right side\"); };\n\
-void() test_bits_bind_as_times = { local float a; a = 1 + 2 & 3; if (a != 3) error(\"a + b & c\"); };\n\
+void() test_bits_bind_as_times = { local float a; a = 1 + 1 & 1; if (a != 2) error(\"a + b & c\"); };\n\
 void() test_not_takes_the_comparison = { local float a, b, t; a = 2; b = 1; t = 0; if (!a == b) t = 1; if (!t) error(\"!a == b\"); };\n\
 void() test_assign_binds_tighter_than_and = { local float a; a = 5; a = 0 && 1; if (a != 0) error(\"a = b && c\"); a = 7 && 0; if (a != 7) error(\"a = b && c stores b\"); };\n\
 void() test_an_empty_string_literal_is_true = { local string str; local float t; str = \"\"; t = 0; if (str) t = 1; if (!t) error(\"if on an empty literal\"); if (!(!str)) error(\"! on an empty literal\"); };\n\
 void() test_a_vector_tests_its_x = { local vector v; local float t; v = '0 0 1'; t = 0; if (v) t = 1; if (t) error(\"if (v)\"); if (v == '0 0 0') error(\"==\"); };\n\
 void() test_two_calls_share_the_return = { local float r; r = side(2) + side(4); if (r != 8) error(\"f() + g()\"); };\n\
-void() test_a_call_in_a_later_argument_overwrites = { local float r; r = second(side(5), 1); if (r != 1) error(\"the first argument's call\"); r = second(4, side(9)); if (r != 9) error(\"the later argument's call\"); };\n\
+void() test_a_call_in_a_later_argument_overwrites = { local float r; r = first(side(5), 1); if (r != 5) error(\"the first argument's call\"); r = first(4, side(9)); if (r != 9) error(\"the later argument's call\"); };\n\
 void() scoped = { local float hits; hits = 7; };\n\
 void() test_a_local_is_the_global = { hits = 3; scoped(); if (hits != 7) error(\"a local hid a global\"); };\n";
 
@@ -249,7 +249,10 @@ void(string e) error = #10;\n\
 float side(float v) { hits = hits + 1; return v; }\n\
 void test_and_runs_both_sides() { hits = 0; if (0 && side(1)) hits = 100; if (hits != 1) error(\"&& skipped its right side\"); }\n\
 void test_or_runs_both_sides() { hits = 0; if (1 || side(1)) hits = hits + 0; if (hits != 1) error(\"|| skipped its right side\"); }\n\
-void test_bits_bind_as_times() { float a = 1 + 2 & 3; if (a != 3) error(\"a + b & c\"); }\n\
+void test_bits_bind_as_times() { float a = 1 + 1 & 1; if (a != 2) error(\"a + b & c\"); }\n\
+void test_the_ternary_binds_tighter_than_and() { float t = 0 && 1 ? 5 : 7; if (t != 0) error(\"a && b ? c : d\"); }\n\
+float first(float a, float b) { return a; }\n\
+void test_a_call_in_a_later_argument_keeps_the_earlier() { if (first(4, side(9)) != 4) error(\"the earlier argument\"); }\n\
 void test_not_takes_the_comparison() { float a = 2; float b = 1; float t = 0; if (!a == b) t = 1; if (!t) error(\"!a == b\"); }\n\
 void test_an_empty_string_literal_is_true() { string s = \"\"; float t = 0; if (s) t = 1; if (!t) error(\"if on an empty literal\"); }\n\
 void test_a_vector_tests_every_part() { vector v = '0 0 1'; float t = 0; if (v) t = 1; if (!t) error(\"if (v)\"); }\n\
@@ -268,29 +271,41 @@ void test_constants() { if (EC != 2) error(\"enum\"); count = count + SPEED; if 
 float with_default(float a, float b = 4) { return a + b; }\n\
 void test_default_parameter() { if (with_default(1) != 5) error(\"default\"); if (with_default(1, 2) != 3) error(\"given\"); }\n";
 
-    /// Runs the `test_` functions of `code` in a project of the given `quakec.toml`, and
-    /// returns each that did not pass.
-    fn failures(name: &str, toml: Option<&str>, code: &str) -> Vec<String> {
-        let root = std::env::temp_dir().join(format!(
-            "qs-workbench-reference-{name}-{}",
-            std::process::id()
-        ));
-        let _gone = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        let mut loader = MemoryLoader::new();
-        loader.insert(root.join("progs.src"), b"progs.dat\ncode.qc\n".to_vec());
-        if let Some(toml) = toml {
-            loader.insert(root.join("quakec.toml"), toml.as_bytes().to_vec());
-        }
-        loader.insert(
-            root.join("code.qc"),
-            format!("{}{code}", system_defs()).into_bytes(),
-        );
-        let mut workbench = Workbench::new(loader, Config::default());
-        workbench.open_project(&root).unwrap();
+    /// What the `fteqcc` topic says compiles and runs for id's VM, beyond the rerelease's.
+    const FTEQCC: &str = "\
+void(string e) error = #10;\n\
+class Barrel : entity { float charge; virtual void() Explode; void() Barrel; };\n\
+void() Barrel::Explode = { charge = 0; };\n\
+void() Barrel::Barrel = { charge = 3; };\n\
+enumflags { FA, FB, FC };\n\
+struct Pair { float a; vector b; };\n\
+struct Pair made = { .a = 1, .b = '0 0 1' };\n\
+void test_enumflags_double() { if (FA + FB + FC != 7) error(\"enumflags\"); }\n\
+void test_a_struct_at_file_level() { if (made.a != 1) error(\"a\"); if (made.b != '0 0 1') error(\"b\"); }\n\
+void test_a_local_struct_assigned() { struct Pair p; p.a = 2; if (p.a != 2) error(\"p.a\"); }\n\
+void test_a_vector_of_expressions() { float n = 3; vector v = [1, 2, n]; if (v.z != 3) error(\"[x, y, z]\"); }\n\
+void test_adjacent_strings_join() { string s = \"a\" \"b\"; if (s != \"ab\") error(\"strings\"); }\n\
+void test_the_short_ternary() { float e = 0 ?: 7; if (e != 7) error(\"a ?: b\"); }\n\
+void test_if_not() { float e = 1; if not (e) error(\"if not\"); }\n\
+void test_plain_numbers_are_floats() { float h = 5 / 2; if (h != 2.5) error(\"5 / 2\"); }\n\
+void test_a_case_range() { float r = 0; switch (5) { case 1 .. 3: r = 1; break; case 4 .. 6: r = 2; break; } if (r != 2) error(\"case a .. b\"); }\n";
+
+    /// A project file of the FTEQCC dialect for the rerelease's engine.
+    const FOR_IDS_VM: &str = "[project]\ndialect = \"fteqcc\"\ntarget = \"rerelease\"\n\n\
+                              [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
+
+    /// Runs the `test_` functions of `code` in a project with `manifest` for its
+    /// `quakec.toml`, and returns each that did not pass.
+    fn failures(name: &str, manifest: Option<&'static str>, code: &str) -> Vec<String> {
+        let spec = ProjectSpec {
+            code: code.to_owned(),
+            manifest,
+            ..ProjectSpec::default()
+        };
+        let (root, mut workbench) = project(name, &spec);
         let run = workbench.run_tests(&RunTestsParams::default()).unwrap();
         let _gone = std::fs::remove_dir_all(&root);
-        assert!(run.tests.len() > 9, "{name}: {} tests ran", run.tests.len());
+        assert!(run.tests.len() > 8, "{name}: {} tests ran", run.tests.len());
         run.tests
             .into_iter()
             .filter(|test| test.verdict != Verdict::Passed)
@@ -303,11 +318,16 @@ void test_default_parameter() { if (with_default(1) != 5) error(\"default\"); if
     // the vanilla dialect and in FTEQCC's for id's VM
     #[test]
     fn the_dialect_topics_hold_when_run() {
-        assert_eq!(failures("vanilla", None, VANILLA), Vec::<String>::new());
-        let toml = "[project]\ndialect = \"fteqcc\"\ntarget = \"rerelease\"\n\n\
-                    [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
         assert_eq!(
-            failures("rerelease", Some(toml), RERELEASE),
+            failures("reference-vanilla", None, VANILLA),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            failures("reference-rerelease", Some(FOR_IDS_VM), RERELEASE),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            failures("reference-fteqcc", Some(FOR_IDS_VM), FTEQCC),
             Vec::<String>::new()
         );
     }

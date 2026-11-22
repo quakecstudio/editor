@@ -122,6 +122,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | The first shotgun shot always takes health | ENG-2; found by the showcase on 2026-11-21 | [L-54](https://github.com/quakecstudio/editor/issues/1097) The first shotgun shot sometimes draws blood without taking health |
 | A local struct given a brace initialiser compiles | COMP-3; found writing the agent reference on 2026-11-21 | [L-55](https://github.com/quakecstudio/editor/issues/1101) A local struct with a brace initialiser stops the compiler |
 | The debugging tools hold up over MCP | ENG-2; reported by the agent runs of L-46 on 2026-11-21 | [L-56](https://github.com/quakecstudio/editor/issues/1102) Debugging a played game over MCP closes the host or reads stale values |
+| `return = e` and arrays of more than one dimension compile | COMP-3; found reviewing the agent reference on 2026-11-21 | [L-57](https://github.com/quakecstudio/editor/issues/1104) FTEQCC: return = e returns nothing, and a multi-dimensional array's element does not parse |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 
