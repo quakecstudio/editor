@@ -21,11 +21,24 @@ pub const REFERENCE: &str = "project.reference";
 pub enum Topic {
     /// The language, how a mod is laid out and run, and its pitfalls.
     Quakec,
+    /// The vanilla dialect in full: QuakeC as id's compiler reads it, and what a model gets
+    /// wrong in it.
+    Vanilla,
+    /// The rerelease's dialect: what FTEQCC adds for id's VM, and what stays as in vanilla.
+    Rerelease,
+    /// The FTEQCC dialect in full: integers, pointers, structs, classes, the preprocessor.
+    Fteqcc,
     /// What the engine calls, how an entity moves and collides, the builtins by what they
     /// are for, what the language does that C does not, and debugging.
     Entities,
     /// How a monster is written, from id's own, and where a new one must be added.
     Monsters,
+    /// How a weapon is written, from id's own, and the six places a new one is added.
+    Weapons,
+    /// How an item is written, from id's own: its spawn function and its touch.
+    Items,
+    /// How a trigger is written, from id's own, and how targets are fired.
+    Triggers,
     /// What a model is, a mod's own models, and how to recolour, scale and reframe one.
     Models,
     /// The `.map` format, units, the entities a map needs, textures and leaks.
@@ -36,10 +49,16 @@ pub enum Topic {
 
 impl Topic {
     /// Every topic, in the order to read them.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 12] = [
         Self::Quakec,
+        Self::Vanilla,
+        Self::Rerelease,
+        Self::Fteqcc,
         Self::Entities,
         Self::Monsters,
+        Self::Weapons,
+        Self::Items,
+        Self::Triggers,
         Self::Models,
         Self::Maps,
         Self::Workflow,
@@ -50,8 +69,16 @@ impl Topic {
     pub const fn text(self) -> &'static str {
         match self {
             Self::Quakec => include_str!("../../../docs/agent-reference/quakec.md"),
+            Self::Vanilla => include_str!("../../../docs/agent-reference/language-vanilla.md"),
+            Self::Rerelease => {
+                include_str!("../../../docs/agent-reference/language-rerelease.md")
+            }
+            Self::Fteqcc => include_str!("../../../docs/agent-reference/language-fteqcc.md"),
             Self::Entities => include_str!("../../../docs/agent-reference/entities.md"),
             Self::Monsters => include_str!("../../../docs/agent-reference/monsters.md"),
+            Self::Weapons => include_str!("../../../docs/agent-reference/weapons.md"),
+            Self::Items => include_str!("../../../docs/agent-reference/items.md"),
+            Self::Triggers => include_str!("../../../docs/agent-reference/triggers.md"),
             Self::Models => include_str!("../../../docs/agent-reference/models.md"),
             Self::Maps => include_str!("../../../docs/agent-reference/maps.md"),
             Self::Workflow => include_str!("../../../docs/agent-reference/workflow.md"),
@@ -83,12 +110,15 @@ impl<C: 'static> Command<C> for ProjectReference {
     const ID: &'static str = REFERENCE;
     const ACCESS: qs_commands::Access = qs_commands::Access::Read;
     const SUMMARY: &'static str = "The reference to read before writing or debugging QuakeC or \
-        building a map, by topic: quakec (the language, how a mod runs, pitfalls), entities \
-        (what the engine calls, movetype and solid, the builtins by purpose, what QuakeC does \
-        that C does not, debugging), monsters (how a monster is written and every place a new \
-        one is added), models (what a model is, and how to recolour, scale and reframe one), \
-        maps, workflow (tests and scenarios). Written from id's QuakeC and the \
-        engine's specs; a mod's own code comes first where it differs.";
+        building a map, by topic: quakec (the language in short, how a mod runs, pitfalls); \
+        the project's dialect in full, which project.info names: vanilla (id's QuakeC), \
+        rerelease (FTEQCC for id's VM) or fteqcc (all of FTEQCC), each with the mistakes a \
+        model makes in it; entities (what the engine calls, movetype and solid, the builtins \
+        by purpose, debugging); monsters, weapons, items and triggers (how each is written, \
+        from id's own, and every place a new one is added); models (what a model is, and how \
+        to recolour, scale and reframe one); maps; workflow (tests and scenarios). Written \
+        from id's QuakeC and the engine's specs; a mod's own code comes first where it \
+        differs.";
     type Params = ReferenceParams;
     type Output = Reference;
     type Error = WorkbenchError;
@@ -126,9 +156,13 @@ mod tests {
     use qs_commands::{Registry, Session};
     use serde_json::json;
 
+    use qc_project::MemoryLoader;
+
     use super::{REFERENCE, Reference, Topic, register_reference};
     use crate::map_compile::tests::Context;
-    use crate::{register, register_preview};
+    use crate::testing::{RunTestsParams, Verdict};
+    use crate::vm_run::tests::system_defs;
+    use crate::{Config, Workbench, register, register_preview};
 
     // No spec statement: L-45, AGT-9: every topic of the agent reference is served whole, by
     // its name, with no project open; a topic there is none of is refused
@@ -186,6 +220,95 @@ mod tests {
         assert!(
             named > 20,
             "the check read the commands the reference names: {named}"
+        );
+    }
+
+    /// What the `vanilla` topic says of the operators, conditions, scopes and calls, as
+    /// tests that fail by calling `error`.
+    const VANILLA: &str = "\
+float hits;\n\
+void(string e) error = #10;\n\
+float(float v) side = { hits = hits + 1; return v; };\n\
+float(float a, float b) second = { return b; };\n\
+void() test_and_runs_both_sides = { hits = 0; if (0 && side(1)) hits = 100; if (hits != 1) error(\"&& skipped its right side\"); };\n\
+void() test_or_runs_both_sides = { hits = 0; if (1 || side(1)) hits = hits + 0; if (hits != 1) error(\"|| skipped its right side\"); };\n\
+void() test_bits_bind_as_times = { local float a; a = 1 + 2 & 3; if (a != 3) error(\"a + b & c\"); };\n\
+void() test_not_takes_the_comparison = { local float a, b, t; a = 2; b = 1; t = 0; if (!a == b) t = 1; if (!t) error(\"!a == b\"); };\n\
+void() test_assign_binds_tighter_than_and = { local float a; a = 5; a = 0 && 1; if (a != 0) error(\"a = b && c\"); a = 7 && 0; if (a != 7) error(\"a = b && c stores b\"); };\n\
+void() test_an_empty_string_literal_is_true = { local string str; local float t; str = \"\"; t = 0; if (str) t = 1; if (!t) error(\"if on an empty literal\"); if (!(!str)) error(\"! on an empty literal\"); };\n\
+void() test_a_vector_tests_its_x = { local vector v; local float t; v = '0 0 1'; t = 0; if (v) t = 1; if (t) error(\"if (v)\"); if (v == '0 0 0') error(\"==\"); };\n\
+void() test_two_calls_share_the_return = { local float r; r = side(2) + side(4); if (r != 8) error(\"f() + g()\"); };\n\
+void() test_a_call_in_a_later_argument_overwrites = { local float r; r = second(side(5), 1); if (r != 1) error(\"the first argument's call\"); r = second(4, side(9)); if (r != 9) error(\"the later argument's call\"); };\n\
+void() scoped = { local float hits; hits = 7; };\n\
+void() test_a_local_is_the_global = { hits = 3; scoped(); if (hits != 7) error(\"a local hid a global\"); };\n";
+
+    /// What the `rerelease` topic says is added, and what stays as in vanilla.
+    const RERELEASE: &str = "\
+float hits;\n\
+void(string e) error = #10;\n\
+float side(float v) { hits = hits + 1; return v; }\n\
+void test_and_runs_both_sides() { hits = 0; if (0 && side(1)) hits = 100; if (hits != 1) error(\"&& skipped its right side\"); }\n\
+void test_or_runs_both_sides() { hits = 0; if (1 || side(1)) hits = hits + 0; if (hits != 1) error(\"|| skipped its right side\"); }\n\
+void test_bits_bind_as_times() { float a = 1 + 2 & 3; if (a != 3) error(\"a + b & c\"); }\n\
+void test_not_takes_the_comparison() { float a = 2; float b = 1; float t = 0; if (!a == b) t = 1; if (!t) error(\"!a == b\"); }\n\
+void test_an_empty_string_literal_is_true() { string s = \"\"; float t = 0; if (s) t = 1; if (!t) error(\"if on an empty literal\"); }\n\
+void test_a_vector_tests_every_part() { vector v = '0 0 1'; float t = 0; if (v) t = 1; if (!t) error(\"if (v)\"); }\n\
+void scoped() { float hits = 5; hits = 7; }\n\
+void test_a_local_hides_a_global() { hits = 3; scoped(); if (hits != 3) error(\"a local wrote the global\"); }\n\
+void test_calls_keep_their_values() { if (side(2) + side(4) != 6) error(\"f() + g()\"); if (side(side(2) + 1) + side(4) != 7) error(\"nested\"); }\n\
+void test_minus() { float a = 4; float b = -a; if (b != -4) error(\"-a\"); if (a-1 != 3) error(\"a-1\"); }\n\
+void test_numbers_are_floats() { float h = 7 / 2; if (h != 3.5) error(\"7 / 2\"); if (7 % 3 != 1) error(\"%\"); if (.5 + 1.0f != 1.5) error(\"literals\"); }\n\
+void test_loops_and_arrays() { float sum = 0; float xs[] = { 1, 2, 3 }; for (float i = 0; i < xs.length; i++) { if (i == 1) continue; sum += xs[i]; } if (sum != 4) error(\"for\"); }\n\
+void test_switch_and_ternary() { float r = (hits > 100) ? 1 : 2; switch (r) { case 1: error(\"one\"); break; case 2: r = 9; break; default: error(\"default\"); } if (r != 9) error(\"switch\"); }\n\
+void test_vector_members() { vector v = '1 2 3'; v.z *= 2; if (v_z != 6) error(\"v.z\"); if (v.x + v.y != 3) error(\"v.x\"); }\n\
+enum { EA, EB, EC };\n\
+const float SPEED = 320;\n\
+var float count = 0;\n\
+void test_constants() { if (EC != 2) error(\"enum\"); count = count + SPEED; if (count != 320) error(\"var\"); }\n\
+float with_default(float a, float b = 4) { return a + b; }\n\
+void test_default_parameter() { if (with_default(1) != 5) error(\"default\"); if (with_default(1, 2) != 3) error(\"given\"); }\n";
+
+    /// Runs the `test_` functions of `code` in a project of the given `quakec.toml`, and
+    /// returns each that did not pass.
+    fn failures(name: &str, toml: Option<&str>, code: &str) -> Vec<String> {
+        let root = std::env::temp_dir().join(format!(
+            "qs-workbench-reference-{name}-{}",
+            std::process::id()
+        ));
+        let _gone = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut loader = MemoryLoader::new();
+        loader.insert(root.join("progs.src"), b"progs.dat\ncode.qc\n".to_vec());
+        if let Some(toml) = toml {
+            loader.insert(root.join("quakec.toml"), toml.as_bytes().to_vec());
+        }
+        loader.insert(
+            root.join("code.qc"),
+            format!("{}{code}", system_defs()).into_bytes(),
+        );
+        let mut workbench = Workbench::new(loader, Config::default());
+        workbench.open_project(&root).unwrap();
+        let run = workbench.run_tests(&RunTestsParams::default()).unwrap();
+        let _gone = std::fs::remove_dir_all(&root);
+        assert!(run.tests.len() > 9, "{name}: {} tests ran", run.tests.len());
+        run.tests
+            .into_iter()
+            .filter(|test| test.verdict != Verdict::Passed)
+            .map(|test| format!("{}: {:?}", test.name, test.message))
+            .collect()
+    }
+
+    // No spec statement: L-46, AGT-9: what the dialect topics say of the operators, the
+    // conditions, the scopes and the calls is what this compiler's programs do when run, in
+    // the vanilla dialect and in FTEQCC's for id's VM
+    #[test]
+    fn the_dialect_topics_hold_when_run() {
+        assert_eq!(failures("vanilla", None, VANILLA), Vec::<String>::new());
+        let toml = "[project]\ndialect = \"fteqcc\"\ntarget = \"rerelease\"\n\n\
+                    [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
+        assert_eq!(
+            failures("rerelease", Some(toml), RERELEASE),
+            Vec::<String>::new()
         );
     }
 }
