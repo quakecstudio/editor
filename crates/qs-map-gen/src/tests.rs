@@ -305,3 +305,35 @@ fn a_level_is_designed() {
         }
     }
 }
+
+// No spec statement: L-74, the plan kept is the best of those drawn: it scores at least the
+// first, which a level of one candidate would have been
+#[test]
+fn the_best_plan_is_kept() {
+    let textures = id_names();
+    let mut better = 0;
+    for seed in 0..16 {
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let has = layout::Has {
+            liquid: layout::Liquid::There,
+            sky: layout::Sky::There,
+        };
+        let mut rng = Rng::new(seed);
+        let mut first = Plan::draw(Size::Large, has, &mut rng).unwrap();
+        let first_report = Mission::arrange(&mut first, Size::Large, &Classes::Any, &mut rng);
+        let first = Score::of(&first, &first_report);
+        let (kept, kept_report) = request.best(has, &mut Rng::new(seed)).unwrap();
+        let kept = Score::of(&kept, &kept_report);
+        assert!(kept >= first, "seed {seed}");
+        if kept > first {
+            better += 1;
+        }
+    }
+    assert!(better > 0, "no seed's first plan was bettered");
+}

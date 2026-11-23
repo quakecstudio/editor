@@ -19,6 +19,7 @@ mod passage;
 mod populate;
 mod rng;
 mod rooms;
+mod score;
 #[cfg(test)]
 mod tests;
 mod theme;
@@ -42,6 +43,7 @@ use passage::Passage;
 use populate::{Depth, Placed};
 use rng::Rng;
 use rooms::{Part, Room};
+use score::Score;
 use theme::{Paints, WorldType};
 
 /// How large a level is.
@@ -253,6 +255,9 @@ const SECRET_FLAGS: &str = "5";
 const MEGAHEALTH: &str = "2";
 /// Half the width of a secret room's trigger.
 const SECRET_HALF: f64 = 64.0;
+
+/// How many plans are drawn from a seed for the best to be kept.
+const CANDIDATES: usize = 8;
 
 /// A level being put together.
 struct Assembly<'a> {
@@ -546,6 +551,26 @@ impl Assembly<'_> {
 }
 
 impl Request<'_> {
+    /// The best of [`CANDIDATES`] plans drawn by `rng`, each with its mission, by its
+    /// [`Score`]; the first of the best when several score alike.
+    ///
+    /// # Errors
+    ///
+    /// [`GenError::Layout`] when no path could be drawn.
+    fn best(&self, has: Has, rng: &mut Rng) -> Result<(Plan, Report), GenError> {
+        let mut best: Option<(Score, Plan, Report)> = None;
+        for _ in 0..CANDIDATES {
+            let mut plan = Plan::draw(self.size, has, rng)?;
+            let report = Mission::arrange(&mut plan, self.size, self.classes, rng);
+            let score = Score::of(&plan, &report);
+            if best.as_ref().is_none_or(|(kept, _, _)| score > *kept) {
+                best = Some((score, plan, report));
+            }
+        }
+        best.map(|(_, plan, report)| (plan, report))
+            .ok_or(GenError::Layout)
+    }
+
     /// Makes the level.
     ///
     /// # Errors
@@ -567,8 +592,7 @@ impl Request<'_> {
                 Sky::Missing
             },
         };
-        let mut plan = Plan::draw(self.size, has, &mut rng)?;
-        let report = Mission::arrange(&mut plan, self.size, self.classes, &mut rng);
+        let (mut plan, report) = self.best(has, &mut rng)?;
         if !self.classes.has(DOOR) {
             for link in &mut plan.links {
                 if link.doorway == Doorway::Door {
