@@ -16,6 +16,12 @@ level.
   by bridges, a room on two levels joined by stairs, a courtyard under the sky, two aisles
   crossing under a lantern, and a long room under a pitched vault. **Passages** (`passage`) are
   square or arched, with stairs where the floors differ and a door at the higher end.
+- **No traps.** A pit's liquid is within `CLIMB_OUT` (28) of its rim, the most a swimmer
+  climbs out over (`client.qc`, `CheckWaterJump`), and a pit of lava, which kills before a
+  player climbs out, has rails along its edge and its bridges. `crates/qs-tests` checks each
+  level compiled: from every place and set of keys the start reaches, the exit can still be
+  reached (`no_trap.rs`), and measures the climb out of water in `qs-sim`
+  (`water_escape.rs`).
 - **The textures** (`theme`) are a theme's, chosen from the names the game has: themes for
   id's levels and for LibreQuake's, else any plain textures. **The entities** (`populate`) are
   id's classnames (`qcc/v101qc`), and only those the game defines are placed.

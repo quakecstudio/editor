@@ -210,3 +210,60 @@ fn a_game_with_no_theme_is_painted_plain() {
         }
     }
 }
+
+// No spec statement: L-74, a liquid's hazard is read from its texture's name: lava is deadly,
+// slime survivable, any other liquid harmless
+#[test]
+fn a_liquid_is_as_hazardous_as_its_name() {
+    let of = |name: &str| theme::Hazard::of(&theme::surface(name));
+    assert_eq!(of("*lava1"), theme::Hazard::Deadly);
+    assert_eq!(of("*LAVA1"), theme::Hazard::Deadly);
+    assert_eq!(of("*slime0"), theme::Hazard::Survivable);
+    assert_eq!(of("*water1"), theme::Hazard::Harmless);
+    assert_eq!(of("*04water"), theme::Hazard::Harmless);
+}
+
+/// The solids a pit room of `liquid` builds in a room of half-width 256.
+fn pit_solids(liquid: &str) -> usize {
+    let plan = layout::RoomPlan {
+        middle: [0.0, 0.0],
+        shape: RoomShape::Pit,
+        floor: 0.0,
+        half: [256.0, 256.0],
+        height: 256.0,
+        turned: Side::East,
+        depth: 0,
+    };
+    let wall = theme::surface("wall");
+    let paints = theme::Paints::named(
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        Some(theme::surface(liquid)),
+        None,
+    );
+    let mut mass = mass::Mass::of_blocks(
+        &[mass::Bounds {
+            min: [-384.0, -384.0, -384.0],
+            max: [384.0, 384.0, 704.0],
+        }],
+        &wall,
+    )
+    .unwrap();
+    rooms::Room::new(&plan, rooms::Part::Way)
+        .build(&mut mass, &paints)
+        .unwrap()
+        .solids
+        .len()
+}
+
+// No spec statement: L-74, a pit of lava has a rail along its edge and its bridges, which a pit
+// of water or slime does not need: sixteen rails
+#[test]
+fn only_a_pit_of_lava_is_railed() {
+    let water = pit_solids("*water1");
+    assert_eq!(pit_solids("*slime0"), water);
+    assert_eq!(pit_solids("*lava1"), water + 16);
+}

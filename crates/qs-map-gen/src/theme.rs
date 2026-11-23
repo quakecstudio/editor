@@ -137,6 +137,34 @@ const TOOL_NAMES: &[&str] = &["clip", "trigger", "skip", "hint", "hintskip", "or
 /// (`docs/agent-reference/maps.md`, Textures).
 const TRIGGER: &str = "trigger";
 
+/// What a liquid does to a player in it (`client.qc`, `WaterMove`): lava does
+/// `10*self.waterlevel` every 0.2 s, slime `4*self.waterlevel` every second, water nothing
+/// until the air runs out 12 s under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Hazard {
+    /// Water: a player who falls in swims out.
+    Harmless,
+    /// Slime: at most 12 a second, so a player who falls in climbs out with health to spare.
+    Survivable,
+    /// Lava: up to 150 a second, so a player who falls in dies before climbing out.
+    Deadly,
+}
+
+impl Hazard {
+    /// The hazard of a liquid painted with `surface`, by its texture's name (`*lava`,
+    /// `*slime`, else water; QBSP-4.1).
+    pub(crate) fn of(surface: &Surface) -> Self {
+        let name = surface.texture.to_ascii_lowercase();
+        if name.starts_with(b"*lava") {
+            Self::Deadly
+        } else if name.starts_with(b"*slime") {
+            Self::Survivable
+        } else {
+            Self::Harmless
+        }
+    }
+}
+
 /// The names a level is painted with.
 #[derive(Clone, Debug)]
 pub(crate) struct Paints {
@@ -163,7 +191,7 @@ pub(crate) struct Paints {
 }
 
 /// The surface of the texture `name`, aligned to the world.
-fn surface(name: &str) -> Surface {
+pub(crate) fn surface(name: &str) -> Surface {
     Surface {
         texture: name.as_bytes().to_vec(),
         texdef: TexDef::Standard {

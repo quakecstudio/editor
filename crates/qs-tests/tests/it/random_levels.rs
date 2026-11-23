@@ -19,6 +19,8 @@ use qs_map::{Diagnostic, DiagnosticKind};
 use qs_map_gen::{Classes, Level, Request, Size};
 use qs_sim::collision::{Hull, HullSet};
 
+use crate::no_trap::Ground;
+
 /// `CONTENTS_SOLID` (BSP-10.2).
 const SOLID: i32 = -2;
 /// How far a walk's steps are apart, the height it climbs (`STEPSIZE`, PHYS-8.3), and how
@@ -171,6 +173,9 @@ fn check(level: &Level, what: &str) {
             "{what}: room {place} stands in rock"
         );
     }
+    let exit = stand(level.exit);
+    let found = Ground::new(&bsp, &level.map).check(stand(0), exit);
+    assert_eq!(found, Ok(()), "{what}: a trap");
     let reached = walked(&hull, h1, stand(0));
     for (place, room) in level.rooms.iter().enumerate() {
         let [x, y, z] = stand(place);

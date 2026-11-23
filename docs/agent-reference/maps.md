@@ -34,6 +34,19 @@ Sources: id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/v
 - A jump adds 270 to the vertical speed (`PlayerJump`: `self.velocity_z = self.velocity_z +
   270`), and gravity is 800 (`sv_gravity`, PHYS-6.4). That makes the peak 270² / (2 · 800),
   about 45 units: a ledge of 40 is a safe jump.
+- A swimmer climbs out of a liquid only over an edge at most 28 units above its surface.
+  `CheckWaterJump` runs only while `self.waterlevel == 2` (waist deep, PHYS-8.4); it needs
+  solid 24 ahead at `origin + 8` and open space at `origin + 8 + self.maxs_z - 8`, then sets
+  `self.velocity_z = 225` (`client.qc`). Run in `qs-sim`, a swimmer climbs out over 28 and
+  not over 30, in water and in lava alike (`crates/qs-tests/tests/it/water_escape.rs`;
+  `qs_map_gen::CLIMB_OUT`). A pit of liquid whose rim is higher, or a dry pit deeper than a
+  step with no stairs, is a trap: give it a way out.
+- Lava does `10*self.waterlevel` every 0.2 s, up to 150 a second, and slime
+  `4*self.waterlevel` every second (`WaterMove`), so a player who falls into lava dies
+  before climbing out. Rail lava off from where the player walks: a rail higher than a step
+  stops a walking player, and only a jump goes over it.
+- A fall does at most 5 damage, when it lands faster than 650 (`PlayerPostThink`:
+  `self.jump_flag < -650`), so a drop is a safe one-way way down.
 - An `info_player_start` is required: `PutClientInServer` stops with "no
   info_player_start on level" without one (`client.qc`). Put its origin 24 units above the
   floor, where the box's bottom rests.

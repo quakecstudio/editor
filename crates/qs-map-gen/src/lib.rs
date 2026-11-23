@@ -209,6 +209,9 @@ pub struct Level {
 const KEY: &str = "item_key1";
 /// The `spawnflags` of a door that needs the silver key: `DOOR_SILVER_KEY = 16` (`doors.qc`).
 pub const DOOR_SILVER_KEY: &str = "16";
+/// How high above a liquid's surface the edge of a pool may be for a swimming player to climb
+/// out (`client.qc`, `CheckWaterJump`), measured by the water-escape test of `qs-tests`.
+pub const CLIMB_OUT: f64 = 28.0;
 /// The door (`doors.qc`).
 pub const DOOR: &str = "func_door";
 /// The torch on a wall (`misc.qc`).

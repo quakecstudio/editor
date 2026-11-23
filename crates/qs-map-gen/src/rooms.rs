@@ -12,7 +12,7 @@ use qs_map::{Brush, BrushError};
 use crate::RoomShape;
 use crate::layout::{RAISE, RoomPlan, Side};
 use crate::mass::{Bounds, Coat, Mass, Point};
-use crate::theme::Paints;
+use crate::theme::{Hazard, Paints};
 
 /// How far from a wall something stands: room for a large monster's box, 64 wide, and to
 /// spare (`docs/agent-reference/maps.md`, Units and the player).
@@ -50,10 +50,20 @@ const DAIS_HALVES: [f64; 2] = [72.0, 48.0];
 const DAIS_CUTS: [f64; 2] = [24.0, 16.0];
 const DAIS_STEP: f64 = 16.0;
 
-/// How wide the walk around a pit is, and how deep the pit and its liquid are.
+/// How wide the walk around a pit is, and how deep the pit and its liquid are: the liquid's
+/// surface is [`PIT_DEPTH`] less [`LIQUID_DEPTH`] under the rim, which a swimmer climbs out
+/// over ([`crate::CLIMB_OUT`]).
 const PIT_RIM: f64 = 96.0;
 const PIT_DEPTH: f64 = 96.0;
-const LIQUID_DEPTH: f64 = 64.0;
+const LIQUID_DEPTH: f64 = 72.0;
+const _: () = assert!(
+    PIT_DEPTH > LIQUID_DEPTH && PIT_DEPTH - LIQUID_DEPTH <= crate::CLIMB_OUT,
+    "a pit's liquid is under its rim, near enough to climb out"
+);
+/// A rail along the edge of a pit of lava and along its bridges: higher than a walking
+/// player climbs (`STEPSIZE`, PHYS-8.3), so no one falls in who does not jump; and how thick.
+const RAIL_HEIGHT: f64 = 32.0;
+const RAIL_THICK: f64 = 8.0;
 /// Half a bridge's width, and its thickness.
 const BRIDGE_HALF: f64 = 48.0;
 const BRIDGE_THICK: f64 = 16.0;
@@ -465,6 +475,9 @@ impl<'a> Room<'a> {
         for y in [[-py, -BRIDGE_HALF], [BRIDGE_HALF, py]] {
             built.solids.push(deck.boxed(self.bounds(across, y, z))?);
         }
+        if paints.liquid.as_ref().map(Hazard::of) == Some(Hazard::Deadly) {
+            self.rails([px, py], floor, paints, &mut built)?;
+        }
         self.pilasters(paints, [floor, top], &mut built)?;
         self.beams(paints, top, &mut built)?;
         let (corners, _) = self.around(SPOT_INSET);
@@ -485,6 +498,44 @@ impl<'a> Room<'a> {
             ));
         }
         Ok(built)
+    }
+
+    /// Rails on a floor at `floor` around a pit of half-widths `pit` and along both sides of
+    /// its bridges, so the only way into it is a jump: on the rim just outside each of its
+    /// edges, and on each bridge just inside each of its sides, broken where the bridges meet
+    /// the rim and each other. Rails that meet touch at a corner, which no box passes.
+    fn rails(
+        &self,
+        [px, py]: [f64; 2],
+        floor: f64,
+        paints: &Paints,
+        built: &mut Built,
+    ) -> Result<(), BrushError> {
+        let trim = Coat::all(&paints.trim);
+        let z = [floor, floor + RAIL_HEIGHT];
+        let b = BRIDGE_HALF;
+        let t = RAIL_THICK;
+        let mut rail = |x: [f64; 2], y: [f64; 2]| -> Result<(), BrushError> {
+            built.solids.push(trim.boxed(self.bounds(x, y, z))?);
+            Ok(())
+        };
+        for (low, high) in [(-py, -b), (b, py)] {
+            // The rim beyond the pit's east and west edges, either side of the bridge along x.
+            rail([px, px + t], [low, high])?;
+            rail([-px - t, -px], [low, high])?;
+            // The bridge along y, each side of each of its halves.
+            rail([b - t, b], [low, high])?;
+            rail([-b, -b + t], [low, high])?;
+        }
+        for (low, high) in [(-px, -b), (b, px)] {
+            // The rim beyond the pit's north and south edges, either side of the bridge along y.
+            rail([low, high], [py, py + t])?;
+            rail([low, high], [-py - t, -py])?;
+            // The bridge along x, each side of each of its halves.
+            rail([low, high], [b - t, b])?;
+            rail([low, high], [-b, -b + t])?;
+        }
+        Ok(())
     }
 
     /// A room on two levels: the part toward one side raised, stairs up to it in the middle.
