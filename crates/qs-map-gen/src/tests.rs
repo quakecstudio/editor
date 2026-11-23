@@ -121,7 +121,8 @@ fn a_level_has_a_start_an_exit_and_its_rooms() {
     }
 }
 
-// No spec statement: L-48, only classes the game defines are placed: no key locks no door, and no door class leaves none
+// No spec statement: L-48 and L-74, only classes the game defines are placed: a lock whose
+// classes the game lacks is an open door or an opening, and no door class leaves none
 #[test]
 fn only_the_classes_there_are_placed() {
     let textures = id_names();
@@ -166,8 +167,9 @@ fn only_the_classes_there_are_placed() {
         let classname = entity.classname().unwrap();
         let named: &[&[u8]] = &[b"monster_dog", b"item_health", b"func_door"];
         assert!(always.contains(&classname) || named.contains(&classname));
-        // No lock is left on a door.
+        // No lock is left on a door, and no door waits for a button or an arena.
         assert_eq!(entity.value(b"spawnflags"), None);
+        assert_eq!(entity.value(b"targetname"), None);
     }
     let doorless = level(&named(&["monster_dog", "item_key1"]));
     assert!(!doorless.locked);
