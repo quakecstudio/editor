@@ -160,14 +160,30 @@ asked for, with its lights; `map.build_passage` joins two doorways. Each is one 
 
 ## A whole level at once
 
-Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48).
+Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48, L-74).
 
-- `map.generate` makes a random playable level in the project and opens it: rooms joined by
-  passages from a player start to an exit, with lights, monsters, weapons and, behind a
-  locked door, a key. One `seed` and `size` (`small`, `medium`, `large`) give one level.
-- It answers each room's `shape` and a place to `stand` in it. Look at a room with
-  `map.play_from_here`, the eye 22 units above that place, and `engine.screenshot`.
+- `map.generate` makes a random playable level in the project and opens it. One `seed` and
+  `size` (`small`, `medium`, `large`) give one level, the best of eight plans drawn from the
+  seed by a score of its loops, floors, teasers, secret, kinds of lock and shapes of room.
+- Its rooms are on storeys 128 apart. The path hooks back on itself: it leaves an `atrium`
+  on its floor, climbs a storey through two rooms and comes onto the atrium's balcony, which
+  the player has seen from below and drops from, one way, back to its floor.
+- Its mission is locks along the path, each opened from a room before it: the silver and
+  the gold key, a button that opens a door elsewhere, and an arena whose door opens when its
+  monsters are dead. A secret room behind a wall that opens when shot holds a megahealth; a
+  teleporter in the room before the exit takes the player back to the start; monsters just
+  past a lock lie in ambush. Rooms the same locks have opened are joined into loops, and a
+  passage that climbs a storey may have a lift.
+- It answers each room's `shape` and a place to `stand` in it, and what the mission came to:
+  `floors`, `loops`, `locks`, `teasers`, `secrets`. Look at a room with `map.play_from_here`,
+  the eye 22 units above that place, and `engine.screenshot`.
+- Rooms are dressed with parts on top of their shapes (`map.build_room` takes them as
+  `parts`): `bays` out of walls with no doorway, needing a wall of 112, `braziers` in them,
+  a `cornice`, a `skirting` and `columns`. A base takes cornices, skirtings and columns; a
+  castle or a temple bays with braziers.
+- No level holds a trap: every pit's liquid comes to within 28 of its rim, and lava is
+  railed. The check of every generated level in `crates/qs-tests` (`no_trap.rs`) requires the
+  exit reachable from every place and set of keys and switches the start reaches, by
+  walking, steps of 18, falls, swimming, climbing out within 28, lifts and teleporters.
 - The level is a map like any other: edit it with the map tools, and `map.compile` and
-  `map.issues` check it. Its rooms show what a room can be other than a box: pillars, a
-  raised ceiling, cut corners, a dome of steps, a pit crossed by bridges, two floors joined by
-  stairs, an open sky, arches.
+  `map.issues` check it.
