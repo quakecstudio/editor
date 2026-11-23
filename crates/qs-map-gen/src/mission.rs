@@ -20,6 +20,8 @@ pub(crate) const BUTTON: &str = "func_button";
 pub(crate) const COUNTER: &str = "trigger_counter";
 pub(crate) const SECRET_DOOR: &str = "func_door_secret";
 pub(crate) const SECRET: &str = "trigger_secret";
+pub(crate) const TELEPORT: &str = "trigger_teleport";
+pub(crate) const DESTINATION: &str = "info_teleport_destination";
 
 /// How many locks a small, a medium and a large level has.
 const SMALL_LOCKS: usize = 1;
@@ -81,6 +83,8 @@ pub(crate) enum Role {
     Arena(Signal),
     /// A secret room.
     Secret,
+    /// A room with a teleporter back to the start.
+    Shortcut,
 }
 
 /// A kind of lock, as a level's report gives it.
@@ -122,6 +126,8 @@ pub struct Report {
     pub teasers: usize,
     /// How many secret rooms it has.
     pub secrets: usize,
+    /// How many teleporters take the player back to the start, one way.
+    pub shortcuts: usize,
 }
 
 impl Size {
@@ -153,6 +159,11 @@ impl Classes {
             kinds.push(LockKind::Arena);
         }
         kinds
+    }
+
+    /// Whether the game has what a teleporter needs.
+    fn shortcuts(&self) -> bool {
+        self.has(TELEPORT) && self.has(DESTINATION)
     }
 
     /// Whether the game has what a secret room needs.
@@ -222,6 +233,7 @@ impl<'a> Mission<'a> {
             locks,
             teasers: mission.plan.hooks.len(),
             secrets,
+            shortcuts: usize::from(classes.shortcuts() && mission.shortcut(&gates)),
         }
     }
 
@@ -296,6 +308,22 @@ impl<'a> Mission<'a> {
         self.plan
             .sprout(&parents, OFF_PATH, Role::Secret, Doorway::Secret, rng)
             .is_some()
+    }
+
+    /// Puts a teleporter back to the start in the room before the exit, once a lock is
+    /// behind it, as E1M1's way back is: one way, so no lock is gone round. Whether it was
+    /// put there.
+    fn shortcut(&mut self, gates: &[usize]) -> bool {
+        let before_exit = self.plan.path.saturating_sub(2);
+        let behind_a_lock = gates.iter().any(|&gate| gate < before_exit);
+        let Some(room) = self.plan.rooms.get_mut(before_exit) else {
+            return false;
+        };
+        if !behind_a_lock || room.role != Role::Way || room.shape == RoomShape::Atrium {
+            return false;
+        }
+        room.role = Role::Shortcut;
+        true
     }
 
     /// The role of `room`.

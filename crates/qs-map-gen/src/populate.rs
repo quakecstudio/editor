@@ -128,6 +128,8 @@ impl Classes {
                 mission::COUNTER,
                 mission::SECRET_DOOR,
                 mission::SECRET,
+                mission::TELEPORT,
+                mission::DESTINATION,
             ])
     }
 

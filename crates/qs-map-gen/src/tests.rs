@@ -290,6 +290,7 @@ fn only_a_pit_of_lava_is_railed() {
 // two kinds of lock, a space seen before it is reached and a secret, by its report
 #[test]
 fn a_level_is_designed() {
+    let mut shortcuts = 0;
     for seed in 0..64 {
         for size in [Size::Medium, Size::Large] {
             let report = level(seed, size).report;
@@ -302,8 +303,10 @@ fn a_level_is_designed() {
             assert!(kinds.len() >= 2, "{what}");
             assert!(report.teasers >= 1, "{what}");
             assert_eq!(report.secrets, 1, "{what}");
+            shortcuts += report.shortcuts;
         }
     }
+    assert!(shortcuts > 0, "no level has a teleporter back to its start");
 }
 
 // No spec statement: L-74, the plan kept is the best of those drawn: it scores at least the

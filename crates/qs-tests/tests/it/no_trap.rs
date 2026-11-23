@@ -7,6 +7,7 @@
 //!
 //! - walking, up a step of at most `STEPSIZE` (18, PHYS-8.3), and falling, which is one way;
 //! - riding a lift (`func_plat`) up from its bottom, and dropping into its shaft from its top;
+//! - being sent by a teleporter to its destination (`teleport_touch`), one way;
 //! - swimming in any direction in a liquid, and climbing out over a rim at most
 //!   [`qs_map_gen::CLIMB_OUT`] above its surface (`CheckWaterJump`, measured by
 //!   `water_escape`);
@@ -49,6 +50,8 @@ const FINE: f32 = 2.0;
 /// The player's box below and above its origin, and its middle above the origin, where
 /// `SV_CheckWater` finds it waist deep (VEC_HULL_MIN, VEC_HULL_MAX, PHYS-8.4).
 const FEET: f32 = 24.0;
+/// Half the player's box across.
+const HALF: f32 = 16.0;
 const HEAD: f32 = 32.0;
 const WAIST: f32 = 4.0;
 /// How far a player may be from a place and have reached it.
@@ -169,6 +172,8 @@ pub(crate) struct Ground<'a> {
     /// Where each key lies, each button is and each arena's counter is, and what it opens.
     openers: Vec<([f32; 3], Opener)>,
     lifts: Vec<Lift>,
+    /// Each teleporter's volume and where it sends a player.
+    teleports: Vec<([[f32; 3]; 2], [f32; 3])>,
     /// The world's bounds: past its sides and under its bottom is the void, as good as solid
     /// to a walker.
     bounds: [[f32; 3]; 2],
@@ -207,6 +212,9 @@ impl<'a> Ground<'a> {
         let mut locked = Vec::new();
         let mut openers = Vec::new();
         let mut lifts = Vec::new();
+        let mut teleports = Vec::new();
+        let mut sent: Vec<([[f32; 3]; 2], Vec<u8>)> = Vec::new();
+        let mut destinations: Vec<(Vec<u8>, [f32; 3])> = Vec::new();
         let mut names = Names::default();
         let mut model: usize = 0;
         for entity in &map.entities {
@@ -256,6 +264,19 @@ impl<'a> Ground<'a> {
                             bottom: high(2) - height,
                         });
                     }
+                    b"trigger_teleport" => {
+                        let points: Vec<[f64; 3]> =
+                            entity.brushes().flat_map(qs_map::Brush::vertices).collect();
+                        let bound = |pick: fn(f64, f64) -> f64, from: f64| {
+                            [0, 1, 2]
+                                .map(|axis| points.iter().map(|p| p[axis]).fold(from, pick) as f32)
+                        };
+                        let volume = [
+                            bound(f64::min, f64::INFINITY),
+                            bound(f64::max, f64::NEG_INFINITY),
+                        ];
+                        sent.push((volume, target.unwrap().to_vec()));
+                    }
                     b"func_button" => {
                         let points: Vec<[f64; 3]> =
                             entity.brushes().flat_map(qs_map::Brush::vertices).collect();
@@ -269,9 +290,23 @@ impl<'a> Ground<'a> {
                 }
             } else if let Some(key) = Opener::of_item(classname) {
                 openers.push((origin(entity), key));
+            } else if classname == b"info_teleport_destination" {
+                // `self.origin = self.origin + '0 0 27'` (`triggers.qc`).
+                let [x, y, z] = origin(entity);
+                destinations.push((
+                    entity.value(b"targetname").unwrap().to_vec(),
+                    [x, y, z + 27.0],
+                ));
             } else if classname == b"trigger_counter" {
                 openers.push((origin(entity), names.signal(target.unwrap())));
             }
+        }
+        for (volume, target) in sent {
+            let (_, to) = destinations
+                .iter()
+                .find(|(name, _)| *name == target)
+                .unwrap();
+            teleports.push((volume, *to));
         }
         let world = &bsp.models[0];
         Self {
@@ -280,6 +315,7 @@ impl<'a> Ground<'a> {
             locked,
             openers,
             lifts,
+            teleports,
             bounds: [world.mins, world.maxs],
         }
     }
@@ -375,6 +411,15 @@ impl<'a> Ground<'a> {
 
     /// The places a player at `at` holding `held` moves to in one move.
     fn moves(&self, held: Held, at: [f32; 3]) -> Vec<[f32; 3]> {
+        // A teleporter sends a player whose box touches it at once (`teleport_touch`).
+        let touched = self.teleports.iter().find(|([low, high], _)| {
+            let box_low = [at[0] - HALF, at[1] - HALF, at[2] - FEET];
+            let box_high = [at[0] + HALF, at[1] + HALF, at[2] + HEAD];
+            (0..3).all(|axis| box_low[axis] <= high[axis] && box_high[axis] >= low[axis])
+        });
+        if let Some(&(_, to)) = touched {
+            return vec![self.fall(held, to)];
+        }
         let mut next = Vec::new();
         let flat = [[PACE, 0.0], [-PACE, 0.0], [0.0, PACE], [0.0, -PACE]];
         if self.swimming(at) {

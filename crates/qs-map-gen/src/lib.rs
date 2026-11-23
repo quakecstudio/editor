@@ -255,6 +255,19 @@ const STAY_OPEN: &str = "-1";
 const SECRET_FLAGS: &str = "5";
 /// The `spawnflags` of a megahealth (`items.qc`: `H_MEGA` 2).
 const MEGAHEALTH: &str = "2";
+/// Whether a monster wakes when another sees the player, or only when it sees the player
+/// itself (`ai.qc`, `FindTarget`: "if the first spawnflag bit is set, the monster will only
+/// wake up on really seeing the player, not another monster getting angry").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Wake {
+    OnAlarm,
+    OnSight,
+}
+/// The `spawnflags` of a monster in ambush.
+const AMBUSH: &str = "1";
+/// Half the width of a teleporter's pad, and its height.
+const PAD_HALF: f64 = 32.0;
+const PAD_HEIGHT: f64 = 8.0;
 /// Half the width of a secret room's trigger.
 const SECRET_HALF: f64 = 64.0;
 
@@ -391,6 +404,49 @@ impl Assembly<'_> {
         Ok(())
     }
 
+    /// Each of `monsters`, waking as `wake` says.
+    fn monsters(&mut self, monsters: &[Placed], wake: Wake) -> Result<(), MapError> {
+        let pairs: &[(&str, &str)] = match wake {
+            Wake::OnAlarm => &[],
+            Wake::OnSight => &[("spawnflags", AMBUSH)],
+        };
+        for monster in monsters {
+            self.place(monster.classname, monster.origin, pairs)?;
+        }
+        Ok(())
+    }
+
+    /// A teleporter on a pad at `pad`, a box's origin there, back to `start`, where the player
+    /// started, facing the way it faced: a `trigger_teleport` over a low plinth, and an
+    /// `info_teleport_destination` on the start's floor, which the game raises by 27
+    /// (`triggers.qc`).
+    fn teleporter(
+        &mut self,
+        [x, y, z]: Point,
+        (start, facing): (Point, Side),
+    ) -> Result<(), GenError> {
+        let floor = z - rooms::STAND;
+        let name = "shortcut";
+        let trim = Coat::all(&self.paints.trim);
+        self.solids.push(trim.boxed(mass::Bounds {
+            min: [x - PAD_HALF, y - PAD_HALF, floor],
+            max: [x + PAD_HALF, y + PAD_HALF, floor + PAD_HEIGHT],
+        })?);
+        let trigger = Coat::all(self.paints.trigger()).boxed(mass::Bounds {
+            min: [x - PAD_HALF, y - PAD_HALF, floor + PAD_HEIGHT],
+            max: [x + PAD_HALF, y + PAD_HALF, floor + PAD_HEIGHT + EXIT_HEIGHT],
+        })?;
+        self.place_brush(mission::TELEPORT, trigger, &[("target", name)])?;
+        let [sx, sy, sz] = start;
+        self.place(
+            mission::DESTINATION,
+            [sx, sy, sz - rooms::STAND],
+            &[("targetname", name), ("angle", facing.yaw())],
+        )?;
+        self.light(([x, y, floor + EXIT_LIGHT_LIFT], EXIT_LIGHT))?;
+        Ok(())
+    }
+
     /// A secret room's reward at `stand`, a megahealth (`item_health` with `H_MEGA` 2,
     /// `items.qc`), in a `trigger_secret` that counts it found.
     fn secret(&mut self, [x, y, z]: Point) -> Result<(), GenError> {
@@ -421,10 +477,19 @@ impl Assembly<'_> {
         let exit = level.exit;
         let deepest = plan.rooms.iter().map(|room| room.depth).max().unwrap_or(0);
         let mut unopened = Vec::new();
+        // The rooms just past a lock, whose monsters lie in wait.
+        let ambushed: Vec<usize> = plan
+            .links
+            .iter()
+            .take(plan.path.saturating_sub(1))
+            .filter(|link| matches!(link.doorway, Doorway::Locked(_) | Doorway::Remote(_)))
+            .map(|link| link.to.place())
+            .collect();
+        let mut start = None;
         for (place, room_plan) in plan.rooms.iter().enumerate() {
             let part = if place == exit { Part::Exit } else { Part::Way };
             let room = Room::new(room_plan, part);
-            let built = room.build(&mut self.mass, &self.paints)?;
+            let mut built = room.build(&mut self.mass, &self.paints)?;
             self.solids.extend(built.solids);
             for light in built.lights {
                 self.light(light)?;
@@ -440,7 +505,41 @@ impl Assembly<'_> {
             if place == 0 {
                 let facing = plan.doors_of(place).first().copied().unwrap_or(Side::East);
                 self.place("info_player_start", stand, &[("angle", facing.yaw())])?;
+                start = Some((stand, facing));
             }
+            // A teleporter's pad takes the place things would stand in that is farthest from
+            // the room's doorways, so no one is sent back who only passes through.
+            let pad = match room_plan.role {
+                Role::Shortcut => {
+                    let doors: Vec<[f64; 2]> = plan
+                        .doors_of(place)
+                        .into_iter()
+                        .map(|side| {
+                            let [fx, fy] = side.facing();
+                            let [mx, my] = room_plan.middle;
+                            let reach = room_plan.reach(side);
+                            [mx + fx * reach, my + fy * reach]
+                        })
+                        .collect();
+                    let clear = |[x, y, _]: Point| {
+                        doors
+                            .iter()
+                            .map(|[dx, dy]| (x - dx).hypot(y - dy))
+                            .fold(f64::INFINITY, f64::min)
+                    };
+                    let far = (0..built.spots.len()).max_by(|&a, &b| {
+                        let at = |i: usize| built.spots.get(i).copied().map_or(0.0, clear);
+                        at(a).total_cmp(&at(b))
+                    });
+                    far.map(|index| built.spots.remove(index))
+                }
+                Role::Way | Role::Key(_) | Role::Button(_) | Role::Arena(_) | Role::Secret => None,
+            };
+            let wake = if ambushed.contains(&place) {
+                Wake::OnSight
+            } else {
+                Wake::OnAlarm
+            };
             if place == exit {
                 self.exit(stand)?;
             }
@@ -453,14 +552,14 @@ impl Assembly<'_> {
             level.items = level.items.saturating_add(filled.items.len());
             level.monsters = level.monsters.saturating_add(filled.monsters.len());
             match room_plan.role {
-                Role::Way => self.place_all(&filled.monsters)?,
+                Role::Way => self.monsters(&filled.monsters, wake)?,
                 Role::Key(colour) => {
-                    self.place_all(&filled.monsters)?;
+                    self.monsters(&filled.monsters, wake)?;
                     self.place(colour.classname(), stand, &[])?;
                     level.items = level.items.saturating_add(1);
                 }
                 Role::Button(signal) => {
-                    self.place_all(&filled.monsters)?;
+                    self.monsters(&filled.monsters, wake)?;
                     let door = plan.doors_of(place).first().copied().unwrap_or(Side::East);
                     self.button(room_plan, door.opposite(), signal)?;
                 }
@@ -472,9 +571,15 @@ impl Assembly<'_> {
                     }
                 }
                 Role::Secret => {
-                    self.place_all(&filled.monsters)?;
+                    self.monsters(&filled.monsters, wake)?;
                     self.secret(stand)?;
                     level.items = level.items.saturating_add(1);
+                }
+                Role::Shortcut => {
+                    self.monsters(&filled.monsters, wake)?;
+                    if let (Some(pad), Some(start)) = (pad, start) {
+                        self.teleporter(pad, start)?;
+                    }
                 }
             }
         }
