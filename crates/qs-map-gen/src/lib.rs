@@ -220,6 +220,8 @@ pub struct Level {
 const KEY: &str = "item_key1";
 /// The `spawnflags` of a door that needs the silver key: `DOOR_SILVER_KEY = 16` (`doors.qc`).
 pub const DOOR_SILVER_KEY: &str = "16";
+/// The `spawnflags` of a door that needs the gold key: `DOOR_GOLD_KEY = 8` (`doors.qc`).
+pub const DOOR_GOLD_KEY: &str = "8";
 /// How high above a liquid's surface the edge of a pool may be for a swimming player to climb
 /// out (`client.qc`, `CheckWaterJump`), measured by the water-escape test of `qs-tests`.
 pub const CLIMB_OUT: f64 = 28.0;
@@ -254,7 +256,8 @@ const STAY_OPEN: &str = "-1";
 /// The `spawnflags` of a secret door that stays open once opened and moves down first
 /// (`doors.qc`: `SECRET_OPEN_ONCE` 1, `SECRET_1ST_DOWN` 4).
 const SECRET_FLAGS: &str = "5";
-/// The `spawnflags` of a megahealth (`items.qc`: `H_MEGA` 2).
+/// A megahealth: `item_health` with `spawnflags` `H_MEGA` 2 (`items.qc`).
+const MEGAHEALTH_CLASS: &str = "item_health";
 const MEGAHEALTH: &str = "2";
 /// Whether a monster wakes when another sees the player, or only when it sees the player
 /// itself (`ai.qc`, `FindTarget`: "if the first spawnflag bit is set, the monster will only
@@ -448,7 +451,7 @@ impl Assembly<'_> {
         Ok(())
     }
 
-    /// A secret room's reward at `stand`, a megahealth (`item_health` with `H_MEGA` 2,
+    /// A secret room's reward at `stand`, where the game has it, a megahealth (`item_health` with `H_MEGA` 2,
     /// `items.qc`), in a `trigger_secret` that counts it found.
     fn secret(&mut self, [x, y, z]: Point) -> Result<(), GenError> {
         let floor = z - rooms::STAND;
@@ -457,9 +460,12 @@ impl Assembly<'_> {
             max: [x + SECRET_HALF, y + SECRET_HALF, floor + EXIT_HEIGHT],
         })?;
         self.place_brush(mission::SECRET, trigger, &[])?;
+        if !self.request.classes.has(MEGAHEALTH_CLASS) {
+            return Ok(());
+        }
         let half = populate::CORNERED_HALF;
         self.place(
-            "item_health",
+            MEGAHEALTH_CLASS,
             [x - half, y - half, floor],
             &[("spawnflags", MEGAHEALTH)],
         )?;
@@ -493,6 +499,10 @@ impl Assembly<'_> {
             let mut dress = self.paints.world.parts().to_vec();
             rng.shuffle(&mut dress);
             dress.truncate(rng.below(dress.len()).saturating_add(1));
+            // A button stands in the middle of a whole wall, where a bay would be.
+            if matches!(room_plan.role, Role::Button(_)) {
+                dress.retain(|part| !matches!(part, RoomPart::Bays | RoomPart::Braziers));
+            }
             let room = Room::new(room_plan, part).dressed(&dress, &doors);
             let mut built = room.build(&mut self.mass, &self.paints)?;
             self.solids.extend(built.solids);
@@ -565,14 +575,38 @@ impl Assembly<'_> {
                 }
                 Role::Button(signal) => {
                     self.monsters(&filled.monsters, wake)?;
-                    let door = plan.doors_of(place).first().copied().unwrap_or(Side::East);
-                    self.button(room_plan, door.opposite(), signal)?;
+                    // On a wall with no doorway: the room grew no bay, so every such wall is
+                    // whole. Its one doorway is its parent's; a loop may have added another.
+                    let wall = Side::ALL
+                        .into_iter()
+                        .find(|side| !doors.contains(side))
+                        .unwrap_or(Side::East);
+                    self.button(room_plan, wall, signal)?;
                 }
                 Role::Arena(signal) => {
-                    if filled.monsters.is_empty() {
+                    let mut monsters = filled.monsters.clone();
+                    if monsters.is_empty()
+                        && let Some(classname) = self.request.classes.guard(depth, rng)
+                    {
+                        monsters.push(Placed {
+                            classname,
+                            origin: stand,
+                        });
+                        level.monsters = level.monsters.saturating_add(1);
+                    }
+                    if monsters.is_empty() {
+                        // No arena after all: its door opens on touch.
                         unopened.push(signal);
+                        if let Some(at) = level
+                            .report
+                            .locks
+                            .iter()
+                            .position(|kind| *kind == LockKind::Arena)
+                        {
+                            level.report.locks.remove(at);
+                        }
                     } else {
-                        self.arena(signal, stand, &filled.monsters)?;
+                        self.arena(signal, stand, &monsters)?;
                     }
                 }
                 Role::Secret => {
@@ -584,6 +618,8 @@ impl Assembly<'_> {
                     self.monsters(&filled.monsters, wake)?;
                     if let (Some(pad), Some(start)) = (pad, start) {
                         self.teleporter(pad, start)?;
+                    } else {
+                        level.report.shortcuts = level.report.shortcuts.saturating_sub(1);
                     }
                 }
             }

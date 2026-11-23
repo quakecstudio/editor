@@ -161,6 +161,12 @@ impl Classes {
         self.of(&wanted)
     }
 
+    /// A monster for a room at `depth`, when the game has any: an arena's guard when its
+    /// places to stand ran out before a monster was put in one.
+    pub(crate) fn guard(&self, depth: Depth, rng: &mut Rng) -> Option<&'static str> {
+        rng.pick(&self.monsters(depth)).copied()
+    }
+
     /// Fills a room at `depth` whose free places are `spots`: an item in each room, a weapon
     /// in some, and monsters in every room but the first.
     pub(crate) fn fill(&self, depth: Depth, spots: &[Point], rng: &mut Rng) -> Filled {

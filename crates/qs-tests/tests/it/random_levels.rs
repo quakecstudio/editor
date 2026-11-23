@@ -9,6 +9,7 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
     reason = "test code: a failed unwrap, panic or index is a failed test, and map units fit"
 )]
 
@@ -30,6 +31,8 @@ const CLIMB: f32 = 18.0;
 const FINE: f32 = 2.0;
 /// How far a walker may be from a place and have reached it.
 pub(crate) const NEAR: f32 = 48.0;
+/// How far behind a button's middle its wall is tried: past its 8 of depth.
+const BEHIND: f64 = 16.0;
 /// Below every level.
 const BOTTOM: f32 = -1024.0;
 
@@ -171,6 +174,28 @@ fn check(level: &Level, what: &str) {
         assert!(
             !blocked(&hull, h1, stand(place)),
             "{what}: room {place} stands in rock"
+        );
+    }
+    // Every button is set in a wall: the rock behind it, the way it moves, is solid.
+    let (drawn, head) = (hulls.hull(0, [h0, h1, h2]), h0);
+    for entity in &level.map.entities {
+        if entity.classname() != Some(b"func_button".as_slice()) {
+            continue;
+        }
+        let points: Vec<[f64; 3]> = entity.brushes().flat_map(qs_map::Brush::vertices).collect();
+        let middle =
+            [0, 1, 2].map(|axis| points.iter().map(|p| p[axis]).sum::<f64>() / points.len() as f64);
+        let angle: f64 = std::str::from_utf8(entity.value(b"angle").unwrap())
+            .unwrap()
+            .parse()
+            .unwrap();
+        let (dy, dx) = angle.to_radians().sin_cos();
+        let behind =
+            [middle[0] + dx * BEHIND, middle[1] + dy * BEHIND, middle[2]].map(|at| at as f32);
+        assert_eq!(
+            drawn.point_contents(head, behind).unwrap(),
+            SOLID,
+            "{what}: a button at {middle:?} is not set in a wall"
         );
     }
     let exit = stand(level.exit);

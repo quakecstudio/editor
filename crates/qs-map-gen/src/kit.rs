@@ -359,7 +359,8 @@ impl RoomKit {
             return Err(KitError::Wall);
         }
         let least_wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
-        if self.parts.contains(&RoomPart::Bays) && self.wall < least_wall {
+        let bays = self.parts.contains(&RoomPart::Bays) && RoomPart::Bays.fits(self.shape);
+        if bays && self.wall < least_wall {
             return Err(KitError::BayWall { least_wall });
         }
         let twice = self.doors.iter().enumerate().any(|(place, side)| {

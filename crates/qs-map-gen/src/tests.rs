@@ -342,3 +342,83 @@ fn the_best_plan_is_kept() {
     }
     assert!(better > 0, "no seed's first plan was bettered");
 }
+
+// No spec statement: L-74, a lock or a reward whose classes the game lacks is not reported or
+// placed: an arena with no monster to fire its counter is a plain door, and a secret room has
+// no megahealth where the game has no item_health
+#[test]
+fn what_the_game_lacks_is_not_reported_or_placed() {
+    let textures = id_names();
+    let named =
+        |names: &[&str]| Classes::Named(names.iter().map(|name| (*name).to_owned()).collect());
+    let classes = named(&[
+        "func_door",
+        "trigger_counter",
+        "func_door_secret",
+        "trigger_secret",
+    ]);
+    for seed in 0..8 {
+        let level = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &classes,
+            name: "random",
+        }
+        .generate()
+        .unwrap();
+        assert!(
+            !level.report.locks.contains(&LockKind::Arena),
+            "seed {seed}"
+        );
+        assert_eq!(level.report.secrets, 1, "seed {seed}");
+        let holds = |classname: &[u8]| {
+            level
+                .map
+                .entities
+                .iter()
+                .any(|entity| entity.classname() == Some(classname))
+        };
+        assert!(
+            !holds(b"trigger_counter") && !holds(b"item_health"),
+            "seed {seed}"
+        );
+        assert!(
+            holds(b"func_door_secret") && holds(b"trigger_secret"),
+            "seed {seed}"
+        );
+    }
+}
+
+// No spec statement: L-74, bays asked of a shape that takes none are passed over, whatever its
+// wall, and asked of one that takes them need a wall that holds them
+#[test]
+fn bays_need_a_wall_only_where_they_fit() {
+    let kit = |shape: RoomShape| RoomKit {
+        shape,
+        middle: [0.0, 0.0],
+        floor: 0.0,
+        half: [shape.least_half(), shape.least_half()],
+        height: shape.least_height(),
+        turned: Side::North,
+        doors: Vec::new(),
+        arch: Arch::Cut,
+        wall: KIT_WALL,
+        parts: vec![RoomPart::Bays],
+    };
+    let textures = Textures {
+        wall: "wall".to_owned(),
+        floor: "floor".to_owned(),
+        ceiling: "ceiling".to_owned(),
+        trim: "trim".to_owned(),
+        door: "door".to_owned(),
+        liquid: None,
+        sky: None,
+        wall_lights: WallLights::Lamps,
+    };
+    assert!(kit(RoomShape::Chamber).build(&textures).is_ok());
+    assert!(matches!(
+        kit(RoomShape::Hall).build(&textures),
+        Err(GenError::Kit(KitError::BayWall { .. }))
+    ));
+}

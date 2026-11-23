@@ -54,7 +54,7 @@ impl KeyColour {
     pub(crate) const fn door_flags(self) -> &'static str {
         match self {
             Self::Silver => crate::DOOR_SILVER_KEY,
-            Self::Gold => "8",
+            Self::Gold => crate::DOOR_GOLD_KEY,
         }
     }
 }

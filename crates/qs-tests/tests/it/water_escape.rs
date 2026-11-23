@@ -241,8 +241,8 @@ fn climbed(liquid: &str) -> Vec<f64> {
         .collect()
 }
 
-// A swimmer climbs out of water over a rim up to CLIMB_OUT above the surface and not over one
-// higher: CheckWaterJump needs solid ahead at the waist (origin + 8) and open space at the eye
+// spec PHYS-9.5: a water jump, begun by CheckWaterJump, lifts a swimmer out over a rim up to
+// CLIMB_OUT above the surface and not over one higher (PHYS-8.4's waterlevel 2): CheckWaterJump needs solid ahead at the waist (origin + 8) and open space at the eye
 // trace (origin + 32), while waterlevel is 2.
 #[test]
 fn a_swimmer_climbs_out_over_a_low_rim_and_not_a_high_one() {
@@ -265,7 +265,8 @@ fn a_swimmer_climbs_out_over_a_low_rim_and_not_a_high_one() {
     assert_eq!(out, below, "no gap between the rims climbed");
 }
 
-// Lava, where PlayerJump swims up at 50 and not 100, is climbed out of over the same rims:
+// spec PHYS-9.5: lava, where PlayerJump swims up at 50 and not 100, is climbed out of over the
+// same rims:
 // CheckWaterJump does not read the liquid.
 #[test]
 fn a_swimmer_climbs_out_of_lava_over_the_same_rims() {

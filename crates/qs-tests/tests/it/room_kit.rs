@@ -130,16 +130,25 @@ fn a_room_alone_is_sealed() {
 
 // No spec statement: L-74, each shape dressed with every part, with no doorway and its wall
 // thick enough for bays, is sealed, its standing place and spots are open, and each is
-// walked to; bays asked of a thin wall are refused
+// walked to; bays asked of a thin wall are refused where the shape takes them
 #[test]
 fn a_room_dressed_with_every_part_is_sealed_and_walked() {
     for shape in RoomShape::ALL {
         let mut asked = kit(shape, [0.0, 0.0], 0.0, Side::North, &[]);
         asked.parts = RoomPart::ALL.to_vec();
-        assert!(matches!(
-            asked.build(&textures()),
-            Err(qs_map_gen::GenError::Kit(KitError::BayWall { .. }))
-        ));
+        let thin = asked.build(&textures());
+        if RoomPart::Bays.fits(shape) {
+            assert!(matches!(
+                thin,
+                Err(qs_map_gen::GenError::Kit(KitError::BayWall { .. }))
+            ));
+        } else {
+            assert!(
+                thin.is_ok(),
+                "{}: bays it does not take refused",
+                shape.name()
+            );
+        }
         asked.wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
         let room = asked.build(&textures()).unwrap();
         let plain = kit(shape, [0.0, 0.0], 0.0, Side::North, &[])
