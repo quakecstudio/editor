@@ -7,7 +7,7 @@
 
 use crate::mass::Point;
 use crate::rng::Rng;
-use crate::{Classes, DOOR, KEY, TORCH};
+use crate::{Classes, DOOR, KEY, TORCH, mission};
 
 /// The monsters of the first third of a level, of its middle, and of its end.
 const EASY: &[&str] = &["monster_army", "monster_dog", "monster_knight"];
@@ -38,7 +38,7 @@ const SUPPLIES: &[Supply] = &[
     Supply::cornered("item_rockets"),
 ];
 /// Half the width of an item whose origin is its corner.
-const CORNERED_HALF: f64 = 16.0;
+pub(crate) const CORNERED_HALF: f64 = 16.0;
 
 /// The most monsters a room holds, and how many more rooms from the start add one.
 const MOST_MONSTERS: usize = 5;
@@ -122,6 +122,13 @@ impl Classes {
             .copied()
             .chain(SUPPLIES.iter().map(|supply| supply.classname))
             .chain([KEY, TORCH, DOOR])
+            .chain([
+                mission::GOLD_KEY,
+                mission::BUTTON,
+                mission::COUNTER,
+                mission::SECRET_DOOR,
+                mission::SECRET,
+            ])
     }
 
     /// Those of `wanted` the game defines.

@@ -80,7 +80,9 @@ fn a_level_is_made_in_the_project_and_opened() {
     assert_eq!(made["path"], json!(path));
     assert_eq!(made["seed"], 5);
     assert_eq!(made["theme"], "plain");
-    assert_eq!(made["rooms"].as_array().unwrap().len(), 5);
+    // The five rooms of a small level's path, and those off it.
+    assert!(made["rooms"].as_array().unwrap().len() > 5);
+    assert_eq!(made["locks"].as_array().unwrap().len(), 1);
     assert!(made["monsters"].as_u64().unwrap() > 0);
     // It is the open map, and the file is what is open.
     let open = session.context().map().unwrap();
@@ -127,7 +129,8 @@ fn a_seed_is_drawn_when_none_is_given() {
         made["path"],
         json!(root.join("maps").join(format!("random{seed}.map")))
     );
-    assert_eq!(made["rooms"].as_array().unwrap().len(), 8);
+    assert!(made["rooms"].as_array().unwrap().len() > 8);
+    assert!(made["floors"].as_u64().unwrap() >= 2);
 }
 
 // No spec statement: L-48, a project whose code defines the world gets only the classes it

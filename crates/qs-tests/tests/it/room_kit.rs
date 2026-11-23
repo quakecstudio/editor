@@ -49,7 +49,8 @@ fn kit(shape: RoomShape, middle: [f64; 2], floor: f64, turned: Side, doors: &[Si
         | RoomShape::Split
         | RoomShape::Court
         | RoomShape::Cross
-        | RoomShape::Vault => [least + 32.0, least],
+        | RoomShape::Vault
+        | RoomShape::Atrium => [least + 32.0, least],
     };
     RoomKit {
         shape,
@@ -127,7 +128,7 @@ fn a_room_alone_is_sealed() {
 
 // No spec statement: L-49, each shape with a doorway on each side, joined by passages to four
 // rooms of the other shapes on floors up to 64 above and below, is sealed with them, and a
-// player walks from its middle to each of them
+// player walks from its middle to each of them, but for an atrium's balcony, which is one way
 #[test]
 fn a_room_joined_on_each_side_is_sealed_and_walked() {
     let sides = [Side::East, Side::North, Side::West, Side::South];
@@ -172,13 +173,28 @@ fn a_room_joined_on_each_side_is_sealed_and_walked() {
             brushes.extend(passage.brushes);
             stands.push(room.stand);
         }
-        let reached = walk(&map(brushes, centre.stand), centre.stand, &stands, what);
-        for stand in &stands {
+        let map = map(brushes, centre.stand);
+        let reached = walk(&map, centre.stand, &stands, what);
+        let near = |reached: &[[f32; 3]], stand: [f64; 3]| {
             let [x, y, z] = stand.map(|at| at as f32);
-            let near = reached.iter().any(|at| {
+            reached.iter().any(|at| {
                 (at[0] - x).abs() <= NEAR && (at[1] - y).abs() <= NEAR && (at[2] - z).abs() <= NEAR
-            });
-            assert!(near, "{what}: {stand:?} is not reached");
+            })
+        };
+        for (n, &stand) in stands.iter().enumerate() {
+            // An atrium's balcony, on the side it is turned to (east, the first room after the
+            // centre), is dropped from and not climbed to: that room is not walked to from the
+            // atrium's floor, and the atrium is walked to from it.
+            if shape == RoomShape::Atrium && n == 1 {
+                assert!(!near(&reached, stand), "{what}: the balcony is climbed to");
+                let back = walk(&map, stand, &stands, what);
+                assert!(
+                    near(&back, centre.stand),
+                    "{what}: not reached from the balcony"
+                );
+                continue;
+            }
+            assert!(near(&reached, stand), "{what}: {stand:?} is not reached");
         }
     }
 }

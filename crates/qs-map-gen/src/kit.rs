@@ -7,8 +7,9 @@
 
 use qs_map::{Brush, Surface, TexDef};
 
-use crate::layout::{Doorway, RoomPlan, Side};
+use crate::layout::{Doorway, RoomPlan, STOREY, Side};
 use crate::mass::{Bounds, Mass};
+use crate::mission::{KeyColour, Role};
 use crate::passage::Passage;
 use crate::rng::Rng;
 use crate::rooms::{Part, Room};
@@ -43,10 +44,12 @@ const WIDE_HALF: f64 = 224.0;
 const LOW_HEIGHT: f64 = 192.0;
 const VAULT_HEIGHT: f64 = 224.0;
 const HIGH_HEIGHT: f64 = 256.0;
+/// An atrium's balcony is a storey up, and a doorway's height above it.
+const ATRIUM_HEIGHT: f64 = STOREY + LOW_HEIGHT;
 
 impl RoomShape {
     /// Every shape.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Hall,
         Self::Chamber,
         Self::Pit,
@@ -54,6 +57,7 @@ impl RoomShape {
         Self::Court,
         Self::Cross,
         Self::Vault,
+        Self::Atrium,
     ];
 
     /// The least half-width a room of the shape has, in x and in y.
@@ -61,7 +65,7 @@ impl RoomShape {
     pub const fn least_half(self) -> f64 {
         match self {
             Self::Hall | Self::Court | Self::Vault => SMALL_HALF,
-            Self::Chamber | Self::Pit | Self::Split | Self::Cross => WIDE_HALF,
+            Self::Chamber | Self::Pit | Self::Split | Self::Cross | Self::Atrium => WIDE_HALF,
         }
     }
 
@@ -72,6 +76,7 @@ impl RoomShape {
             Self::Hall | Self::Chamber | Self::Pit | Self::Cross => LOW_HEIGHT,
             Self::Vault => VAULT_HEIGHT,
             Self::Split | Self::Court => HIGH_HEIGHT,
+            Self::Atrium => ATRIUM_HEIGHT,
         }
     }
 }
@@ -288,7 +293,8 @@ impl core::fmt::Display for KitError {
                     | RoomShape::Pit
                     | RoomShape::Split
                     | RoomShape::Cross
-                    | RoomShape::Vault => "liquid",
+                    | RoomShape::Vault
+                    | RoomShape::Atrium => "liquid",
                 }
             ),
             Self::Askew => {
@@ -363,7 +369,8 @@ impl RoomKit {
             | RoomShape::Split
             | RoomShape::Court
             | RoomShape::Cross
-            | RoomShape::Vault => Ok(()),
+            | RoomShape::Vault
+            | RoomShape::Atrium => Ok(()),
         }
     }
 
@@ -384,6 +391,7 @@ impl RoomKit {
             height: self.height,
             turned: self.turned,
             depth: 0,
+            role: Role::Way,
         };
         let room = Room::new(&plan, Part::Way);
         let [mx, my] = self.middle;
@@ -506,7 +514,7 @@ impl PassageKit {
         }
         let doorway = match (self.door, self.arch) {
             (Door::Plain, _) => Doorway::Door,
-            (Door::Locked, _) => Doorway::Locked,
+            (Door::Locked, _) => Doorway::Locked(KeyColour::Silver),
             (Door::None, Arch::Cut) => Doorway::Arch,
             (Door::None, Arch::Square) => Doorway::Open,
         };

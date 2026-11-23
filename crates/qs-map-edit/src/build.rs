@@ -49,6 +49,10 @@ pub enum RoomKind {
     /// A long room under a pitched ceiling, its ridge toward the side it is turned to. At
     /// least 192 in each half-width and 224 high.
     Vault,
+    /// Two storeys high, a balcony 128 up along the side it is turned to, whose doorway is at
+    /// the balcony and which a player drops from to the floor and does not climb back to. At
+    /// least 224 in each half-width and 320 high.
+    Atrium,
 }
 
 impl From<RoomKind> for RoomShape {
@@ -61,6 +65,7 @@ impl From<RoomKind> for RoomShape {
             RoomKind::Court => Self::Court,
             RoomKind::Cross => Self::Cross,
             RoomKind::Vault => Self::Vault,
+            RoomKind::Atrium => Self::Atrium,
         }
     }
 }
@@ -247,8 +252,8 @@ pub struct BuildRoomParams {
     pub half: [f64; 2],
     /// Floor to ceiling.
     pub height: f64,
-    /// The side the room is turned to, which a `split`, a `cross` and a `vault` use; east
-    /// when not given.
+    /// The side the room is turned to, which a `split`, a `cross`, a `vault` and an `atrium`
+    /// use; east when not given.
     #[serde(default)]
     pub turned: RoomSide,
     /// The sides to open a doorway on, each 112 wide and 128 high, in the middle of its side;
@@ -370,8 +375,8 @@ impl<C: HasMap + 'static> Command<C> for MapBuildRoom {
     const SUMMARY: &'static str = "Builds one room of a shape of id's levels into the open map, \
         sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided \
         domed chamber, a hall around a pit crossed by bridges, a room on two levels, a \
-        courtyard, a cross of two aisles, or a vaulted room. Answers its doorways, for \
-        map.build_passage, and where things may stand.";
+        courtyard, a cross of two aisles, a vaulted room, or an atrium with a balcony. Answers its \
+        doorways, for map.build_passage, and where things may stand.";
     type Params = BuildRoomParams;
     type Output = RoomBuilt;
     type Error = MapEditError;

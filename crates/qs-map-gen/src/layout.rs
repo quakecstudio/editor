@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The plan of a level: rooms on a grid, joined into a path from the start to the exit, with
-//! rooms off it, a key in one of those and its door further along the path. The model is
-//! OBLIGE's: a level is a path through rooms with a quest on it, drawn before anything is
-//! built.
+//! The plan of a level: rooms on a grid of columns, each on a storey, joined into a path from
+//! the start to the exit, with rooms off it. The path doubles back on itself in a hook: it
+//! leaves a tall atrium on its floor, climbs a storey through two rooms and comes back onto a
+//! balcony over the atrium, which the player sees before reaching it and drops from, one way,
+//! back to its floor. Floors are in the plan from the start, as OBLIGE's author found a
+//! generator for Quake needs (Doomworld topic 114383, 2020). What locks the way and where its
+//! keys are is the mission's (`mission`).
 
+use crate::mission::{KeyColour, Role, Signal};
 use crate::rng::Rng;
 use crate::{GenError, RoomShape, Size};
 
@@ -27,10 +31,15 @@ const SPLIT_HEIGHT: f64 = 288.0;
 const COURT_HEIGHT: f64 = 352.0;
 /// The height of a vault at its ridge.
 const VAULT_HEIGHT: f64 = 288.0;
-/// How far a floor is above or below the one before it.
-const FLOOR_STEP: f64 = 64.0;
-/// The highest and the lowest a floor goes.
-const FLOOR_REACH: f64 = 128.0;
+/// How far one storey's floor is above the one below. A passage between rooms on storeys side
+/// by side climbs it with a room on two levels' [`RAISE`] besides, 192 in all, which a
+/// passage of the least length, 256, holds with its landings (`Passage::least_length`); and a
+/// drop of it is one way, since a jump rises about 45 (`docs/agent-reference/maps.md`).
+pub(crate) const STOREY: f64 = 128.0;
+/// The highest and the lowest storey.
+const STOREY_REACH: i32 = 2;
+/// The height of an atrium above its balcony.
+const ATRIUM_UPPER: f64 = 192.0;
 /// How much higher the raised part of a room on two levels is.
 pub(crate) const RAISE: f64 = 64.0;
 
@@ -38,10 +47,17 @@ pub(crate) const RAISE: f64 = 64.0;
 const SMALL_ROOMS: usize = 5;
 const MEDIUM_ROOMS: usize = 8;
 const LARGE_ROOMS: usize = 12;
-/// Of that many rooms, one is off the path.
-const ROOMS_A_BRANCH: usize = 4;
-/// The times a path is drawn again when it walks into a corner.
-const PATH_TRIES: usize = 64;
+/// The times a path is drawn again when it walks into a corner or, in a level of more than
+/// [`SMALL_ROOMS`], has no hook.
+const PATH_TRIES: usize = 256;
+/// The chances in [`CHANCES`] that a step of the path that may hook does, and that a step
+/// climbs or falls a storey.
+const HOOK_CHANCE: usize = 5;
+const STOREY_CHANCE: usize = 3;
+/// The most loops a level is given besides its hook.
+const MOST_LOOPS: usize = 2;
+/// The places a hook takes after its atrium, three, and one more for the exit after it.
+const HOOK_PLACES: usize = 4;
 /// The chances in [`CHANCES`] that a passage is arched, and that it has a door.
 const ARCH_CHANCE: usize = 4;
 const DOOR_CHANCE: usize = 3;
@@ -92,6 +108,14 @@ impl Side {
             Self::North => "90",
             Self::West => "180",
             Self::South => "270",
+        }
+    }
+
+    /// The two sides a quarter turn from it.
+    pub(crate) const fn across(self) -> [Self; 2] {
+        match self {
+            Self::East | Self::West => [Self::North, Self::South],
+            Self::North | Self::South => [Self::East, Self::West],
         }
     }
 
@@ -154,8 +178,8 @@ impl Cell {
 }
 
 /// A room of the plan, by its place in [`Plan::rooms`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct RoomId(usize);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct RoomId(pub(crate) usize);
 
 impl RoomId {
     /// Its place in [`Plan::rooms`].
@@ -171,17 +195,20 @@ pub(crate) struct RoomPlan {
     pub(crate) middle: [f64; 2],
     /// Its shape.
     pub(crate) shape: RoomShape,
-    /// Its floor; the lower one of a room on two levels.
+    /// Its floor; the lower one of a room on two levels and of an atrium.
     pub(crate) floor: f64,
     /// Half its width in x and in y.
     pub(crate) half: [f64; 2],
     /// Floor to ceiling.
     pub(crate) height: f64,
     /// The side the room is turned to: the raised part of a room on two levels is on it, a
-    /// vault's ridge and a cross's higher aisle run toward it.
+    /// vault's ridge and a cross's higher aisle run toward it, and an atrium's balcony is
+    /// along it.
     pub(crate) turned: Side,
     /// How many rooms from the start it is.
     pub(crate) depth: usize,
+    /// What it is to the level's mission.
+    pub(crate) role: Role,
 }
 
 impl RoomPlan {
@@ -195,7 +222,9 @@ impl RoomPlan {
     pub(crate) fn door_floor(&self, side: Side) -> f64 {
         match self.shape {
             RoomShape::Split if side == self.turned => self.floor + RAISE,
+            RoomShape::Atrium if side == self.turned => self.floor + STOREY,
             RoomShape::Split
+            | RoomShape::Atrium
             | RoomShape::Hall
             | RoomShape::Chamber
             | RoomShape::Pit
@@ -215,8 +244,12 @@ pub(crate) enum Doorway {
     Arch,
     /// A door that opens when walked up to.
     Door,
-    /// A door that needs the silver key.
-    Locked,
+    /// A door that needs a key.
+    Locked(KeyColour),
+    /// A door opened by something elsewhere: a button, or the death of an arena's monsters.
+    Remote(Signal),
+    /// A secret door, at the passage's first end, that opens when shot.
+    Secret,
 }
 
 /// Two rooms joined.
@@ -237,14 +270,14 @@ pub(crate) struct Link {
 pub(crate) struct Plan {
     /// The rooms: the path from the start to the exit, then the rooms off it.
     pub(crate) rooms: Vec<RoomPlan>,
-    /// Each room's place on the grid, in the rooms' order.
+    /// Each room's column on the grid, in the rooms' order.
     pub(crate) cells: Vec<Cell>,
-    /// The passages.
+    /// The passages: the path's first, in its order, then the others.
     pub(crate) links: Vec<Link>,
     /// How many rooms the path has: the last of them holds the exit.
     pub(crate) path: usize,
-    /// The room the key is in, when a door is locked.
-    pub(crate) key: Option<RoomId>,
+    /// Each hook: the atrium, and the room of the path whose passage reaches its balcony.
+    pub(crate) hooks: Vec<(RoomId, RoomId)>,
 }
 
 /// What the plan can paint: a pit needs a liquid and a courtyard a sky.
@@ -276,7 +309,7 @@ pub(crate) enum Sky {
 
 impl Size {
     /// How many rooms a level of this size has.
-    const fn rooms(self) -> usize {
+    pub(crate) const fn rooms(self) -> usize {
         match self {
             Self::Small => SMALL_ROOMS,
             Self::Medium => MEDIUM_ROOMS,
@@ -285,41 +318,169 @@ impl Size {
     }
 }
 
+/// A place of the path: its column and its storey.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Step {
+    cell: Cell,
+    storey: i32,
+}
+
+/// A path as walked: its places, and its hooks as places in it.
+#[derive(Clone, Debug, Default)]
+struct Walk {
+    steps: Vec<Step>,
+    /// Each hook's atrium and the place whose passage reaches the balcony.
+    hooks: Vec<(usize, usize)>,
+}
+
+impl Walk {
+    /// Whether `cell` is free: no place of the path is in its column.
+    fn free(&self, cell: Cell) -> bool {
+        cell.in_reach() && self.steps.iter().all(|step| step.cell != cell)
+    }
+
+    /// A storey a step from `storey`: mostly the same, now and then one up or down.
+    fn next_storey(storey: i32, rng: &mut Rng) -> i32 {
+        if !rng.chance(STOREY_CHANCE, CHANCES) {
+            return storey;
+        }
+        let next = if rng.chance(1, 2) {
+            storey.saturating_add(1)
+        } else {
+            storey.saturating_sub(1)
+        };
+        next.clamp(-STOREY_REACH, STOREY_REACH)
+    }
+
+    /// Hooks the path at its last place, the atrium, when the three columns the hook takes
+    /// are free and the storey above is there: out by `out`, a quarter turn along `along`
+    /// and back beside the atrium, the last two a storey up. `false` when it cannot.
+    fn hook(&mut self, rng: &mut Rng) -> bool {
+        let Some(&Step { cell, storey }) = self.steps.last() else {
+            return false;
+        };
+        let up = storey.saturating_add(1);
+        if up > STOREY_REACH {
+            return false;
+        }
+        let mut sides = Side::ALL;
+        rng.shuffle(&mut sides);
+        for out in sides {
+            let mut alongs = out.across();
+            rng.shuffle(&mut alongs);
+            for along in alongs {
+                let first = cell.beside(out);
+                let second = first.beside(along);
+                let third = cell.beside(along);
+                if !(self.free(first) && self.free(second) && self.free(third)) {
+                    continue;
+                }
+                let atrium = self.steps.len().saturating_sub(1);
+                self.steps.push(Step {
+                    cell: first,
+                    storey,
+                });
+                self.steps.push(Step {
+                    cell: second,
+                    storey: up,
+                });
+                self.steps.push(Step {
+                    cell: third,
+                    storey: up,
+                });
+                self.hooks
+                    .push((atrium, self.steps.len().saturating_sub(1)));
+                return true;
+            }
+        }
+        false
+    }
+
+    /// A path of `length` places from the grid's middle that never crosses itself, hooked
+    /// where it can be; `None` when it walks into a corner.
+    fn of(length: usize, rng: &mut Rng) -> Option<Self> {
+        let mut walk = Self {
+            steps: vec![Step {
+                cell: Cell::ORIGIN,
+                storey: 0,
+            }],
+            hooks: Vec::new(),
+        };
+        while walk.steps.len() < length {
+            let place = walk.steps.len().saturating_sub(1);
+            // The start is no atrium, and the exit comes after the hook.
+            let room_for_hook = place > 0 && place.saturating_add(HOOK_PLACES) < length;
+            if room_for_hook && rng.chance(HOOK_CHANCE, CHANCES) && walk.hook(rng) {
+                continue;
+            }
+            let last = *walk.steps.last()?;
+            let free: Vec<Cell> = Side::ALL
+                .into_iter()
+                .map(|side| last.cell.beside(side))
+                .filter(|&cell| walk.free(cell))
+                .collect();
+            let cell = *rng.pick(&free)?;
+            let storey = Self::next_storey(last.storey, rng);
+            walk.steps.push(Step { cell, storey });
+        }
+        Some(walk)
+    }
+}
+
+/// The floor of `storey`.
+fn floor_of(storey: i32) -> f64 {
+    f64::from(storey) * STOREY
+}
+
 impl Plan {
-    /// A plan of `size`, drawn by `rng`.
+    /// A plan of `size`, drawn by `rng`: the path, its hooks, and its rooms. What locks it is
+    /// the mission's (`mission::Mission::arrange`).
     ///
     /// # Errors
     ///
     /// [`GenError::Layout`] when no path could be drawn, which the tries make all but
     /// impossible.
     pub(crate) fn draw(size: Size, has: Has, rng: &mut Rng) -> Result<Self, GenError> {
-        let rooms = size.rooms();
-        let branches = rooms.checked_div(ROOMS_A_BRANCH).unwrap_or(0);
-        let path = rooms.saturating_sub(branches);
-        let cells = (0..PATH_TRIES)
-            .find_map(|_| Self::walk(path, rng))
+        let path = size.rooms();
+        let wants_hook = path > SMALL_ROOMS;
+        let walk = (0..PATH_TRIES)
+            .filter_map(|_| Walk::of(path, rng))
+            .find(|walk| !wants_hook || !walk.hooks.is_empty())
             .ok_or(GenError::Layout)?;
         let mut plan = Self {
             rooms: Vec::new(),
-            cells: cells.clone(),
+            cells: walk.steps.iter().map(|step| step.cell).collect(),
             links: Vec::new(),
             path,
-            key: None,
+            hooks: Vec::new(),
         };
-        let mut floor = 0.0;
-        for (place, &cell) in cells.iter().enumerate() {
-            let shape = if place.saturating_add(1) == path {
+        for (place, step) in walk.steps.iter().enumerate() {
+            let atrium = walk.hooks.iter().find(|(at, _)| *at == place);
+            let (shape, turned) = if place.saturating_add(1) == path {
                 // The exit is in the chamber, under its dome.
-                RoomShape::Chamber
+                (RoomShape::Chamber, None)
+            } else if let Some(&(_, upper)) = atrium {
+                let balcony = walk.steps.get(upper).and_then(|up| {
+                    Side::ALL
+                        .into_iter()
+                        .find(|&s| step.cell.beside(s) == up.cell)
+                });
+                (RoomShape::Atrium, balcony)
             } else {
-                Self::shape(has, rng)
+                (Self::shape(has, rng), None)
             };
-            plan.rooms.push(Self::room(cell, shape, floor, place, rng));
-            floor = Self::next_floor(floor, rng);
+            let mut room = Self::room(step.cell, shape, floor_of(step.storey), place, rng);
+            if let Some(side) = turned {
+                room.turned = side;
+            }
+            plan.rooms.push(room);
         }
-        for (place, pair) in cells.windows(2).enumerate() {
+        for (place, pair) in walk.steps.windows(2).enumerate() {
             let [from, to] = pair else { continue };
-            let Some(side) = Side::ALL.into_iter().find(|&s| from.beside(s) == *to) else {
+            let Some(side) = Side::ALL
+                .into_iter()
+                .find(|&s| from.cell.beside(s) == to.cell)
+            else {
                 continue;
             };
             plan.links.push(Link {
@@ -329,27 +490,22 @@ impl Plan {
                 doorway: Self::doorway(rng),
             });
         }
-        plan.branch(branches, has, rng);
+        for &(atrium, upper) in &walk.hooks {
+            let Some(room) = plan.rooms.get(atrium) else {
+                continue;
+            };
+            plan.links.push(Link {
+                from: RoomId(upper),
+                to: RoomId(atrium),
+                side: room.turned.opposite(),
+                doorway: Doorway::Arch,
+            });
+            plan.hooks.push((RoomId(atrium), RoomId(upper)));
+        }
         Ok(plan)
     }
 
-    /// A path of `length` cells from the grid's middle that never crosses itself; `None` when
-    /// it walks into a corner.
-    fn walk(length: usize, rng: &mut Rng) -> Option<Vec<Cell>> {
-        let mut cells = vec![Cell::ORIGIN];
-        while cells.len() < length {
-            let last = *cells.last()?;
-            let free: Vec<Cell> = Side::ALL
-                .into_iter()
-                .map(|side| last.beside(side))
-                .filter(|cell| cell.in_reach() && !cells.contains(cell))
-                .collect();
-            cells.push(*rng.pick(&free)?);
-        }
-        Some(cells)
-    }
-
-    /// A shape for a room that is not the exit's.
+    /// A shape for a room that is not the exit's nor an atrium.
     fn shape(has: Has, rng: &mut Rng) -> RoomShape {
         let mut shapes = vec![
             RoomShape::Hall,
@@ -373,9 +529,11 @@ impl Plan {
     fn room(cell: Cell, shape: RoomShape, floor: f64, depth: usize, rng: &mut Rng) -> RoomPlan {
         let halves = match shape {
             RoomShape::Hall | RoomShape::Court | RoomShape::Vault => HALVES,
-            RoomShape::Chamber | RoomShape::Pit | RoomShape::Split | RoomShape::Cross => {
-                WIDE_HALVES
-            }
+            RoomShape::Chamber
+            | RoomShape::Pit
+            | RoomShape::Split
+            | RoomShape::Cross
+            | RoomShape::Atrium => WIDE_HALVES,
         };
         let mut half = || rng.pick(halves).copied().unwrap_or(SPARE_HALF);
         let half = match shape {
@@ -389,12 +547,14 @@ impl Plan {
             | RoomShape::Split
             | RoomShape::Court
             | RoomShape::Cross
-            | RoomShape::Vault => [half(), half()],
+            | RoomShape::Vault
+            | RoomShape::Atrium => [half(), half()],
         };
         let height = match shape {
             RoomShape::Split => SPLIT_HEIGHT,
             RoomShape::Court => COURT_HEIGHT,
             RoomShape::Vault => VAULT_HEIGHT,
+            RoomShape::Atrium => STOREY + ATRIUM_UPPER,
             RoomShape::Hall | RoomShape::Chamber | RoomShape::Pit | RoomShape::Cross => {
                 rng.pick(HEIGHTS).copied().unwrap_or(SPLIT_HEIGHT)
             }
@@ -408,14 +568,8 @@ impl Plan {
             height,
             turned,
             depth,
+            role: Role::Way,
         }
-    }
-
-    /// The floor of the room after one at `floor`: a step up, a step down or level.
-    fn next_floor(floor: f64, rng: &mut Rng) -> f64 {
-        let steps = [-FLOOR_STEP, 0.0, 0.0, FLOOR_STEP];
-        let next = floor + rng.pick(&steps).copied().unwrap_or(0.0);
-        next.clamp(-FLOOR_REACH, FLOOR_REACH)
     }
 
     /// What stands in a passage of the path.
@@ -429,79 +583,110 @@ impl Plan {
         }
     }
 
-    /// Adds up to `count` rooms off the path, the key in the first of them and its door on
-    /// the path after the room that one is off.
-    fn branch(&mut self, count: usize, has: Has, rng: &mut Rng) {
-        for _ in 0..count {
-            // Not off the exit's room: the level ends there.
-            let mut parents: Vec<usize> = (0..self.path.saturating_sub(1)).collect();
-            rng.shuffle(&mut parents);
-            let taken = self.cells.clone();
-            let found = parents.into_iter().find_map(|parent| {
-                let room = self.rooms.get(parent)?;
-                let at = *taken.get(parent)?;
-                let mut sides = Side::ALL;
-                rng.shuffle(&mut sides);
-                let side = sides.into_iter().find(|&side| {
-                    let beside = at.beside(side);
-                    beside.in_reach() && !taken.contains(&beside)
-                })?;
-                Some((parent, side, at.beside(side), room.floor, room.depth))
-            });
-            let Some((parent, side, cell, floor, depth)) = found else {
-                return;
-            };
-            let id = RoomId(self.rooms.len());
-            let shape = Self::shape(has, rng);
-            let floor = Self::next_floor(floor, rng);
-            self.cells.push(cell);
-            self.rooms
-                .push(Self::room(cell, shape, floor, depth.saturating_add(1), rng));
-            self.links.push(Link {
-                from: RoomId(parent),
-                to: id,
-                side,
-                doorway: Doorway::Arch,
-            });
-            if self.key.is_none() {
-                self.lock(parent, id, rng);
+    /// Whether a room is in `cell`'s column.
+    fn taken(&self, cell: Cell) -> bool {
+        self.cells.contains(&cell)
+    }
+
+    /// Adds a room of `role` off one of `parents`, on its storey, in a free column beside
+    /// it, joined by a passage with `doorway`; `None` when none of them has a free column
+    /// beside it. The shape is one of `shapes`.
+    pub(crate) fn sprout(
+        &mut self,
+        parents: &[RoomId],
+        shapes: &[RoomShape],
+        role: Role,
+        doorway: Doorway,
+        rng: &mut Rng,
+    ) -> Option<RoomId> {
+        let mut order = parents.to_vec();
+        rng.shuffle(&mut order);
+        let (parent, side, cell) = order.into_iter().find_map(|parent| {
+            let at = *self.cells.get(parent.0)?;
+            let mut sides = Side::ALL;
+            rng.shuffle(&mut sides);
+            let side = sides.into_iter().find(|&side| {
+                let beside = at.beside(side);
+                beside.in_reach() && !self.taken(beside) && self.side_free(parent, side)
+            })?;
+            Some((parent, side, at.beside(side)))
+        })?;
+        let from = self.rooms.get(parent.0)?;
+        let floor = from.door_floor(side);
+        let depth = from.depth.saturating_add(1);
+        let shape = rng.pick(shapes).copied().unwrap_or(RoomShape::Hall);
+        let id = RoomId(self.rooms.len());
+        let mut room = Self::room(cell, shape, floor, depth, rng);
+        room.role = role;
+        self.cells.push(cell);
+        self.rooms.push(room);
+        self.links.push(Link {
+            from: parent,
+            to: id,
+            side,
+            doorway,
+        });
+        Some(id)
+    }
+
+    /// Whether no passage leaves `room` by `side`, and it is no atrium's balcony, whose
+    /// passage is the hook's alone.
+    fn side_free(&self, room: RoomId, side: Side) -> bool {
+        let balcony = self
+            .rooms
+            .get(room.0)
+            .is_some_and(|plan| plan.shape == RoomShape::Atrium && plan.turned == side);
+        !balcony && !self.doors_of(room.0).contains(&side)
+    }
+
+    /// Joins up to [`MOST_LOOPS`] pairs of rooms in columns side by side that no passage
+    /// joins yet, a storey apart at most, for which `allowed` says yes: each passage closes a
+    /// loop. The exit's room is left as it is: the level ends there.
+    pub(crate) fn close_loops(&mut self, allowed: impl Fn(RoomId, RoomId) -> bool, rng: &mut Rng) {
+        let exit = RoomId(self.path.saturating_sub(1));
+        let mut pairs = Vec::new();
+        for (a, &cell) in self.cells.iter().enumerate() {
+            for side in [Side::East, Side::North] {
+                let Some(b) = self
+                    .cells
+                    .iter()
+                    .position(|&other| other == cell.beside(side))
+                else {
+                    continue;
+                };
+                pairs.push((RoomId(a), RoomId(b), side));
             }
         }
-    }
-
-    /// Puts the key in `room`, which is off the path's room `parent`, and locks a passage of
-    /// the path after that room.
-    fn lock(&mut self, parent: usize, room: RoomId, rng: &mut Rng) {
-        let after: Vec<usize> = (parent..self.path.saturating_sub(1)).collect();
-        let Some(&locked) = rng.pick(&after) else {
-            return;
-        };
-        // The path's passages are the first links, in its order.
-        if let Some(link) = self.links.get_mut(locked) {
-            link.doorway = Doorway::Locked;
-            self.key = Some(room);
-        }
-    }
-
-    /// Takes the lock off its door and the key out of the plan, for a game with no key.
-    pub(crate) fn unlock(&mut self) {
-        self.key = None;
-        for link in &mut self.links {
-            link.doorway = match link.doorway {
-                Doorway::Locked => Doorway::Door,
-                Doorway::Open | Doorway::Arch | Doorway::Door => link.doorway,
+        rng.shuffle(&mut pairs);
+        let mut added = 0;
+        for (a, b, side) in pairs {
+            if added >= MOST_LOOPS {
+                break;
+            }
+            let joined = self
+                .links
+                .iter()
+                .any(|link| (link.from, link.to) == (a, b) || (link.from, link.to) == (b, a));
+            let (Some(ra), Some(rb)) = (self.rooms.get(a.0), self.rooms.get(b.0)) else {
+                continue;
             };
-        }
-    }
-
-    /// Takes every door out of the plan, for a game with none.
-    pub(crate) fn open_doors(&mut self) {
-        self.unlock();
-        for link in &mut self.links {
-            link.doorway = match link.doorway {
-                Doorway::Door | Doorway::Locked => Doorway::Open,
-                Doorway::Open | Doorway::Arch => link.doorway,
-            };
+            let climb = (ra.door_floor(side) - rb.door_floor(side.opposite())).abs();
+            let usable = !joined
+                && a != exit
+                && b != exit
+                && climb <= STOREY
+                && self.side_free(a, side)
+                && self.side_free(b, side.opposite())
+                && allowed(a, b);
+            if usable {
+                self.links.push(Link {
+                    from: a,
+                    to: b,
+                    side,
+                    doorway: Doorway::Arch,
+                });
+                added = added.saturating_add(1);
+            }
         }
     }
 
@@ -524,5 +709,29 @@ impl Plan {
                 }
             })
             .collect()
+    }
+
+    /// How many loops the passages make: one for each passage more than a tree of the rooms
+    /// has.
+    pub(crate) fn loops(&self) -> usize {
+        self.links
+            .len()
+            .saturating_add(1)
+            .saturating_sub(self.rooms.len())
+    }
+
+    /// How many floors the level is on: each storey a room's floor or an atrium's balcony is
+    /// on.
+    pub(crate) fn floors(&self) -> usize {
+        let mut heights: Vec<f64> = Vec::new();
+        for room in &self.rooms {
+            heights.push(room.floor);
+            if room.shape == RoomShape::Atrium {
+                heights.push(room.floor + STOREY);
+            }
+        }
+        heights.sort_by(f64::total_cmp);
+        heights.dedup_by(|a, b| (*a - *b).abs() < STOREY - RAISE / 2.0);
+        heights.len()
     }
 }

@@ -14,6 +14,7 @@
 mod kit;
 mod layout;
 mod mass;
+mod mission;
 mod passage;
 mod populate;
 mod rng;
@@ -33,8 +34,10 @@ pub use kit::{
     PassageKit, PassageParts, RoomKit, RoomParts, Textures, WallLights,
 };
 pub use layout::Side;
-use layout::{Doorway, Has, Liquid, Plan, Sky};
+use layout::{Doorway, Has, Liquid, Plan, RoomPlan, Sky};
 use mass::{Coat, Mass, Point};
+pub use mission::{LockKind, Report};
+use mission::{Mission, Role, Signal};
 use passage::Passage;
 use populate::{Depth, Placed};
 use rng::Rng;
@@ -70,6 +73,8 @@ pub enum RoomShape {
     Cross,
     /// A long room under a pitched vault.
     Vault,
+    /// A room two storeys high with a balcony along one side, dropped from to its floor.
+    Atrium,
 }
 
 impl RoomShape {
@@ -84,6 +89,7 @@ impl RoomShape {
             Self::Court => "court",
             Self::Cross => "cross",
             Self::Vault => "vault",
+            Self::Atrium => "atrium",
         }
     }
 }
@@ -202,6 +208,8 @@ pub struct Level {
     pub items: usize,
     /// How many brushes its world has.
     pub brushes: usize,
+    /// What its mission came to: its floors, loops, locks, teasers and secrets.
+    pub report: Report,
 }
 
 /// The key that opens a locked door: `item_key1` is the silver key (`items.qc`), and
@@ -230,6 +238,21 @@ const POST_HEIGHT: f64 = 72.0;
 /// How far above the floor the exit's light is, and how bright.
 const EXIT_LIGHT_LIFT: f64 = 96.0;
 const EXIT_LIGHT: f64 = 300.0;
+
+/// A button: half its width and height, how far it stands out of its wall, and how far above
+/// the floor its bottom is, at a standing player's chest.
+const BUTTON_HALF: f64 = 16.0;
+const BUTTON_DEPTH: f64 = 8.0;
+const BUTTON_LIFT: f64 = 32.0;
+/// The `wait` of a door or button that stays where it moved to (`doors.qc`, `buttons.qc`).
+const STAY_OPEN: &str = "-1";
+/// The `spawnflags` of a secret door that stays open once opened and moves down first
+/// (`doors.qc`: `SECRET_OPEN_ONCE` 1, `SECRET_1ST_DOWN` 4).
+const SECRET_FLAGS: &str = "5";
+/// The `spawnflags` of a megahealth (`items.qc`: `H_MEGA` 2).
+const MEGAHEALTH: &str = "2";
+/// Half the width of a secret room's trigger.
+const SECRET_HALF: f64 = 64.0;
 
 /// A level being put together.
 struct Assembly<'a> {
@@ -306,6 +329,196 @@ impl Assembly<'_> {
         Ok(())
     }
 
+    /// A button in the middle of `room`'s wall on `side`, at a player's chest, that opens the
+    /// door of `signal` and stays in (`buttons.qc`: `wait` -1 never returns). It moves into
+    /// the wall, the way the wall faces out.
+    fn button(&mut self, room: &RoomPlan, side: Side, signal: Signal) -> Result<(), GenError> {
+        let [mx, my] = room.middle;
+        let [fx, fy] = side.facing();
+        let reach = room.reach(side);
+        let (out, back) = (reach - BUTTON_DEPTH, reach);
+        let wall = [mx + fx * out, my + fy * out];
+        let deep = [mx + fx * back, my + fy * back];
+        let across = [-fy * BUTTON_HALF, fx * BUTTON_HALF];
+        let floor = room.door_floor(side);
+        let min = [
+            wall[0].min(deep[0]) - across[0].abs(),
+            wall[1].min(deep[1]) - across[1].abs(),
+            floor + BUTTON_LIFT,
+        ];
+        let max = [
+            wall[0].max(deep[0]) + across[0].abs(),
+            wall[1].max(deep[1]) + across[1].abs(),
+            floor + BUTTON_LIFT + BUTTON_HALF + BUTTON_HALF,
+        ];
+        let brush = Coat::all(&self.paints.door).boxed(mass::Bounds { min, max })?;
+        self.place_brush(
+            mission::BUTTON,
+            brush,
+            &[
+                ("angle", side.yaw()),
+                ("target", &signal.name()),
+                ("wait", STAY_OPEN),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// An arena's monsters, each firing at its death (`monster_death_use`) a counter at
+    /// `stand` that opens the door of `signal` once all of them have (`trigger_counter`).
+    fn arena(&mut self, signal: Signal, stand: Point, monsters: &[Placed]) -> Result<(), GenError> {
+        let counter = format!("{}_count", signal.name());
+        for monster in monsters {
+            self.place(monster.classname, monster.origin, &[("target", &counter)])?;
+        }
+        let count = monsters.len().to_string();
+        self.place(
+            mission::COUNTER,
+            stand,
+            &[
+                ("targetname", &counter),
+                ("target", &signal.name()),
+                ("count", &count),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// A secret room's reward at `stand`, a megahealth (`item_health` with `H_MEGA` 2,
+    /// `items.qc`), in a `trigger_secret` that counts it found.
+    fn secret(&mut self, [x, y, z]: Point) -> Result<(), GenError> {
+        let floor = z - rooms::STAND;
+        let trigger = Coat::all(self.paints.trigger()).boxed(mass::Bounds {
+            min: [x - SECRET_HALF, y - SECRET_HALF, floor],
+            max: [x + SECRET_HALF, y + SECRET_HALF, floor + EXIT_HEIGHT],
+        })?;
+        self.place_brush(mission::SECRET, trigger, &[])?;
+        let half = populate::CORNERED_HALF;
+        self.place(
+            "item_health",
+            [x - half, y - half, floor],
+            &[("spawnflags", MEGAHEALTH)],
+        )?;
+        Ok(())
+    }
+
+    /// Builds and fills `plan`'s rooms, each as its role has it, counting what is placed in
+    /// `level`. Returns the signals of arenas that had no monster, whose doors must open by
+    /// touch.
+    fn rooms(
+        &mut self,
+        plan: &Plan,
+        level: &mut Level,
+        rng: &mut Rng,
+    ) -> Result<Vec<Signal>, GenError> {
+        let exit = level.exit;
+        let deepest = plan.rooms.iter().map(|room| room.depth).max().unwrap_or(0);
+        let mut unopened = Vec::new();
+        for (place, room_plan) in plan.rooms.iter().enumerate() {
+            let part = if place == exit { Part::Exit } else { Part::Way };
+            let room = Room::new(room_plan, part);
+            let built = room.build(&mut self.mass, &self.paints)?;
+            self.solids.extend(built.solids);
+            for light in built.lights {
+                self.light(light)?;
+            }
+            for torch in built.torches {
+                self.torch(torch)?;
+            }
+            let stand = room.stand();
+            level.rooms.push(RoomMade {
+                shape: room_plan.shape,
+                stand,
+            });
+            if place == 0 {
+                let facing = plan.doors_of(place).first().copied().unwrap_or(Side::East);
+                self.place("info_player_start", stand, &[("angle", facing.yaw())])?;
+            }
+            if place == exit {
+                self.exit(stand)?;
+            }
+            let depth = Depth {
+                rooms: room_plan.depth,
+                deepest,
+            };
+            let filled = self.request.classes.fill(depth, &built.spots, rng);
+            self.place_all(&filled.items)?;
+            level.items = level.items.saturating_add(filled.items.len());
+            level.monsters = level.monsters.saturating_add(filled.monsters.len());
+            match room_plan.role {
+                Role::Way => self.place_all(&filled.monsters)?,
+                Role::Key(colour) => {
+                    self.place_all(&filled.monsters)?;
+                    self.place(colour.classname(), stand, &[])?;
+                    level.items = level.items.saturating_add(1);
+                }
+                Role::Button(signal) => {
+                    self.place_all(&filled.monsters)?;
+                    let door = plan.doors_of(place).first().copied().unwrap_or(Side::East);
+                    self.button(room_plan, door.opposite(), signal)?;
+                }
+                Role::Arena(signal) => {
+                    if filled.monsters.is_empty() {
+                        unopened.push(signal);
+                    } else {
+                        self.arena(signal, stand, &filled.monsters)?;
+                    }
+                }
+                Role::Secret => {
+                    self.place_all(&filled.monsters)?;
+                    self.secret(stand)?;
+                    level.items = level.items.saturating_add(1);
+                }
+            }
+        }
+        Ok(unopened)
+    }
+
+    /// Builds `plan`'s passages and their doors: a remote door whose signal is in
+    /// `unopened` opens by touch.
+    fn passages(&mut self, plan: &Plan, unopened: &[Signal]) -> Result<(), GenError> {
+        for link in &plan.links {
+            let Some(passage) = Passage::of(plan, link) else {
+                continue;
+            };
+            let passed = passage.build(&mut self.mass, &self.paints)?;
+            self.solids.extend(passed.solids);
+            if let Some(light) = passed.light {
+                self.light(light)?;
+            }
+            let Some((door, doorway)) = passed.door else {
+                continue;
+            };
+            match doorway {
+                Doorway::Locked(colour) => self.place_brush(
+                    DOOR,
+                    door,
+                    &[("angle", UP), ("spawnflags", colour.door_flags())],
+                )?,
+                Doorway::Remote(signal) if !unopened.contains(&signal) => {
+                    self.place_brush(
+                        DOOR,
+                        door,
+                        &[
+                            ("angle", UP),
+                            ("targetname", &signal.name()),
+                            ("wait", STAY_OPEN),
+                        ],
+                    )?;
+                }
+                Doorway::Secret => self.place_brush(
+                    mission::SECRET_DOOR,
+                    door,
+                    &[("angle", link.side.yaw()), ("spawnflags", SECRET_FLAGS)],
+                )?,
+                Doorway::Door | Doorway::Remote(_) | Doorway::Open | Doorway::Arch => {
+                    self.place_brush(DOOR, door, &[("angle", UP)])?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The exit at `stand`: a trigger back to the level's own start, between four posts
     /// under a light.
     fn exit(&mut self, [x, y, z]: Point) -> Result<(), GenError> {
@@ -355,11 +568,13 @@ impl Request<'_> {
             },
         };
         let mut plan = Plan::draw(self.size, has, &mut rng)?;
-        if !self.classes.has(KEY) {
-            plan.unlock();
-        }
+        let report = Mission::arrange(&mut plan, self.size, self.classes, &mut rng);
         if !self.classes.has(DOOR) {
-            plan.open_doors();
+            for link in &mut plan.links {
+                if link.doorway == Doorway::Door {
+                    link.doorway = Doorway::Open;
+                }
+            }
         }
         let mut assembly = Assembly {
             request: self,
@@ -369,75 +584,22 @@ impl Request<'_> {
             entities: Vec::new(),
         };
         let exit = plan.path.saturating_sub(1);
-        let deepest = plan.rooms.iter().map(|room| room.depth).max().unwrap_or(0);
         let mut level = Level {
             map: MapFile::new(),
             theme: assembly.paints.name,
             rooms: Vec::new(),
             exit,
-            locked: plan.key.is_some(),
+            locked: report
+                .locks
+                .iter()
+                .any(|kind| matches!(kind, LockKind::SilverKey | LockKind::GoldKey)),
             monsters: 0,
             items: 0,
             brushes: 0,
+            report,
         };
-        for (place, room_plan) in plan.rooms.iter().enumerate() {
-            let part = if place == exit { Part::Exit } else { Part::Way };
-            let room = Room::new(room_plan, part);
-            let built = room.build(&mut assembly.mass, &assembly.paints)?;
-            assembly.solids.extend(built.solids);
-            for light in built.lights {
-                assembly.light(light)?;
-            }
-            for torch in built.torches {
-                assembly.torch(torch)?;
-            }
-            let stand = room.stand();
-            level.rooms.push(RoomMade {
-                shape: room_plan.shape,
-                stand,
-            });
-            if place == 0 {
-                let facing = plan.doors_of(place).first().copied().unwrap_or(Side::East);
-                assembly.place("info_player_start", stand, &[("angle", facing.yaw())])?;
-            }
-            if place == exit {
-                assembly.exit(stand)?;
-            }
-            if plan.key.is_some_and(|key| key.place() == place) {
-                assembly.place(KEY, stand, &[])?;
-                level.items = level.items.saturating_add(1);
-            }
-            let depth = Depth {
-                rooms: room_plan.depth,
-                deepest,
-            };
-            let filled = self.classes.fill(depth, &built.spots, &mut rng);
-            assembly.place_all(&filled.items)?;
-            assembly.place_all(&filled.monsters)?;
-            level.items = level.items.saturating_add(filled.items.len());
-            level.monsters = level.monsters.saturating_add(filled.monsters.len());
-        }
-        for link in &plan.links {
-            let Some(passage) = Passage::of(&plan, link) else {
-                continue;
-            };
-            let passed = passage.build(&mut assembly.mass, &assembly.paints)?;
-            assembly.solids.extend(passed.solids);
-            if let Some(light) = passed.light {
-                assembly.light(light)?;
-            }
-            match passed.door {
-                Some((door, Doorway::Locked)) => assembly.place_brush(
-                    DOOR,
-                    door,
-                    &[("angle", UP), ("spawnflags", DOOR_SILVER_KEY)],
-                )?,
-                Some((door, Doorway::Door | Doorway::Open | Doorway::Arch)) => {
-                    assembly.place_brush(DOOR, door, &[("angle", UP)])?;
-                }
-                None => {}
-            }
-        }
+        let unopened = assembly.rooms(&plan, &mut level, &mut rng)?;
+        assembly.passages(&plan, &unopened)?;
         let mut world = entity(
             "worldspawn",
             &[

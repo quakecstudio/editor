@@ -200,7 +200,11 @@ impl Passage {
                 }
                 space.hull(&corners)
             }
-            Doorway::Open | Doorway::Door | Doorway::Locked => {
+            Doorway::Open
+            | Doorway::Door
+            | Doorway::Locked(_)
+            | Doorway::Remote(_)
+            | Doorway::Secret => {
                 space.boxed(self.bounds(along, [-HALF_WIDTH, HALF_WIDTH], [floor, top]))
             }
         }
@@ -237,8 +241,11 @@ impl Passage {
             ..Passed::default()
         };
         self.steps(paints, &mut passed.solids)?;
-        // The door stands at the higher end, where the passage is no taller than it.
-        let door_at = if self.rises_along() {
+        // The door stands at the higher end, where the passage is no taller than it; a secret
+        // door at the first end, flush with the wall of the room it is hidden in.
+        let door_at = if self.doorway == Doorway::Secret {
+            [0.0, DOOR_THICK]
+        } else if self.rises_along() {
             [
                 self.length - DOOR_FROM_END - DOOR_THICK,
                 self.length - DOOR_FROM_END,
@@ -248,9 +255,19 @@ impl Passage {
         };
         match self.doorway {
             Doorway::Open | Doorway::Arch => {}
-            Doorway::Door | Doorway::Locked => {
+            Doorway::Door | Doorway::Locked(_) | Doorway::Remote(_) => {
                 let door =
                     Coat::all(&paints.door).boxed(self.bounds(door_at, across, [high, top]))?;
+                passed.door = Some((door, self.doorway));
+            }
+            Doorway::Secret => {
+                // Painted as the wall it stands in, from the first end's floor.
+                let [first, _] = self.floors;
+                let door = Coat::all(&paints.wall).boxed(self.bounds(
+                    door_at,
+                    across,
+                    [first, first + HEIGHT],
+                ))?;
                 passed.door = Some((door, self.doorway));
             }
         }

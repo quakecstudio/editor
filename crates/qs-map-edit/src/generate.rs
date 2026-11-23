@@ -65,7 +65,7 @@ pub struct GenerateParams {
 /// One room of a generated level.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RoomMade {
-    /// Its shape: `hall`, `chamber`, `pit`, `split`, `court`, `cross` or `vault`.
+    /// Its shape: `hall`, `chamber`, `pit`, `split`, `court`, `cross`, `vault` or `atrium`.
     pub shape: String,
     /// Where a player's box stands in it, on its floor: a place to look at it from.
     pub stand: [f64; 3],
@@ -84,8 +84,20 @@ pub struct MapGenerated {
     pub rooms: Vec<RoomMade>,
     /// The place in `rooms` of the room the exit is in.
     pub exit: usize,
-    /// Whether a door on the way needs the silver key, which is then in the level.
+    /// Whether a door on the way needs a key, which is then in the level.
     pub locked: bool,
+    /// How many floors it is on.
+    pub floors: usize,
+    /// How many loops its passages make.
+    pub loops: usize,
+    /// Its locks, in the order they are met: `silver_key`, `gold_key`, `button` (a door a
+    /// button elsewhere opens) or `arena` (a door that opens when the room's monsters are
+    /// dead).
+    pub locks: Vec<String>,
+    /// How many places are seen before they are reached: each atrium's balcony.
+    pub teasers: usize,
+    /// How many secret rooms it has, each behind a wall that opens when shot.
+    pub secrets: usize,
     /// Its monsters.
     pub monsters: usize,
     /// Its items.
@@ -102,9 +114,10 @@ pub(crate) struct MapGenerate;
 impl<C: HasMap + 'static> Command<C> for MapGenerate {
     const ID: &'static str = MAP_GENERATE;
     const SUMMARY: &'static str = "Makes a random playable level and opens it: rooms of several \
-        shapes joined by passages, stairs and doors, from a start to an exit, with lights, \
-        monsters, weapons and a key, textured from the game's own levels. One seed gives one \
-        level.";
+        shapes on several floors joined by passages, stairs and doors, from a start to an exit, \
+        with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, \
+        lights, monsters and weapons, textured from the game's own levels, and no trap a player \
+        cannot leave. One seed gives one level.";
     type Params = GenerateParams;
     type Output = MapGenerated;
     type Error = MapEditError;
@@ -171,6 +184,16 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
                 .collect(),
             exit: level.exit,
             locked: level.locked,
+            floors: level.report.floors,
+            loops: level.report.loops,
+            locks: level
+                .report
+                .locks
+                .iter()
+                .map(|kind| kind.name().to_owned())
+                .collect(),
+            teasers: level.report.teasers,
+            secrets: level.report.secrets,
             monsters: level.monsters,
             items: level.items,
             brushes: level.brushes,

@@ -10,7 +10,7 @@
 use qs_map::{Brush, BrushError};
 
 use crate::RoomShape;
-use crate::layout::{RAISE, RoomPlan, Side};
+use crate::layout::{RAISE, RoomPlan, STOREY, Side};
 use crate::mass::{Bounds, Coat, Mass, Point};
 use crate::theme::{Hazard, Paints};
 
@@ -107,6 +107,10 @@ const BEAM_DEPTH: f64 = 24.0;
 const TORCH_LIFT: f64 = 96.0;
 const TORCH_OUT: f64 = 12.0;
 
+/// How far an atrium's balcony reaches out of its wall, and how thick it is.
+const BALCONY_DEPTH: f64 = 128.0;
+const BALCONY_THICK: f64 = 16.0;
+
 /// What a room is to the level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Part {
@@ -178,7 +182,9 @@ impl<'a> Room<'a> {
             RoomShape::Chamber => [0.0, DOME_RISE + DOME_RISE],
             RoomShape::Pit => [PIT_DEPTH, 0.0],
             RoomShape::Cross => [0.0, LANTERN_RISE],
-            RoomShape::Split | RoomShape::Court | RoomShape::Vault => [0.0, 0.0],
+            RoomShape::Split | RoomShape::Court | RoomShape::Vault | RoomShape::Atrium => {
+                [0.0, 0.0]
+            }
         }
     }
 
@@ -261,7 +267,14 @@ impl<'a> Room<'a> {
         let floor = self.plan.floor;
         let [hx, hy] = self.plan.half;
         match (self.plan.shape, self.part) {
-            (RoomShape::Hall | RoomShape::Pit | RoomShape::Cross | RoomShape::Vault, _)
+            (
+                RoomShape::Hall
+                | RoomShape::Pit
+                | RoomShape::Cross
+                | RoomShape::Vault
+                | RoomShape::Atrium,
+                _,
+            )
             | (RoomShape::Chamber, Part::Exit) => self.standing([0.0, 0.0], floor),
             (RoomShape::Chamber, Part::Way) => {
                 self.standing([0.0, 0.0], floor + DAIS_STEP + DAIS_STEP)
@@ -285,6 +298,7 @@ impl<'a> Room<'a> {
             RoomShape::Court => self.court(mass, paints),
             RoomShape::Cross => self.cross(mass, paints),
             RoomShape::Vault => self.vault(mass, paints),
+            RoomShape::Atrium => self.atrium(mass, paints),
         }
     }
 
@@ -676,6 +690,45 @@ impl<'a> Room<'a> {
         ] {
             built.lights.push((
                 self.at(self.turned_offset(a, o), floor + LIGHT_LIFT),
+                LESSER_LIGHT,
+            ));
+        }
+        Ok(built)
+    }
+
+    /// An atrium: a room two storeys high, a balcony along the side it is turned to a storey
+    /// up, from which a player drops to its floor and does not climb back.
+    fn atrium(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let floor = self.plan.floor;
+        let top = floor + self.plan.height;
+        let balcony = floor + STOREY;
+        let (reach, across) = self.turned();
+        mass.carve(&self.space(paints)?)?;
+        let mut built = Built::default();
+        let deck = Coat::deck(&paints.floor, &paints.trim);
+        built.solids.push(deck.boxed(self.turned_bounds(
+            [reach - BALCONY_DEPTH, reach],
+            [-across, across],
+            [balcony - BALCONY_THICK, balcony],
+        ))?);
+        // Up to the balcony's underside, which they would otherwise pass through.
+        self.pilasters(paints, [floor, balcony - BALCONY_THICK], &mut built)?;
+        let (corners, _) = self.around(SPOT_INSET);
+        for offset in corners {
+            built.spots.push(self.standing(offset, floor));
+        }
+        let up = reach - BALCONY_DEPTH / 2.0;
+        for over in [-across / 2.0, across / 2.0] {
+            built
+                .spots
+                .push(self.standing(self.turned_offset(up, over), balcony));
+        }
+        built
+            .lights
+            .push((self.at([0.0, 0.0], top - LIGHT_DROP), MAIN_LIGHT));
+        for (a, z) in [(-reach / 2.0, floor), (up, balcony)] {
+            built.lights.push((
+                self.at(self.turned_offset(a, 0.0), z + LIGHT_LIFT),
                 LESSER_LIGHT,
             ));
         }

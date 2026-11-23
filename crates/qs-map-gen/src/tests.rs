@@ -81,12 +81,13 @@ fn every_brush_is_valid_and_on_the_grid() {
     }
 }
 
-// No spec statement: L-48, a level has its size's rooms, one start, one exit in a chamber, and a key when a door is locked
+// No spec statement: L-48 and L-74, a level has its size's rooms on its path and more off it,
+// one start, one exit in a chamber, and each key its locks need
 #[test]
 fn a_level_has_a_start_an_exit_and_its_rooms() {
     for (size, rooms) in [(Size::Small, 5), (Size::Medium, 8), (Size::Large, 12)] {
         let level = level(3, size);
-        assert_eq!(level.rooms.len(), rooms);
+        assert!(level.rooms.len() > rooms, "{size:?}: {}", level.rooms.len());
         let count = |classname: &[u8]| {
             level
                 .map
@@ -98,7 +99,23 @@ fn a_level_has_a_start_an_exit_and_its_rooms() {
         assert_eq!(count(b"worldspawn"), 1);
         assert_eq!(count(b"info_player_start"), 1);
         assert_eq!(count(b"trigger_changelevel"), 1);
-        assert_eq!(count(b"item_key1"), usize::from(level.locked));
+        let locks = &level.report.locks;
+        assert_eq!(
+            count(b"item_key1"),
+            usize::from(locks.contains(&LockKind::SilverKey))
+        );
+        assert_eq!(
+            count(b"item_key2"),
+            usize::from(locks.contains(&LockKind::GoldKey))
+        );
+        assert_eq!(
+            count(b"func_button"),
+            usize::from(locks.contains(&LockKind::Button))
+        );
+        assert_eq!(
+            count(b"trigger_counter"),
+            usize::from(locks.contains(&LockKind::Arena))
+        );
         assert!(level.monsters > 0);
         assert_eq!(level.rooms[level.exit].shape, RoomShape::Chamber);
     }
@@ -134,10 +151,10 @@ fn only_the_classes_there_are_placed() {
             .iter()
             .any(|entity| entity.classname() == Some(classname))
     };
-    // With every class, seed 1 has a locked door, its key and torches.
+    // With every class, a large level has locked doors and torches.
     let whole = level(&Classes::Any);
-    assert!(whole.locked);
-    assert!(holds(&whole, b"item_key1") && holds(&whole, b"func_door"));
+    assert_eq!(whole.report.locks.len(), 3);
+    assert!(holds(&whole, b"func_door"));
     assert!(holds(&whole, b"light_torch_small_walltorch"));
 
     // A game with doors and no key locks none; one with neither has no door.
@@ -233,6 +250,7 @@ fn pit_solids(liquid: &str) -> usize {
         height: 256.0,
         turned: Side::East,
         depth: 0,
+        role: mission::Role::Way,
     };
     let wall = theme::surface("wall");
     let paints = theme::Paints::named(
@@ -266,4 +284,24 @@ fn only_a_pit_of_lava_is_railed() {
     let water = pit_solids("*water1");
     assert_eq!(pit_solids("*slime0"), water);
     assert_eq!(pit_solids("*lava1"), water + 16);
+}
+
+// No spec statement: L-74, every medium and large level is on two floors or more, has a loop,
+// two kinds of lock, a space seen before it is reached and a secret, by its report
+#[test]
+fn a_level_is_designed() {
+    for seed in 0..64 {
+        for size in [Size::Medium, Size::Large] {
+            let report = level(seed, size).report;
+            let what = format!("seed {seed} {size:?}: {report:?}");
+            assert!(report.floors >= 2, "{what}");
+            assert!(report.loops >= 1, "{what}");
+            let mut kinds = report.locks.clone();
+            kinds.sort_unstable();
+            kinds.dedup();
+            assert!(kinds.len() >= 2, "{what}");
+            assert!(report.teasers >= 1, "{what}");
+            assert_eq!(report.secrets, 1, "{what}");
+        }
+    }
 }

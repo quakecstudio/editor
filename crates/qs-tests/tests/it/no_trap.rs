@@ -10,7 +10,10 @@
 //!   [`qs_map_gen::CLIMB_OUT`] above its surface (`CheckWaterJump`, measured by
 //!   `water_escape`);
 //! - a door opens to a player with its key (`DOOR_SILVER_KEY` 16, `DOOR_GOLD_KEY` 8,
-//!   `doors.qc`), and any other door when touched; a key is picked up where it lies.
+//!   `doors.qc`); a door with a `targetname` once its button is reached or its arena, whose
+//!   monsters the player is taken to kill; any other door when touched. A key is picked up
+//!   where it lies; a secret door (`func_door_secret`) is taken as open, since one that is
+//!   `SECRET_OPEN_ONCE` stays open once shot.
 //!
 //! No jump is taken, so a ledge or a rail the player could jump over counts as a wall. Lava
 //! kills before a player climbs out (`client.qc`, `WaterMove`), so it is a sink: walking must
@@ -20,7 +23,9 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::cast_possible_truncation,
-    reason = "test code: a failed unwrap or index is a failed test, and map units fit"
+    clippy::cast_precision_loss,
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap, index or assertion is a failed test, and map units fit"
 )]
 
 use std::collections::{HashMap, VecDeque};
@@ -53,20 +58,25 @@ const GOLD_DOOR: u32 = 8;
 
 /// The keys a player holds, a bit for each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-struct Held(u8);
+struct Held(u32);
 
-/// A key, by the bit it holds in [`Held`].
+/// What opens a door, by the bit it holds in [`Held`]: a key, or a signal, which a player
+/// sets off by reaching a button (`buttons.qc`, `button_touch`) or an arena's counter, whose
+/// monsters a player who reaches them is taken to kill (`monster_death_use`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Key {
+enum Opener {
     Silver,
     Gold,
+    /// The `n`th name a door's `targetname` and an opener's `target` share.
+    Signal(u32),
 }
 
-impl Key {
-    const fn bit(self) -> u8 {
+impl Opener {
+    fn bit(self) -> u32 {
         match self {
             Self::Silver => 1,
             Self::Gold => 2,
+            Self::Signal(n) => 4u32.checked_shl(n).unwrap(),
         }
     }
 
@@ -92,19 +102,36 @@ impl Key {
 }
 
 impl Held {
-    const fn has(self, key: Key) -> bool {
-        self.0 & key.bit() != 0
+    fn has(self, opener: Opener) -> bool {
+        self.0 & opener.bit() != 0
     }
 
-    const fn with(self, key: Key) -> Self {
-        Self(self.0 | key.bit())
+    fn with(self, opener: Opener) -> Self {
+        Self(self.0 | opener.bit())
     }
 }
 
-/// A door that a key opens: its brush model and the key.
+/// A door that something opens: its brush model and its opener. A key is used up on its
+/// door (`door_touch`: `other.items = other.items - self.items`), which then stays open
+/// (`Key doors are allways wait -1`), so holding it stands for the door open; a level has
+/// one door for each key.
 struct Locked {
     model: usize,
-    key: Key,
+    opener: Opener,
+}
+
+/// The names an opener's `target` and a door's `targetname` share, numbered.
+#[derive(Default)]
+struct Names(Vec<Vec<u8>>);
+
+impl Names {
+    fn signal(&mut self, name: &[u8]) -> Opener {
+        let index = self.0.iter().position(|n| n == name).unwrap_or_else(|| {
+            self.0.push(name.to_vec());
+            self.0.len() - 1
+        });
+        Opener::Signal(u32::try_from(index).unwrap())
+    }
 }
 
 /// What a compiled level is to a moving player.
@@ -112,7 +139,8 @@ pub(crate) struct Ground<'a> {
     hulls: HullSet,
     bsp: &'a Bsp<'a>,
     locked: Vec<Locked>,
-    keys: Vec<([f32; 3], Key)>,
+    /// Where each key lies, each button is and each arena's counter is, and what it opens.
+    openers: Vec<([f32; 3], Opener)>,
     /// The world's bounds: past its sides and under its bottom is the void, as good as solid
     /// to a walker.
     bounds: [[f32; 3]; 2],
@@ -138,25 +166,47 @@ impl<'a> Ground<'a> {
     /// map's order.
     pub(crate) fn new(bsp: &'a Bsp<'a>, map: &MapFile) -> Self {
         let mut locked = Vec::new();
-        let mut keys = Vec::new();
+        let mut openers = Vec::new();
+        let mut names = Names::default();
         let mut model: usize = 0;
         for entity in &map.entities {
             let classname = entity.classname().unwrap_or_default();
+            let target = entity.value(b"target");
             if entity.has_brushes() {
                 if classname != b"worldspawn" {
                     model = model.saturating_add(1);
                 }
-                if classname == b"func_door" {
-                    let flags = entity
-                        .value(b"spawnflags")
-                        .and_then(|text| std::str::from_utf8(text).ok()?.parse().ok())
-                        .unwrap_or(0);
-                    if let Some(key) = Key::of_door(flags) {
-                        locked.push(Locked { model, key });
+                match classname {
+                    b"func_door" => {
+                        let flags = entity
+                            .value(b"spawnflags")
+                            .and_then(|text| std::str::from_utf8(text).ok()?.parse().ok())
+                            .unwrap_or(0);
+                        let opener = Opener::of_door(flags)
+                            .or_else(|| entity.value(b"targetname").map(|n| names.signal(n)));
+                        if let Some(opener) = opener {
+                            assert!(
+                                locked.iter().all(|door: &Locked| door.opener != opener),
+                                "two doors of one opener, which the check does not model"
+                            );
+                            locked.push(Locked { model, opener });
+                        }
                     }
+                    b"func_button" => {
+                        let points: Vec<[f64; 3]> =
+                            entity.brushes().flat_map(qs_map::Brush::vertices).collect();
+                        let count = points.len() as f64;
+                        let middle = [0, 1, 2].map(|axis| {
+                            (points.iter().map(|p| p[axis]).sum::<f64>() / count) as f32
+                        });
+                        openers.push((middle, names.signal(target.unwrap())));
+                    }
+                    _ => {}
                 }
-            } else if let Some(key) = Key::of_item(classname) {
-                keys.push((origin(entity), key));
+            } else if let Some(key) = Opener::of_item(classname) {
+                openers.push((origin(entity), key));
+            } else if classname == b"trigger_counter" {
+                openers.push((origin(entity), names.signal(target.unwrap())));
             }
         }
         let world = &bsp.models[0];
@@ -164,7 +214,7 @@ impl<'a> Ground<'a> {
             hulls: HullSet::new(bsp),
             bsp,
             locked,
-            keys,
+            openers,
             bounds: [world.mins, world.maxs],
         }
     }
@@ -190,7 +240,7 @@ impl<'a> Ground<'a> {
             return true;
         }
         self.locked.iter().any(|door| {
-            !held.has(door.key) && {
+            !held.has(door.opener) && {
                 let (hull, head) = self.hull(1, door.model);
                 hull.point_contents(head, at).unwrap() == SOLID
             }
@@ -287,11 +337,11 @@ impl<'a> Ground<'a> {
         next
     }
 
-    /// The keys picked up at `at`.
+    /// What a player at `at` picks up or sets off there.
     fn picked(&self, held: Held, at: [f32; 3]) -> Held {
-        self.keys.iter().fold(held, |held, &(place, key)| {
+        self.openers.iter().fold(held, |held, &(place, opener)| {
             if near(at, place) {
-                held.with(key)
+                held.with(opener)
             } else {
                 held
             }
@@ -364,7 +414,7 @@ mod tests {
 
     use qs_bsp::{Bsp, BspLoader};
     use qs_map::{Brush, Item, MapFile, Surface, TexDef};
-    use qs_map_gen::{Classes, Request, Size};
+    use qs_map_gen::{Classes, Level, LockKind, Request, Size};
 
     use super::{Ground, Trap};
     use crate::water_escape::{DEPTH, POOL, pool};
@@ -451,19 +501,17 @@ mod tests {
         assert_eq!(checked(&lava(true), BESIDE), Ok(()));
     }
 
-    // No spec statement: L-74, a level whose locked door's key is taken away is a trap: the
-    // exit is behind the door
-    #[test]
-    fn a_level_without_its_key_is_a_trap() {
+    /// The first generated level, from seed 0 up, whose mission has a lock of `kind`.
+    fn level_with(kind: LockKind) -> Level {
         let textures: Vec<String> = ["wall", "floor", "ceiling", "trim", "door", "trigger"]
             .iter()
             .map(|name| (*name).to_owned())
             .collect();
-        let level = (0..64)
+        (0..64)
             .map(|seed| {
                 Request {
                     seed,
-                    size: Size::Small,
+                    size: Size::Medium,
                     textures: &textures,
                     classes: &Classes::Any,
                     name: "random",
@@ -471,21 +519,52 @@ mod tests {
                 .generate()
                 .unwrap()
             })
-            .find(|level| level.locked)
-            .unwrap_or_else(|| panic!("no seed locks a door"));
+            .find(|level| level.report.locks.contains(&kind))
+            .unwrap_or_else(|| panic!("no seed has a {kind:?}"))
+    }
+
+    /// Whether `level`, and `level` without its entities of `classname`, are trapped.
+    fn with_and_without(level: &Level, classname: &[u8]) -> (Result<(), Trap>, Result<(), Trap>) {
         let start = level.rooms[0].stand.map(|at| at as f32);
         let exit = level.rooms[level.exit].stand.map(|at| at as f32);
         let check = |map: &MapFile| {
             let bsp = compiled(&map.to_bytes());
             Ground::new(&bsp, map).check(start, exit)
         };
-        assert_eq!(check(&level.map), Ok(()));
-        let mut keyless = MapFile::new();
+        let mut without = MapFile::new();
         for entity in &level.map.entities {
-            if entity.classname() != Some(b"item_key1".as_slice()) {
-                keyless.push_entity(entity.clone());
+            if entity.classname() != Some(classname) {
+                without.push_entity(entity.clone());
             }
         }
-        assert_eq!(check(&keyless), Err(Trap::NoExit));
+        (check(&level.map), check(&without))
+    }
+
+    // No spec statement: L-74, a level whose locked door's key is taken away is a trap: the
+    // exit is behind the door
+    #[test]
+    fn a_level_without_its_key_is_a_trap() {
+        for (kind, key) in [
+            (LockKind::SilverKey, b"item_key1".as_slice()),
+            (LockKind::GoldKey, b"item_key2".as_slice()),
+        ] {
+            let (with, without) = with_and_without(&level_with(kind), key);
+            assert_eq!(with, Ok(()), "{kind:?}");
+            assert_eq!(without, Err(Trap::NoExit), "{kind:?}");
+        }
+    }
+
+    // No spec statement: L-74, a level whose button, or whose arena's counter, is taken away is
+    // a trap: the door they open stays shut
+    #[test]
+    fn a_level_without_what_opens_a_door_is_a_trap() {
+        for (kind, opener) in [
+            (LockKind::Button, b"func_button".as_slice()),
+            (LockKind::Arena, b"trigger_counter".as_slice()),
+        ] {
+            let (with, without) = with_and_without(&level_with(kind), opener);
+            assert_eq!(with, Ok(()), "{kind:?}");
+            assert_eq!(without, Err(Trap::NoExit), "{kind:?}");
+        }
     }
 }
