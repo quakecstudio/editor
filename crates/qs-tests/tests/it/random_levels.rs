@@ -174,9 +174,10 @@ fn check(level: &Level, what: &str) {
         );
     }
     let exit = stand(level.exit);
-    let found = Ground::new(&bsp, &level.map).check(stand(0), exit);
-    assert_eq!(found, Ok(()), "{what}: a trap");
-    let reached = walked(&hull, h1, stand(0));
+    let ground = Ground::new(&bsp, &level.map);
+    assert_eq!(ground.check(stand(0), exit), Ok(()), "{what}: a trap");
+    // A player who walks, swims, rides lifts, picks up keys and presses buttons.
+    let reached = ground.reached(stand(0));
     for (place, room) in level.rooms.iter().enumerate() {
         let [x, y, z] = stand(place);
         let near = reached.iter().any(|at| {

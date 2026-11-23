@@ -6,6 +6,7 @@
 //! and no more, so a level that passes cannot hold a trap:
 //!
 //! - walking, up a step of at most `STEPSIZE` (18, PHYS-8.3), and falling, which is one way;
+//! - riding a lift (`func_plat`) up from its bottom, and dropping into its shaft from its top;
 //! - swimming in any direction in a liquid, and climbing out over a rim at most
 //!   [`qs_map_gen::CLIMB_OUT`] above its surface (`CheckWaterJump`, measured by
 //!   `water_escape`);
@@ -120,6 +121,32 @@ struct Locked {
     opener: Opener,
 }
 
+/// A lift (`func_plat`): the box over which it moves, the height of its top when up, as it is
+/// drawn, and when down, its `height` lower (`pos2_z = self.origin_z - self.height`).
+struct Lift {
+    min: [f32; 2],
+    max: [f32; 2],
+    top: f32,
+    bottom: f32,
+}
+
+impl Lift {
+    /// Whether a player's middle at `at` is over the lift.
+    fn holds(&self, at: [f32; 3]) -> bool {
+        (self.min[0]..=self.max[0]).contains(&at[0]) && (self.min[1]..=self.max[1]).contains(&at[1])
+    }
+
+    /// Whether a player at `at` stands on the lift up.
+    fn at_top(&self, at: [f32; 3]) -> bool {
+        self.holds(at) && (at[2] - (self.top + FEET)).abs() < FINE
+    }
+
+    /// Whether a player at `at` stands on the lift down: on the floor of its shaft.
+    fn at_bottom(&self, at: [f32; 3]) -> bool {
+        self.holds(at) && (at[2] - (self.bottom + FEET)).abs() <= FINE
+    }
+}
+
 /// The names an opener's `target` and a door's `targetname` share, numbered.
 #[derive(Default)]
 struct Names(Vec<Vec<u8>>);
@@ -141,9 +168,21 @@ pub(crate) struct Ground<'a> {
     locked: Vec<Locked>,
     /// Where each key lies, each button is and each arena's counter is, and what it opens.
     openers: Vec<([f32; 3], Opener)>,
+    lifts: Vec<Lift>,
     /// The world's bounds: past its sides and under its bottom is the void, as good as solid
     /// to a walker.
     bounds: [[f32; 3]; 2],
+}
+
+/// A place, by its whole units and its height in eighths, and what is held there.
+type Node = ([i32; 3], Held);
+
+/// What a search from a start found.
+struct Explored {
+    /// Each place and state reached, and where in it.
+    places: HashMap<Node, [f32; 3]>,
+    /// Each place and state, and those it is reached from in one move.
+    back: HashMap<Node, Vec<Node>>,
 }
 
 /// What a check of a level found wrong.
@@ -167,6 +206,7 @@ impl<'a> Ground<'a> {
     pub(crate) fn new(bsp: &'a Bsp<'a>, map: &MapFile) -> Self {
         let mut locked = Vec::new();
         let mut openers = Vec::new();
+        let mut lifts = Vec::new();
         let mut names = Names::default();
         let mut model: usize = 0;
         for entity in &map.entities {
@@ -192,6 +232,30 @@ impl<'a> Ground<'a> {
                             locked.push(Locked { model, opener });
                         }
                     }
+                    b"func_plat" => {
+                        let points: Vec<[f64; 3]> =
+                            entity.brushes().flat_map(qs_map::Brush::vertices).collect();
+                        let low = |axis: usize| {
+                            points.iter().map(|p| p[axis]).fold(f64::INFINITY, f64::min) as f32
+                        };
+                        let high = |axis: usize| {
+                            points
+                                .iter()
+                                .map(|p| p[axis])
+                                .fold(f64::NEG_INFINITY, f64::max)
+                                as f32
+                        };
+                        let height: f32 = entity
+                            .value(b"height")
+                            .and_then(|text| std::str::from_utf8(text).ok()?.parse().ok())
+                            .unwrap();
+                        lifts.push(Lift {
+                            min: [low(0), low(1)],
+                            max: [high(0), high(1)],
+                            top: high(2),
+                            bottom: high(2) - height,
+                        });
+                    }
                     b"func_button" => {
                         let points: Vec<[f64; 3]> =
                             entity.brushes().flat_map(qs_map::Brush::vertices).collect();
@@ -215,6 +279,7 @@ impl<'a> Ground<'a> {
             bsp,
             locked,
             openers,
+            lifts,
             bounds: [world.mins, world.maxs],
         }
     }
@@ -327,14 +392,35 @@ impl<'a> Ground<'a> {
                     next.push(to);
                 }
             }
+        } else if let Some(lift) = self.riding(at) {
+            // On a lift at its top: across it at its height, off it as from a floor, or down
+            // into its shaft once it has gone down without the player (`plat_hit_top`).
+            for [dx, dy] in flat {
+                let to = [at[0] + dx, at[1] + dy, at[2]];
+                if lift.holds(to) {
+                    next.push(to);
+                } else if let Some(to) = self.paced(held, at, [dx, dy], CLIMB) {
+                    next.push(to);
+                }
+            }
+            next.push([at[0], at[1], lift.bottom + FEET]);
         } else {
             for step in flat {
                 if let Some(to) = self.paced(held, at, step, CLIMB) {
                     next.push(to);
                 }
             }
+            // On a lift at its bottom: it takes the player up (`plat_center_touch`).
+            if let Some(lift) = self.lifts.iter().find(|lift| lift.at_bottom(at)) {
+                next.push([at[0], at[1], lift.top + FEET]);
+            }
         }
         next
+    }
+
+    /// The lift whose top `at` stands on, if any.
+    fn riding(&self, at: [f32; 3]) -> Option<&Lift> {
+        self.lifts.iter().find(|lift| lift.at_top(at))
     }
 
     /// What a player at `at` picks up or sets off there.
@@ -348,25 +434,25 @@ impl<'a> Ground<'a> {
         })
     }
 
-    /// Checks that from every place and state reached from `start` the exit, near `exit`, can
-    /// still be reached, and that walking reaches no lava.
-    pub(crate) fn check(&self, start: [f32; 3], exit: [f32; 3]) -> Result<(), Trap> {
-        type Node = ([i32; 3], Held);
+    /// Every place a player at `start` reaches, in any state.
+    pub(crate) fn reached(&self, start: [f32; 3]) -> Vec<[f32; 3]> {
+        self.explore(start).places.into_values().collect()
+    }
+
+    /// Every place and state a player at `start` reaches, each with those it is reached
+    /// from in one move. Lava stops the search where it is reached: a player there is dead.
+    fn explore(&self, start: [f32; 3]) -> Explored {
         let key = |at: [f32; 3]| [at[0] as i32, at[1] as i32, (at[2] / 8.0) as i32];
         let first = self.fall(Held::default(), start);
         let start: Node = (key(first), self.picked(Held::default(), first));
         let mut places = HashMap::from([(start, first)]);
         let mut back: HashMap<Node, Vec<Node>> = HashMap::new();
         let mut queue = VecDeque::from([start]);
-        let mut exits = Vec::new();
         while let Some(node) = queue.pop_front() {
             let (_, held) = node;
             let at = places[&node];
             if self.in_lava(at) {
-                return Err(Trap::Lava(node.0));
-            }
-            if near(at, exit) {
-                exits.push(node);
+                continue;
             }
             for to in self.moves(held, at) {
                 let next: Node = (key(to), self.picked(held, to));
@@ -377,6 +463,27 @@ impl<'a> Ground<'a> {
                 }
             }
         }
+        Explored { places, back }
+    }
+
+    /// Checks that from every place and state reached from `start` the exit, near `exit`, can
+    /// still be reached, and that walking reaches no lava.
+    pub(crate) fn check(&self, start: [f32; 3], exit: [f32; 3]) -> Result<(), Trap> {
+        let explored = self.explore(start);
+        if let Some(((at, _), _)) = explored
+            .places
+            .iter()
+            .find(|(_, place)| self.in_lava(**place))
+        {
+            return Err(Trap::Lava(*at));
+        }
+        let exits: Vec<Node> = explored
+            .places
+            .iter()
+            .filter(|(_, place)| near(**place, exit))
+            .map(|(node, _)| *node)
+            .collect();
+        let (places, back) = (explored.places, explored.back);
         if exits.is_empty() {
             return Err(Trap::NoExit);
         }
@@ -566,5 +673,40 @@ mod tests {
             assert_eq!(with, Ok(()), "{kind:?}");
             assert_eq!(without, Err(Trap::NoExit), "{kind:?}");
         }
+    }
+
+    // No spec statement: L-74, a level whose lift on the way to the exit is taken away is a
+    // trap, and the level with its lifts is not
+    #[test]
+    fn a_level_without_its_lift_is_a_trap() {
+        let textures: Vec<String> = ["wall", "floor", "ceiling", "trim", "door", "trigger"]
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect();
+        let broken = (0..64).find(|&seed| {
+            let level = Request {
+                seed,
+                size: Size::Medium,
+                textures: &textures,
+                classes: &Classes::Any,
+                name: "random",
+            }
+            .generate()
+            .unwrap();
+            let lifted = level
+                .map
+                .entities
+                .iter()
+                .any(|entity| entity.classname() == Some(b"func_plat".as_slice()));
+            lifted && {
+                let (with, without) = with_and_without(&level, b"func_plat");
+                assert_eq!(with, Ok(()), "seed {seed}");
+                without == Err(Trap::NoExit)
+            }
+        });
+        assert!(
+            broken.is_some(),
+            "no level's lift is on the way to its exit"
+        );
     }
 }

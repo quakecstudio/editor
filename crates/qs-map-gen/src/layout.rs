@@ -56,6 +56,8 @@ const HOOK_CHANCE: usize = 5;
 const STOREY_CHANCE: usize = 3;
 /// The most loops a level is given besides its hook.
 const MOST_LOOPS: usize = 2;
+/// The chances in [`CHANCES`] that a passage that climbs a storey has a lift.
+const LIFT_CHANCE: usize = 5;
 /// The places a hook takes after its atrium, three, and one more for the exit after it.
 const HOOK_PLACES: usize = 4;
 /// The chances in [`CHANCES`] that a passage is arched, and that it has a door.
@@ -263,6 +265,17 @@ pub(crate) struct Link {
     pub(crate) side: Side,
     /// What stands in it.
     pub(crate) doorway: Doorway,
+    /// How it climbs between its floors.
+    pub(crate) climb: Climb,
+}
+
+/// How a passage climbs from one floor to another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Climb {
+    /// By stairs.
+    Stairs,
+    /// By a lift (`func_plat`), for a climb of a storey or more.
+    Lift,
 }
 
 /// A level as planned.
@@ -488,6 +501,7 @@ impl Plan {
                 to: RoomId(place.saturating_add(1)),
                 side,
                 doorway: Self::doorway(rng),
+                climb: Climb::Stairs,
             });
         }
         for &(atrium, upper) in &walk.hooks {
@@ -499,6 +513,7 @@ impl Plan {
                 to: RoomId(atrium),
                 side: room.turned.opposite(),
                 doorway: Doorway::Arch,
+                climb: Climb::Stairs,
             });
             plan.hooks.push((RoomId(atrium), RoomId(upper)));
         }
@@ -625,6 +640,7 @@ impl Plan {
             to: id,
             side,
             doorway,
+            climb: Climb::Stairs,
         });
         Some(id)
     }
@@ -684,8 +700,24 @@ impl Plan {
                     to: b,
                     side,
                     doorway: Doorway::Arch,
+                    climb: Climb::Stairs,
                 });
                 added = added.saturating_add(1);
+            }
+        }
+    }
+
+    /// Gives a lift, with the chance [`LIFT_CHANCE`] in [`CHANCES`], to each passage that
+    /// climbs a storey or more between its rooms' doorways.
+    pub(crate) fn lifts(&mut self, rng: &mut Rng) {
+        let rooms = &self.rooms;
+        for link in &mut self.links {
+            let (Some(from), Some(to)) = (rooms.get(link.from.0), rooms.get(link.to.0)) else {
+                continue;
+            };
+            let climb = (from.door_floor(link.side) - to.door_floor(link.side.opposite())).abs();
+            if climb >= STOREY && rng.chance(LIFT_CHANCE, CHANCES) {
+                link.climb = Climb::Lift;
             }
         }
     }

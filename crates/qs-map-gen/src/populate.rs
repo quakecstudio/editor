@@ -121,7 +121,7 @@ impl Classes {
             .flatten()
             .copied()
             .chain(SUPPLIES.iter().map(|supply| supply.classname))
-            .chain([KEY, TORCH, DOOR])
+            .chain([KEY, TORCH, DOOR, crate::PLAT])
             .chain([
                 mission::GOLD_KEY,
                 mission::BUTTON,

@@ -6,7 +6,7 @@
 
 use qs_map::{Brush, BrushError};
 
-use crate::layout::{Doorway, Link, Plan, Side};
+use crate::layout::{Climb, Doorway, Link, Plan, Side};
 use crate::mass::{Bounds, Coat, Mass, Point};
 use crate::theme::Paints;
 
@@ -25,6 +25,8 @@ const LANDING: f64 = 32.0;
 /// Where a door stands from the end of its passage, and how thick it is.
 const DOOR_FROM_END: f64 = 8.0;
 const DOOR_THICK: f64 = 16.0;
+/// How thick a lift is.
+const LIFT_THICK: f64 = 16.0;
 /// How bright a passage's light is, and how far under its ceiling it hangs.
 const LIGHT: f64 = 200.0;
 const LIGHT_DROP: f64 = 24.0;
@@ -51,6 +53,8 @@ pub(crate) struct Passage {
     floors: [f64; 2],
     /// What stands in it.
     doorway: Doorway,
+    /// How it climbs.
+    climb: Climb,
 }
 
 /// What a passage adds to the level besides its space.
@@ -62,6 +66,8 @@ pub(crate) struct Passed {
     pub(crate) door: Option<(Brush, Doorway)>,
     /// Its light.
     pub(crate) light: Option<(Point, f64)>,
+    /// Its lift, drawn at the top, and how far it moves down.
+    pub(crate) lift: Option<(Brush, f64)>,
 }
 
 impl Passage {
@@ -83,6 +89,7 @@ impl Passage {
                 to.door_floor(link.side.opposite()),
             ],
             doorway: link.doorway,
+            climb: link.climb,
         })
     }
 
@@ -101,6 +108,7 @@ impl Passage {
             length,
             floors,
             doorway,
+            climb: Climb::Stairs,
         }
     }
 
@@ -222,8 +230,21 @@ impl Passage {
         let [low, high] = self.low_high();
         let top = high + HEIGHT;
         let across = [-HALF_WIDTH, HALF_WIDTH];
+        let lifted = self.climb == Climb::Lift && high > low;
         match self.flight() {
             None => mass.carve(&self.section(paints, [0.0, self.length], [low, top])?)?,
+            Some(_) if lifted => {
+                // A landing at the lower end, a doorway high; the shaft and the upper landing
+                // up to the higher doorway's top.
+                let (landing, rest) = if self.rises_along() {
+                    ([0.0, LANDING], [LANDING, self.length])
+                } else {
+                    let from = self.length - LANDING;
+                    ([from, self.length], [0.0, from])
+                };
+                mass.carve(&self.section(paints, landing, [low, low + HEIGHT])?)?;
+                mass.carve(&self.section(paints, rest, [low, top])?)?;
+            }
             Some(flight) => {
                 // The landing before the first step, at the lower end, and the rest.
                 let (landing, rest) = if self.rises_along() {
@@ -240,7 +261,11 @@ impl Passage {
             light: Some((self.point(self.length / 2.0, 0.0, top - LIGHT_DROP), LIGHT)),
             ..Passed::default()
         };
-        self.steps(paints, &mut passed.solids)?;
+        if lifted {
+            self.lift(paints, &mut passed)?;
+        } else {
+            self.steps(paints, &mut passed.solids)?;
+        }
         // The door stands at the higher end, where the passage is no taller than it; a secret
         // door at the first end, flush with the wall of the room it is hidden in.
         let door_at = if self.doorway == Doorway::Secret {
@@ -272,6 +297,29 @@ impl Passage {
             }
         }
         Ok(passed)
+    }
+
+    /// The lift from its lower floor to its higher: a `func_plat` over the shaft between the
+    /// landings, drawn at the top as id's plats are ("Plats are always drawn in the extended
+    /// position", `plats.qc`) and moving down by the climb, and a solid upper landing.
+    fn lift(&self, paints: &Paints, passed: &mut Passed) -> Result<(), BrushError> {
+        let [low, high] = self.low_high();
+        let across = [-HALF_WIDTH, HALF_WIDTH];
+        let (shaft, upper) = if self.rises_along() {
+            (
+                [LANDING, self.length - LANDING],
+                [self.length - LANDING, self.length],
+            )
+        } else {
+            ([LANDING, self.length - LANDING], [0.0, LANDING])
+        };
+        let deck = Coat::deck(&paints.floor, &paints.trim);
+        passed
+            .solids
+            .push(deck.boxed(self.bounds(upper, across, [low, high]))?);
+        let plat = deck.boxed(self.bounds(shaft, across, [high - LIFT_THICK, high]))?;
+        passed.lift = Some((plat, high - low));
+        Ok(())
     }
 
     /// The steps from its lower floor to its higher, each a slab from its own edge to the

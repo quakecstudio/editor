@@ -222,6 +222,8 @@ pub const DOOR_SILVER_KEY: &str = "16";
 /// How high above a liquid's surface the edge of a pool may be for a swimming player to climb
 /// out (`client.qc`, `CheckWaterJump`), measured by the water-escape test of `qs-tests`.
 pub const CLIMB_OUT: f64 = 28.0;
+/// The lift (`plats.qc`).
+pub const PLAT: &str = "func_plat";
 /// The door (`doors.qc`).
 pub const DOOR: &str = "func_door";
 /// The torch on a wall (`misc.qc`).
@@ -491,6 +493,9 @@ impl Assembly<'_> {
             if let Some(light) = passed.light {
                 self.light(light)?;
             }
+            if let Some((plat, height)) = passed.lift {
+                self.place_brush(PLAT, plat, &[("height", &format!("{height}"))])?;
+            }
             let Some((door, doorway)) = passed.door else {
                 continue;
             };
@@ -593,6 +598,9 @@ impl Request<'_> {
             },
         };
         let (mut plan, report) = self.best(has, &mut rng)?;
+        if self.classes.has(PLAT) {
+            plan.lifts(&mut rng);
+        }
         if !self.classes.has(DOOR) {
             for link in &mut plan.links {
                 if link.doorway == Doorway::Door {
