@@ -16,7 +16,8 @@
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Entity, Item, MapFile};
 use qs_map_gen::{
-    Arch, Door, KIT_WALL, PassageKit, RoomKit, RoomParts, RoomShape, Side, Textures, WallLights,
+    Arch, Door, KIT_MIN_WALL, KIT_WALL, KitError, PassageKit, RoomKit, RoomPart, RoomParts,
+    RoomShape, Side, Textures, WallLights,
 };
 use qs_sim::collision::HullSet;
 
@@ -62,6 +63,7 @@ fn kit(shape: RoomShape, middle: [f64; 2], floor: f64, turned: Side, doors: &[Si
         doors: doors.to_vec(),
         arch: Arch::Cut,
         wall: KIT_WALL,
+        parts: Vec::new(),
     }
 }
 
@@ -123,6 +125,54 @@ fn a_room_alone_is_sealed() {
             &stands,
             shape.name(),
         );
+    }
+}
+
+// No spec statement: L-74, each shape dressed with every part, with no doorway and its wall
+// thick enough for bays, is sealed, its standing place and spots are open, and each is
+// walked to; bays asked of a thin wall are refused
+#[test]
+fn a_room_dressed_with_every_part_is_sealed_and_walked() {
+    for shape in RoomShape::ALL {
+        let mut asked = kit(shape, [0.0, 0.0], 0.0, Side::North, &[]);
+        asked.parts = RoomPart::ALL.to_vec();
+        assert!(matches!(
+            asked.build(&textures()),
+            Err(qs_map_gen::GenError::Kit(KitError::BayWall { .. }))
+        ));
+        asked.wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
+        let room = asked.build(&textures()).unwrap();
+        let plain = kit(shape, [0.0, 0.0], 0.0, Side::North, &[])
+            .build(&textures())
+            .unwrap();
+        let fits = RoomPart::ALL.iter().any(|part| part.fits(shape));
+        assert_eq!(
+            room.brushes.len() > plain.brushes.len(),
+            fits,
+            "{}",
+            shape.name()
+        );
+        let mut stands = room.spots.clone();
+        stands.push(room.stand);
+        let reached = walk(
+            &map(room.brushes, room.stand),
+            room.stand,
+            &stands,
+            shape.name(),
+        );
+        for stand in &stands {
+            let [x, y, z] = stand.map(|at| at as f32);
+            let near = reached.iter().any(|at| {
+                (at[0] - x).abs() <= NEAR && (at[1] - y).abs() <= NEAR && (at[2] - z).abs() <= NEAR
+            });
+            // An atrium's balcony is not climbed to from its floor.
+            let balcony = shape == RoomShape::Atrium && z > room.stand[2] as f32 + 64.0;
+            assert!(
+                near || balcony,
+                "{}: {stand:?} is not reached",
+                shape.name()
+            );
+        }
     }
 }
 

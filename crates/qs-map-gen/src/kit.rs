@@ -12,6 +12,7 @@ use crate::mass::{Bounds, Mass};
 use crate::mission::{KeyColour, Role};
 use crate::passage::Passage;
 use crate::rng::Rng;
+use crate::rooms::RoomPart;
 use crate::rooms::{Part, Room};
 use crate::theme::{Paints, WorldType};
 use crate::{GenError, RoomShape};
@@ -204,6 +205,9 @@ pub struct RoomKit {
     pub arch: Arch,
     /// How thick the rock around its space is.
     pub wall: f64,
+    /// The parts it is dressed with on top of its shape; a part its shape does not take is
+    /// passed over.
+    pub parts: Vec<RoomPart>,
 }
 
 /// A doorway of a room built: where a passage to it starts.
@@ -263,6 +267,11 @@ pub enum KitError {
         /// The least length that holds them.
         least_length: f64,
     },
+    /// Bays asked of a room whose wall is too thin to hold them.
+    BayWall {
+        /// The least wall that holds them.
+        least_wall: f64,
+    },
 }
 
 impl core::fmt::Display for KitError {
@@ -304,6 +313,9 @@ impl core::fmt::Display for KitError {
                 f,
                 "a passage is at most {KIT_MAX_LENGTH} long and climbs at most {KIT_MAX_CLIMB}"
             ),
+            Self::BayWall { least_wall } => {
+                write!(f, "bays need a wall at least {least_wall} thick")
+            }
             Self::TooSteep { least_length } => write!(
                 f,
                 "the passage is too short for its stairs: it needs a length of {least_length}"
@@ -345,6 +357,10 @@ impl RoomKit {
         }
         if !(KIT_MIN_WALL..=KIT_MAX_WALL).contains(&self.wall) {
             return Err(KitError::Wall);
+        }
+        let least_wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
+        if self.parts.contains(&RoomPart::Bays) && self.wall < least_wall {
+            return Err(KitError::BayWall { least_wall });
         }
         let twice = self.doors.iter().enumerate().any(|(place, side)| {
             self.doors
@@ -393,7 +409,7 @@ impl RoomKit {
             depth: 0,
             role: Role::Way,
         };
-        let room = Room::new(&plan, Part::Way);
+        let room = Room::new(&plan, Part::Way).dressed(&self.parts, &self.doors);
         let [mx, my] = self.middle;
         let [hx, hy] = self.half;
         let [below, above] = room.beyond();

@@ -42,6 +42,7 @@ use mission::{Mission, Role, Signal};
 use passage::Passage;
 use populate::{Depth, Placed};
 use rng::Rng;
+pub use rooms::RoomPart;
 use rooms::{Part, Room};
 use score::Score;
 use theme::{Paints, WorldType};
@@ -488,7 +489,11 @@ impl Assembly<'_> {
         let mut start = None;
         for (place, room_plan) in plan.rooms.iter().enumerate() {
             let part = if place == exit { Part::Exit } else { Part::Way };
-            let room = Room::new(room_plan, part);
+            let doors = plan.doors_of(place);
+            let mut dress = self.paints.world.parts().to_vec();
+            rng.shuffle(&mut dress);
+            dress.truncate(rng.below(dress.len()).saturating_add(1));
+            let room = Room::new(room_plan, part).dressed(&dress, &doors);
             let mut built = room.build(&mut self.mass, &self.paints)?;
             self.solids.extend(built.solids);
             for light in built.lights {

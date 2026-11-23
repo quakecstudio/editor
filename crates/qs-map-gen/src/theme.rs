@@ -10,6 +10,7 @@ use qs_map::{Surface, TexDef};
 
 use crate::GenError;
 use crate::rng::Rng;
+use crate::rooms::RoomPart;
 
 /// The `worldtype` of a level, which picks the look of its keys (id's `world.qc`:
 /// "0: medieval 1: metal 2: base").
@@ -237,6 +238,28 @@ impl Names {
                     && !TOOL_NAMES.contains(&name.as_str())
             })
             .collect()
+    }
+}
+
+impl WorldType {
+    /// The parts its rooms are dressed with: a base's walls are trimmed and its halls
+    /// columned; a castle's and a runic temple's rooms grow bays with braziers in them.
+    pub(crate) const fn parts(self) -> &'static [RoomPart] {
+        match self {
+            Self::Base => &[RoomPart::Cornice, RoomPart::Skirting, RoomPart::Columns],
+            Self::Medieval => &[
+                RoomPart::Bays,
+                RoomPart::Braziers,
+                RoomPart::Skirting,
+                RoomPart::Columns,
+            ],
+            Self::Metal => &[
+                RoomPart::Bays,
+                RoomPart::Braziers,
+                RoomPart::Cornice,
+                RoomPart::Columns,
+            ],
+        }
     }
 }
 

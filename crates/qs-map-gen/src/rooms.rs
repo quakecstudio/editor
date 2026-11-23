@@ -9,6 +9,9 @@
 
 use qs_map::{Brush, BrushError};
 
+mod parts;
+pub use parts::RoomPart;
+
 use crate::RoomShape;
 use crate::layout::{RAISE, RoomPlan, STOREY, Side};
 use crate::mass::{Bounds, Coat, Mass, Point};
@@ -125,6 +128,10 @@ pub(crate) enum Part {
 pub(crate) struct Room<'a> {
     plan: &'a RoomPlan,
     part: Part,
+    /// The parts it is dressed with on top of its shape.
+    dress: &'a [RoomPart],
+    /// The sides its doorways are on, which no part blocks.
+    doors: &'a [Side],
 }
 
 /// What a room adds to the level besides the space it takes out.
@@ -171,7 +178,21 @@ fn eight_sided([x, y]: [f64; 2], [hx, hy]: [f64; 2], cut: f64) -> [[f64; 2]; 8] 
 impl<'a> Room<'a> {
     /// The room of `plan`.
     pub(crate) const fn new(plan: &'a RoomPlan, part: Part) -> Self {
-        Self { plan, part }
+        Self {
+            plan,
+            part,
+            dress: &[],
+            doors: &[],
+        }
+    }
+
+    /// The room dressed with `dress`, its doorways on `doors`.
+    pub(crate) const fn dressed(self, dress: &'a [RoomPart], doors: &'a [Side]) -> Self {
+        Self {
+            dress,
+            doors,
+            ..self
+        }
     }
 
     /// How far below its floor and above its ceiling the room's space reaches: a pit, a
@@ -290,6 +311,13 @@ impl<'a> Room<'a> {
     ///
     /// The [`BrushError`] of a brush that could not be made.
     pub(crate) fn build(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let mut built = self.shape(mass, paints)?;
+        self.dress(mass, paints, &mut built)?;
+        Ok(built)
+    }
+
+    /// Takes the room's shape out of `mass` and builds what stands in it.
+    fn shape(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
         match self.plan.shape {
             RoomShape::Hall => self.hall(mass, paints),
             RoomShape::Chamber => self.chamber(mass, paints),

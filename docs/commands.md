@@ -4439,6 +4439,36 @@ Parameters:
         }
       ]
     },
+    "RoomPartKind": {
+      "description": "A part to dress a room with on top of its shape.",
+      "oneOf": [
+        {
+          "const": "bays",
+          "description": "A bay 80 deep out of each of up to two walls with no doorway; needs a wall of at least\n112. A hall, pit, court, vault or atrium.",
+          "type": "string"
+        },
+        {
+          "const": "braziers",
+          "description": "A brazier with its flame in each bay. Where bays are.",
+          "type": "string"
+        },
+        {
+          "const": "cornice",
+          "description": "A cornice under the ceiling along every wall. A hall, pit, split or atrium.",
+          "type": "string"
+        },
+        {
+          "const": "skirting",
+          "description": "A skirting along the floor of every wall with no doorway. Any shape but a chamber or a\ncross.",
+          "type": "string"
+        },
+        {
+          "const": "columns",
+          "description": "A column out from each corner. A court, vault or split.",
+          "type": "string"
+        }
+      ]
+    },
     "RoomSide": {
       "description": "A side of a room.",
       "oneOf": [
@@ -4530,6 +4560,14 @@ Parameters:
       },
       "maxItems": 2,
       "minItems": 2,
+      "type": "array"
+    },
+    "parts": {
+      "default": [],
+      "description": "The parts it is dressed with on top of its shape; none when not given. A part the\nshape does not take is passed over.",
+      "items": {
+        "$ref": "#/$defs/RoomPartKind"
+      },
       "type": "array"
     },
     "shape": {
