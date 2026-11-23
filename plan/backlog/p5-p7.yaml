@@ -3212,3 +3212,33 @@ groups:
     - 'A recorded run on the reference Mac: the game played in the Game tab, popped out, made full screen, back to a window, closed back into the tab, still running through each move'
     verify:
     - 'cargo nextest run -p qs-layout -p quakec-studio; the recorded run in the PR'
+  - key: L-74
+    title: Generate levels on several floors with loops, puzzles and no trap the player cannot leave
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - PRIN-6
+    - MAP-3
+    - MAP-16
+    depends:
+    - L-48
+    - L-49
+    summary: |
+      Justin, 2026-11-23: "how do we have our random map generator generate id-quality maps with multiple levels, unique architecture, clever puzzles and design?", with floors stacked in one map, the seeded generator alone and no model, and "we also need to account for traps where the player cannot escape, such as falling in a pit of lava/water and can't jump or climb out. we should ensure there are exits even if hidden". L-48 follows OBLIGE: one floor of one-cell rooms on a path with one key. OBLIGE's author wrote that "Quake is harder to generate levels for, since the original maps make a lot of use of true 3D geometry, but Oblige's systems are very 2D orientated (in all versions) and it can't really do the game justice" (Doomworld topic 114383, 2020), and its history records whole-room prefabs as "a dead end, being too inflexible and producing maps that were very repetitive". The model followed: Dormans' mission and space grammars (PCG 2010; IEEE TCIAIG 2011) and Unexplored's cyclic generation, a loop from the start to the exit with locks moved forward and keys back so every mission can be solved; OBLIGE's edge, seed and point parts and its grow, sprout and decorate rules for the architecture; Romero's rules for id's levels (over and under, loops back to the start, what is seen can be reached, secrets, landmarks); and the no-softlock property AG(EF(goal)) of Mawhorter and Smith (FDG 2021), with hazards as sinks as in Cooper and Bazzaz (FDG 2025). The player's moves are id's (qcc/v101qc client.qc): the jump adds 270 to velocity_z on the ground, CheckWaterJump climbs out at waterlevel 2 when the wall is solid at the waist and open at the eye, lava does 10*waterlevel every 0.2 s, a fall does at most 5; a monster's death fires its targets (combat.qc, Killed, monster_death_use).
+    deliverable:
+    - 'crates/qs-map-gen/src/mission.rs: a cyclic mission graph from the seed, with id''s locks: the silver and the gold key, a func_button opening a func_door, a trigger_counter fed by monster deaths, a func_door_secret with its trigger_secret, a drop as a one-way edge, a trigger_teleport shortcut, an ambush; each lock the game has no class for becomes an open link'
+    - 'crates/qs-map-gen/src/layout.rs: a grid of cells on several floors inside the coordinate reach, rooms of several cells and two storeys, links by stairs, func_plat lifts, drops and bridges, and openings that show a space before it is reached, each leading to a link that reaches it'
+    - 'crates/qs-map-gen/src/rooms/: rooms built from edge, seed, point and room parts by grow, sprout and decorate rules, with the shapes of L-48 as presets, parts and textures by theme, and a brush budget for each room; `RoomKit` and `map.build_room` take the parts'
+    - 'crates/qs-map-gen/src/score.rs: the no-trap check, from every state the start reaches (where the player is and the locks open and keys held) the exit can still be reached, over id''s moves (walking and STEPSIZE, the jump, swimming and CheckWaterJump, falls one way, doors, plats, buttons, teleports, secret doors), with lava and slime as sinks unless left in time; and a score over several candidates for each seed'
+    - 'docs/agent-reference/triggers.md and maps.md: buttons, secret doors, plats, teleports, the gold key and ambushes, and the parts, quoted from qcc/v101qc; docs/spec/engine/physics.md: the jump, the water jump, the damage of lava and slime and the default gravity, quoted from id''s source, where PHYS does not state them yet'
+    acceptance:
+    - 'For 50 seeds and each size, painted from id''s texture names and from LibreQuake''s, the map generated compiles with no leak, `map.issues` finds no issue, every entity is inside the coordinate reach, and the no-trap check passes: checked by a test that runs 4 seeds of each on every run and all 50 with QS_RANDOM_LEVEL_SEEDS, whose run is recorded in the PR'
+    - 'Every medium and large level has at least two floors, a loop, two kinds of lock, a space seen before it is reached and a secret, by its mission report, checked by a test'
+    - 'The no-trap check fails, by a test of each, on a level with a key taken away, a pit with its way out taken away, a pool whose rim is above what CheckWaterJump climbs, and lava with no rim beside a route'
+    - 'One seed gives one map, byte for byte, and a game without a lock''s class gets an open link, checked by tests'
+    - 'A large level of each theme generated and played to its exit, with screenshots, recorded in the PR'
+    verify:
+    - 'cargo nextest run -p qs-map-gen -p qs-map-edit -p qs-tests; the recorded runs in the PR'
