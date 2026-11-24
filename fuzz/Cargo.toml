@@ -35,7 +35,7 @@ qs-settings = { path = "../crates/qs-settings" }
 qs-wad = { path = "../crates/qs-wad" }
 qs-sound = { path = "../crates/qs-sound" }
 qs-wav = { path = "../crates/qs-wav" }
-serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
+serde_json = { version = "=1.0.154", default-features = false, features = ["std"] }
 
 [[bin]]
 name = "parser"
