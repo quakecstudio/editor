@@ -149,9 +149,9 @@ pub(crate) struct Built {
 
 /// How bright a room's main light and its lesser lights are (`light`'s default is 300,
 /// `DEFAULTLIGHTLEVEL`).
-const MAIN_LIGHT: f64 = 450.0;
-const LESSER_LIGHT: f64 = 300.0;
-const GLOW_LIGHT: f64 = 200.0;
+const MAIN_LIGHT: f64 = 300.0;
+const LESSER_LIGHT: f64 = 200.0;
+const GLOW_LIGHT: f64 = 150.0;
 /// How far under the ceiling the main light hangs, how far above the floor the lesser ones,
 /// and how far from the walls those are.
 const LIGHT_DROP: f64 = 40.0;
@@ -345,7 +345,7 @@ impl<'a> Room<'a> {
         [foot, head]: [f64; 2],
         built: &mut Built,
     ) -> Result<(), BrushError> {
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let [hx, hy] = self.plan.half;
         for side in Side::ALL {
             let [fx, fy] = side.facing();
@@ -376,7 +376,7 @@ impl<'a> Room<'a> {
 
     /// Two beams under a ceiling at `top`, across the side the room is turned to.
     fn beams(&self, paints: &Paints, top: f64, built: &mut Built) -> Result<(), BrushError> {
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let (reach, across) = self.turned();
         for along in [-reach / 2.0, reach / 2.0] {
             built.solids.push(trim.boxed(self.turned_bounds(
@@ -401,7 +401,7 @@ impl<'a> Room<'a> {
             ))?;
         mass.carve(&coffer)?;
         let mut built = Built::default();
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let (posts, _) = self.around(PILLAR_INSET);
         for [x, y] in posts {
             let [mx, my] = self.middle();
@@ -460,7 +460,7 @@ impl<'a> Room<'a> {
         match self.part {
             Part::Exit => {}
             Part::Way => {
-                let step = Coat::deck(&paints.floor, &paints.trim);
+                let step = Coat::all(&paints.floor);
                 let mut foot = floor;
                 for (half, cut) in DAIS_HALVES.into_iter().zip(DAIS_CUTS) {
                     built.solids.push(step.prism(
@@ -507,7 +507,7 @@ impl<'a> Room<'a> {
                 [floor - PIT_DEPTH, floor - PIT_DEPTH + LIQUID_DEPTH],
             ))?);
         }
-        let deck = Coat::deck(&paints.floor, &paints.trim);
+        let deck = Coat::all(&paints.floor);
         let z = [floor - BRIDGE_THICK, floor];
         let across = [-BRIDGE_HALF, BRIDGE_HALF];
         built
@@ -553,7 +553,7 @@ impl<'a> Room<'a> {
         paints: &Paints,
         built: &mut Built,
     ) -> Result<(), BrushError> {
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let z = [floor, floor + RAIL_HEIGHT];
         let b = BRIDGE_HALF;
         let t = RAIL_THICK;
@@ -586,7 +586,7 @@ impl<'a> Room<'a> {
         let top = floor + self.plan.height;
         let (reach, across) = self.turned();
         mass.carve(&self.space(paints)?)?;
-        let step = Coat::deck(&paints.floor, &paints.trim);
+        let step = Coat::all(&paints.floor);
         let mut built = Built::default();
         built.solids.push(step.boxed(self.turned_bounds(
             [SPLIT_EDGE, reach],
@@ -639,7 +639,7 @@ impl<'a> Room<'a> {
         let sky = paints.sky.as_ref().unwrap_or(&paints.ceiling);
         let space = Coat::space(&paints.floor, sky, &paints.wall);
         mass.carve(&space.boxed(self.centred(self.plan.half, [floor, top]))?)?;
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let mut built = Built::default();
         let foot_top = floor + OBELISK_FOOT_HEIGHT;
         built
@@ -733,7 +733,7 @@ impl<'a> Room<'a> {
         let (reach, across) = self.turned();
         mass.carve(&self.space(paints)?)?;
         let mut built = Built::default();
-        let deck = Coat::deck(&paints.floor, &paints.trim);
+        let deck = Coat::all(&paints.floor);
         built.solids.push(deck.boxed(self.turned_bounds(
             [reach - BALCONY_DEPTH, reach],
             [-across, across],

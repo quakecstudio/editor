@@ -28,7 +28,7 @@ const DOOR_THICK: f64 = 16.0;
 /// How thick a lift is.
 const LIFT_THICK: f64 = 16.0;
 /// How bright a passage's light is, and how far under its ceiling it hangs.
-const LIGHT: f64 = 200.0;
+const LIGHT: f64 = 120.0;
 const LIGHT_DROP: f64 = 24.0;
 
 /// A flight of steps in a passage.
@@ -190,7 +190,7 @@ impl Passage {
         along: [f64; 2],
         [floor, top]: [f64; 2],
     ) -> Result<Brush, BrushError> {
-        let space = Coat::space(&paints.floor, &paints.ceiling, &paints.trim);
+        let space = Coat::space(&paints.floor, &paints.ceiling, &paints.wall);
         match self.doorway {
             Doorway::Arch => {
                 let mut corners = Vec::new();
@@ -313,7 +313,7 @@ impl Passage {
         } else {
             ([LANDING, self.length - LANDING], [0.0, LANDING])
         };
-        let deck = Coat::deck(&paints.floor, &paints.trim);
+        let deck = Coat::all(&paints.floor);
         passed
             .solids
             .push(deck.boxed(self.bounds(upper, across, [low, high]))?);
@@ -329,7 +329,7 @@ impl Passage {
             return Ok(());
         };
         let [low, high] = self.low_high();
-        let step = Coat::deck(&paints.floor, &paints.trim);
+        let step = Coat::all(&paints.floor);
         let mut edge = flight.edge;
         let mut foot = low;
         while foot < high {

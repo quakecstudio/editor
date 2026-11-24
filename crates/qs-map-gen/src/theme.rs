@@ -179,8 +179,11 @@ pub(crate) struct Paints {
     pub(crate) floor: Surface,
     /// The ceilings.
     pub(crate) ceiling: Surface,
-    /// Pillars, steps, frames and platforms' sides.
+    /// Bands and edges: cornices, skirtings, coffers, a dome's rings, plinths.
     pub(crate) trim: Surface,
+    /// What holds a room up and stands in it: pillars, pilasters, beams, columns, rails.
+    /// A second wall of the theme, plainer than its trim, which id's levels use sparingly.
+    pub(crate) support: Surface,
     /// Doors.
     pub(crate) door: Surface,
     /// What a pit holds; none when the game has no liquid.
@@ -284,6 +287,7 @@ impl Paints {
         Self {
             name: PLAIN_THEME,
             world: WorldType::Medieval,
+            support: wall.clone(),
             wall,
             floor,
             ceiling,
@@ -318,9 +322,17 @@ impl Paints {
             };
             let trim = names.one_of(theme.trim, rng).unwrap_or(wall);
             let door = names.one_of(theme.door, rng).unwrap_or(trim);
+            let others: Vec<&'static str> = theme
+                .wall
+                .iter()
+                .copied()
+                .filter(|name| *name != wall)
+                .collect();
+            let support = names.one_of(&others, rng).unwrap_or(wall);
             return Ok(Self {
                 name: theme.name,
                 world: theme.world,
+                support: surface(support),
                 wall: surface(wall),
                 floor: surface(floor),
                 ceiling: surface(ceiling),
@@ -341,6 +353,7 @@ impl Paints {
             name: PLAIN_THEME,
             world: WorldType::Medieval,
             door: trim.clone(),
+            support: wall.clone(),
             wall,
             floor,
             ceiling,

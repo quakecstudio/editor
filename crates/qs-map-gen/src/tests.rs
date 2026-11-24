@@ -422,3 +422,38 @@ fn bays_need_a_wall_only_where_they_fit() {
         Err(GenError::Kit(KitError::BayWall { .. }))
     ));
 }
+
+// No spec statement: L-74, every monster faces a way set by the level, not the default east;
+// the world names a music track of id's, 2 to 11, which the server sends as the CD track; and
+// no light is brighter than the brightest a room has
+#[test]
+fn monsters_face_in_and_the_level_has_music() {
+    for seed in 0..8 {
+        let level = level(seed, Size::Large);
+        let mut faced = Vec::new();
+        for entity in &level.map.entities {
+            let classname = entity.classname().unwrap();
+            if classname.starts_with(b"monster_") {
+                let angle = entity.value(b"angle").unwrap();
+                faced.push(angle.to_vec());
+            }
+            if classname == b"worldspawn" {
+                let track: usize = std::str::from_utf8(entity.value(b"sounds").unwrap())
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!((2..=11).contains(&track), "seed {seed}: track {track}");
+            }
+            if classname == b"light" {
+                let light: f64 = std::str::from_utf8(entity.value(b"light").unwrap())
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!(light <= 300.0, "seed {seed}: light {light}");
+            }
+        }
+        faced.sort();
+        faced.dedup();
+        assert!(faced.len() > 1, "seed {seed}: every monster faces one way");
+    }
+}

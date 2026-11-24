@@ -85,16 +85,6 @@ impl<'a> Coat<'a> {
         }
     }
 
-    /// The coat of something walked on: `floor` on top, `trim` on the rest.
-    pub(crate) const fn deck(floor: &'a Surface, trim: &'a Surface) -> Self {
-        Self {
-            top: floor,
-            bottom: trim,
-            sides: trim,
-            slopes: trim,
-        }
-    }
-
     /// The coat of a space in the rock, whose faces paint what is left around it: its bottom
     /// is the floor, its top the ceiling.
     pub(crate) const fn space(floor: &'a Surface, ceiling: &'a Surface, wall: &'a Surface) -> Self {

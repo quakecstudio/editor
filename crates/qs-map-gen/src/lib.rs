@@ -269,6 +269,11 @@ enum Wake {
 }
 /// The `spawnflags` of a monster in ambush.
 const AMBUSH: &str = "1";
+/// The first of id's music tracks on its CD, and how many there are.
+const FIRST_TRACK: usize = 2;
+const TRACKS: usize = 10;
+/// How bright a room is lit, as a share of its lights' brightness: rooms differ.
+const MOODS: &[f64] = &[0.6, 0.8, 1.0];
 /// Half the width of a teleporter's pad, and its height.
 const PAD_HALF: f64 = 32.0;
 const PAD_HEIGHT: f64 = 8.0;
@@ -390,10 +395,21 @@ impl Assembly<'_> {
 
     /// An arena's monsters, each firing at its death (`monster_death_use`) a counter at
     /// `stand` that opens the door of `signal` once all of them have (`trigger_counter`).
-    fn arena(&mut self, signal: Signal, stand: Point, monsters: &[Placed]) -> Result<(), GenError> {
+    fn arena(
+        &mut self,
+        signal: Signal,
+        stand: Point,
+        monsters: &[Placed],
+        toward: [f64; 2],
+    ) -> Result<(), GenError> {
         let counter = format!("{}_count", signal.name());
         for monster in monsters {
-            self.place(monster.classname, monster.origin, &[("target", &counter)])?;
+            let yaw = Self::yaw(monster.origin, toward);
+            self.place(
+                monster.classname,
+                monster.origin,
+                &[("target", &counter), ("angle", &yaw)],
+            )?;
         }
         let count = monsters.len().to_string();
         self.place(
@@ -408,14 +424,28 @@ impl Assembly<'_> {
         Ok(())
     }
 
-    /// Each of `monsters`, waking as `wake` says.
-    fn monsters(&mut self, monsters: &[Placed], wake: Wake) -> Result<(), MapError> {
-        let pairs: &[(&str, &str)] = match wake {
-            Wake::OnAlarm => &[],
-            Wake::OnSight => &[("spawnflags", AMBUSH)],
-        };
+    /// The `angle` of something at `from` that faces `toward`, in whole degrees.
+    fn yaw([x, y, _]: Point, [tx, ty]: [f64; 2]) -> String {
+        format!("{:.0}", (ty - y).atan2(tx - x).to_degrees())
+    }
+
+    /// Each of `monsters`, facing `toward`, the doorway the player comes in by, and waking as
+    /// `wake` says: a monster's `angle` is the way it looks for the player (`ai.qc`,
+    /// `FindTarget` sees only ahead of it).
+    fn monsters(
+        &mut self,
+        monsters: &[Placed],
+        wake: Wake,
+        toward: [f64; 2],
+    ) -> Result<(), MapError> {
         for monster in monsters {
-            self.place(monster.classname, monster.origin, pairs)?;
+            let yaw = Self::yaw(monster.origin, toward);
+            let mut pairs = vec![("angle", yaw.as_str())];
+            match wake {
+                Wake::OnAlarm => {}
+                Wake::OnSight => pairs.push(("spawnflags", AMBUSH)),
+            }
+            self.place(monster.classname, monster.origin, &pairs)?;
         }
         Ok(())
     }
@@ -506,9 +536,24 @@ impl Assembly<'_> {
             let room = Room::new(room_plan, part).dressed(&dress, &doors);
             let mut built = room.build(&mut self.mass, &self.paints)?;
             self.solids.extend(built.solids);
-            for light in built.lights {
-                self.light(light)?;
+            // Rooms are lit unevenly, dim beside bright, as Romero's contrast has it.
+            let mood = rng.pick(MOODS).copied().unwrap_or(1.0);
+            for (at, brightness) in built.lights {
+                self.light((at, (brightness * mood).round()))?;
             }
+            // The doorway the player comes in by: the passage that reaches the room, or for
+            // the start the first it leaves by.
+            let entry_side = plan
+                .links
+                .iter()
+                .find(|link| link.to.place() == place)
+                .map(|link| link.side.opposite())
+                .or_else(|| doors.first().copied())
+                .unwrap_or(Side::East);
+            let [fx, fy] = entry_side.facing();
+            let [mx, my] = room_plan.middle;
+            let reach = room_plan.reach(entry_side);
+            let entry = [mx + fx * reach, my + fy * reach];
             for torch in built.torches {
                 self.torch(torch)?;
             }
@@ -567,14 +612,14 @@ impl Assembly<'_> {
             level.items = level.items.saturating_add(filled.items.len());
             level.monsters = level.monsters.saturating_add(filled.monsters.len());
             match room_plan.role {
-                Role::Way => self.monsters(&filled.monsters, wake)?,
+                Role::Way => self.monsters(&filled.monsters, wake, entry)?,
                 Role::Key(colour) => {
-                    self.monsters(&filled.monsters, wake)?;
+                    self.monsters(&filled.monsters, wake, entry)?;
                     self.place(colour.classname(), stand, &[])?;
                     level.items = level.items.saturating_add(1);
                 }
                 Role::Button(signal) => {
-                    self.monsters(&filled.monsters, wake)?;
+                    self.monsters(&filled.monsters, wake, entry)?;
                     // On a wall with no doorway: the room grew no bay, so every such wall is
                     // whole. Its one doorway is its parent's; a loop may have added another.
                     let wall = Side::ALL
@@ -606,16 +651,16 @@ impl Assembly<'_> {
                             level.report.locks.remove(at);
                         }
                     } else {
-                        self.arena(signal, stand, &monsters)?;
+                        self.arena(signal, stand, &monsters, entry)?;
                     }
                 }
                 Role::Secret => {
-                    self.monsters(&filled.monsters, wake)?;
+                    self.monsters(&filled.monsters, wake, entry)?;
                     self.secret(stand)?;
                     level.items = level.items.saturating_add(1);
                 }
                 Role::Shortcut => {
-                    self.monsters(&filled.monsters, wake)?;
+                    self.monsters(&filled.monsters, wake, entry)?;
                     if let (Some(pad), Some(start)) = (pad, start) {
                         self.teleporter(pad, start)?;
                     } else {
@@ -778,11 +823,15 @@ impl Request<'_> {
         };
         let unopened = assembly.rooms(&plan, &mut level, &mut rng)?;
         assembly.passages(&plan, &unopened)?;
+        // The music: the server sends the world's `sounds` as the CD track (`svc_cdtrack`,
+        // NET spec); id's music is tracks 2 to 11, track 1 being the data.
+        let track = FIRST_TRACK.saturating_add(rng.below(TRACKS));
         let mut world = entity(
             "worldspawn",
             &[
                 ("message", &format!("Random level {}", self.seed)),
                 ("worldtype", assembly.paints.world.value()),
+                ("sounds", &track.to_string()),
             ],
         )?;
         let rock = assembly.mass.into_brushes();

@@ -30,7 +30,7 @@ const MOST_BAYS: usize = 2;
 /// A brazier: half its foot, its height, and how bright its flame.
 const BRAZIER_HALF: f64 = 12.0;
 const BRAZIER_HEIGHT: f64 = 40.0;
-const BRAZIER_LIGHT: f64 = 200.0;
+const BRAZIER_LIGHT: f64 = 150.0;
 /// A cornice's depth out of its wall and height; a skirting's.
 const CORNICE_DEPTH: f64 = 8.0;
 const CORNICE_HEIGHT: f64 = 16.0;
@@ -155,6 +155,7 @@ impl Room<'_> {
         let floor = self.plan.floor;
         let top = floor + self.plan.height;
         let trim = Coat::all(&paints.trim);
+        let support = Coat::all(&paints.support);
         let mut bays = Vec::new();
         if self.takes(RoomPart::Bays) {
             for side in self.bare_walls().into_iter().take(MOST_BAYS) {
@@ -176,7 +177,7 @@ impl Room<'_> {
                     break;
                 }
                 let out = self.plan.reach(side) + BAY_DEPTH / 2.0;
-                built.solids.push(trim.boxed(self.wall_box(
+                built.solids.push(support.boxed(self.wall_box(
                     side,
                     [out - BRAZIER_HALF, out + BRAZIER_HALF],
                     [-BRAZIER_HALF, BRAZIER_HALF],
@@ -234,7 +235,7 @@ impl Room<'_> {
                 if (px - cx).abs() <= COLUMN_CLEAR && (py - cy).abs() <= COLUMN_CLEAR {
                     continue;
                 }
-                built.solids.push(trim.boxed(self.bounds(
+                built.solids.push(support.boxed(self.bounds(
                     [x - COLUMN_HALF, x + COLUMN_HALF],
                     [y - COLUMN_HALF, y + COLUMN_HALF],
                     [floor, top],
