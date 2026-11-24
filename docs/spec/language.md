@@ -1402,6 +1402,10 @@ differential suite lists each of these as an expected divergence.
   infinity or NaN. Every other operator, and an operand that is no literal, is emitted as
   without the option. `qcc` folds nothing, so the option changes the progs but not what it
   computes (COMP-4).
+- **QC-27.21** While a statement or a declaration is past the limit (QC-27.16) no warning
+  is reported: the constructs it unwinds through read nothing more, and each would warn of
+  the token after the skipped rest at one place, against QCD-1.6. Warnings are reported again
+  from the next statement, declaration or member, which nests afresh (QC-27.16).
 
 ### Constants
 
