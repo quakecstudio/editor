@@ -909,9 +909,15 @@ impl<'a> Room<'a> {
             .lights
             .push((self.at([0.0, 0.0], top - LIGHT_DROP), MAIN_LIGHT));
         built.lamps.push(self.at([0.0, 0.0], top));
-        for (a, z) in [(-reach / 2.0, floor), (up, balcony)] {
+        built.lights.push((
+            self.at(self.turned_offset(-reach / 2.0, 0.0), floor + LIGHT_LIFT),
+            LESSER_LIGHT,
+        ));
+        // A light over each end of the balcony, where its places to stand are: one in its
+        // middle leaves a long balcony's ends dark.
+        for over in [-across / 2.0, across / 2.0] {
             built.lights.push((
-                self.at(self.turned_offset(a, 0.0), z + LIGHT_LIFT),
+                self.at(self.turned_offset(up, over), balcony + LIGHT_LIFT),
                 LESSER_LIGHT,
             ));
         }
