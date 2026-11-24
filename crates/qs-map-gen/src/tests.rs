@@ -20,10 +20,11 @@ fn id_names() -> Vec<String> {
         "ceiling4",
         "tech03_1",
         "adoor01_2",
+        "wbrick1_5",
         "city4_7",
         "ground1_6",
-        "wood1_5",
-        "wmet2_1",
+        "wizwood1_8",
+        "wizmet1_2",
         "door02_2",
         "*lava1",
         "*water1",
@@ -498,11 +499,10 @@ fn lamps_are_of_the_themes_light_texture() {
     ];
     assert!(lamps(base, b"tlight"));
     let city = &[
+        "wbrick1_5",
         "city4_7",
-        "city4_6",
-        "ground1_6",
-        "wood1_5",
-        "wmet2_1",
+        "wizwood1_8",
+        "wizmet1_2",
         "door02_2",
         "light1_4",
     ];
