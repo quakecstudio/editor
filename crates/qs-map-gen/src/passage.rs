@@ -27,6 +27,8 @@ const DOOR_FROM_END: f64 = 8.0;
 const DOOR_THICK: f64 = 16.0;
 /// How far a canyon's opening keeps from its courtyards' corners.
 const OPEN_MARGIN: f64 = 32.0;
+/// The level floor a lift passage keeps at each end, before its shaft.
+const LIFT_LANDING: f64 = 64.0;
 /// How thick a lift is.
 const LIFT_THICK: f64 = 16.0;
 /// How bright a passage's light is, and how far under its ceiling it hangs.
@@ -336,13 +338,19 @@ impl Passage {
     fn lift(&self, paints: &Paints, passed: &mut Passed) -> Result<(), BrushError> {
         let [low, high] = self.low_high();
         let across = [-self.half_width, self.half_width];
+        // Landings a player and more long: off the lift's lower end a player clears it before
+        // their box meets the rock over the doorway beyond, which a landing as long as the box
+        // is wide would not let them.
         let (shaft, upper) = if self.rises_along() {
             (
-                [LANDING, self.length - LANDING],
-                [self.length - LANDING, self.length],
+                [LIFT_LANDING, self.length - LIFT_LANDING],
+                [self.length - LIFT_LANDING, self.length],
             )
         } else {
-            ([LANDING, self.length - LANDING], [0.0, LANDING])
+            (
+                [LIFT_LANDING, self.length - LIFT_LANDING],
+                [0.0, LIFT_LANDING],
+            )
         };
         let deck = Coat::all(&paints.floor);
         passed
