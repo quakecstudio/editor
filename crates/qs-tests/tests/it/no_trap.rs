@@ -6,7 +6,8 @@
 //! and no more, so a level that passes cannot hold a trap:
 //!
 //! - walking, up a step of at most `STEPSIZE` (18, PHYS-8.3), and falling, which is one way;
-//! - riding a lift (`func_plat`) up from its bottom, and dropping into its shaft from its top;
+//! - riding a lift (`func_plat`) up from its bottom, which carries the player up at once, and
+//!   walking off its edge at its top, where it stays up under the player;
 //! - being sent by a teleporter to its destination (`teleport_touch`), one way;
 //! - swimming in any direction in a liquid, and climbing out over a rim at most
 //!   [`qs_map_gen::CLIMB_OUT`] above its surface (`CheckWaterJump`, measured by
@@ -438,8 +439,10 @@ impl<'a> Ground<'a> {
                 }
             }
         } else if let Some(lift) = self.riding(at) {
-            // On a lift at its top: across it at its height, off it as from a floor, or down
-            // into its shaft once it has gone down without the player (`plat_hit_top`).
+            // On a lift at its top: across it at its height, or off it as from a floor. It
+            // stays up while the player stands on it (`plat_center_touch`: "delay going down"),
+            // so there is no way down but off its edge; its shaft is reached from beside it,
+            // once it has gone down without the player (`plat_hit_top`).
             for [dx, dy] in flat {
                 let to = [at[0] + dx, at[1] + dy, at[2]];
                 if lift.holds(to) {
@@ -448,16 +451,15 @@ impl<'a> Ground<'a> {
                     next.push(to);
                 }
             }
-            next.push([at[0], at[1], lift.bottom + FEET]);
+        } else if let Some(lift) = self.lifts.iter().find(|lift| lift.at_bottom(at)) {
+            // On a lift at its bottom: it takes the player up at once (`plat_center_touch`),
+            // so the player is taken to be carried up, and not to walk off it while it rises.
+            next.push([at[0], at[1], lift.top + FEET]);
         } else {
             for step in flat {
                 if let Some(to) = self.paced(held, at, step, CLIMB) {
                     next.push(to);
                 }
-            }
-            // On a lift at its bottom: it takes the player up (`plat_center_touch`).
-            if let Some(lift) = self.lifts.iter().find(|lift| lift.at_bottom(at)) {
-                next.push([at[0], at[1], lift.top + FEET]);
             }
         }
         next

@@ -234,16 +234,11 @@ impl Passage {
         match self.flight() {
             None => mass.carve(&self.section(paints, [0.0, self.length], [low, top])?)?,
             Some(_) if lifted => {
-                // A landing at the lower end, a doorway high; the shaft and the upper landing
-                // up to the higher doorway's top.
-                let (landing, rest) = if self.rises_along() {
-                    ([0.0, LANDING], [LANDING, self.length])
-                } else {
-                    let from = self.length - LANDING;
-                    ([from, self.length], [0.0, from])
-                };
-                mass.carve(&self.section(paints, landing, [low, low + HEIGHT])?)?;
-                mass.carve(&self.section(paints, rest, [low, top])?)?;
+                // The whole passage up to the higher doorway's top, the lower landing too: a
+                // lift stays up under a player at its top (`plat_center_touch`), so the way
+                // down is off its lower end, a drop to the lower landing, which a landing a
+                // doorway high would close with rock at the lift's own height.
+                mass.carve(&self.section(paints, [0.0, self.length], [low, top])?)?;
             }
             Some(flight) => {
                 // The landing before the first step, at the lower end, and the rest.
