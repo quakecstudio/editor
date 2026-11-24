@@ -28,7 +28,6 @@ use qs_editor_view::{EditorView, Position, Selection, ViewStyle};
 use qs_workbench::{Candidate, OpenFile};
 
 use crate::code_style::CodeStyler;
-use crate::shell::name_field;
 use crate::strings::{Text, match_count};
 use crate::theme::{SECTION_GAP, Theme, Token};
 
@@ -589,7 +588,7 @@ impl Editor {
             | Popup::InlineFailed(_) => below_caret,
         };
         let mut close = false;
-        Area::new(Id::new((self.view.id(), Text::Editor)))
+        Area::new(Id::unique((self.view.id(), Text::Editor)))
             .order(Order::Foreground)
             .fixed_pos(at)
             .pivot(Align2::LEFT_TOP)
@@ -643,7 +642,7 @@ impl Editor {
                         Popup::InlinePrompt(mut instruction) => {
                             ui.label(Text::InlineEditPrompt.get());
                             let field = ui.add(TextEdit::singleline(&mut instruction));
-                            name_field(ui, &field, Text::InlineEditPrompt);
+                            let field = field.accessible_name(Text::InlineEditPrompt.get());
                             field.request_focus();
                             let enter = ui.input(|i| i.key_pressed(Key::Enter));
                             if enter && !instruction.trim().is_empty() {
@@ -679,7 +678,7 @@ impl Editor {
                         Popup::Rename { offset, mut name } => {
                             ui.label(Text::RenameTo.get());
                             let field = ui.add(TextEdit::singleline(&mut name).code_editor());
-                            name_field(ui, &field, Text::RenameTo);
+                            let field = field.accessible_name(Text::RenameTo.get());
                             field.request_focus();
                             let enter = ui.input(|i| i.key_pressed(Key::Enter));
                             if enter && !name.is_empty() {
@@ -713,7 +712,7 @@ fn find_bar(ui: &mut Ui, theme: &Theme, find: &mut FindBar, state: &mut qs_edito
                         .hint_text(Text::Find.get())
                         .desired_width(FIND_WIDTH),
                 );
-                name_field(ui, &field, Text::Find);
+                let field = field.accessible_name(Text::Find.get());
                 if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     state.find_next(&query);
                     field.request_focus();
@@ -741,7 +740,7 @@ fn find_bar(ui: &mut Ui, theme: &Theme, find: &mut FindBar, state: &mut qs_edito
                         .hint_text(Text::Replace.get())
                         .desired_width(REPLACE_WIDTH),
                 );
-                name_field(ui, &with, Text::Replace);
+                with.accessible_name(Text::Replace.get());
                 if ui.button(Text::Replace.get()).clicked() {
                     state.replace_next(&query, &find.with);
                 }

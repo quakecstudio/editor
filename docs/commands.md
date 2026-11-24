@@ -87,7 +87,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
 | [`map.brushes`](#mapbrushes) | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. The brush tools answer the places of the brushes they make, so this is for brushes whose places are not known: a map someone else built, or after a tool that changed how many brushes the entity has. |
 | [`map.build_passage`](#mapbuild_passage) | Builds a passage between two doorways of the open map that face each other along x or along y, 112 wide and 128 high, with stairs where their floors differ, a light, and a door when one is asked for. |
-| [`map.build_room`](#mapbuild_room) | Builds one room of a shape of id's levels into the open map, sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided domed chamber, a hall around a pit crossed by bridges, a room on two levels, a courtyard, a cross of two aisles, or a vaulted room. Answers its doorways, for map.build_passage, and where things may stand. |
+| [`map.build_room`](#mapbuild_room) | Builds one room of a shape of id's levels into the open map, sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided domed chamber, a hall around a pit crossed by bridges, a room on two levels, a courtyard, a cross of two aisles, a vaulted room, or an atrium with a balcony. Answers its doorways, for map.build_passage, and where things may stand. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say whether a texture of the open map is missing. |
 | [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare_with_disk`](#mapcompare_with_disk) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
@@ -102,7 +102,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.find_leaks`](#mapfind_leaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
-| [`map.generate`](#mapgenerate) | Makes a random playable level and opens it: rooms of several shapes joined by passages, stairs and doors, from a start to an exit, with lights, monsters, weapons and a key, textured from the game's own levels. One seed gives one level. |
+| [`map.generate`](#mapgenerate) | Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave. One seed gives one level. |
 | [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
@@ -4302,7 +4302,7 @@ Parameters:
 
 ## `map.build_room`
 
-Builds one room of a shape of id's levels into the open map, sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided domed chamber, a hall around a pit crossed by bridges, a room on two levels, a courtyard, a cross of two aisles, or a vaulted room. Answers its doorways, for map.build_passage, and where things may stand.
+Builds one room of a shape of id's levels into the open map, sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided domed chamber, a hall around a pit crossed by bridges, a room on two levels, a courtyard, a cross of two aisles, a vaulted room, or an atrium with a balcony. Answers its doorways, for map.build_passage, and where things may stand.
 
 Parameters:
 
@@ -4431,6 +4431,66 @@ Parameters:
           "const": "vault",
           "description": "A long room under a pitched ceiling, its ridge toward the side it is turned to. At\nleast 192 in each half-width and 224 high.",
           "type": "string"
+        },
+        {
+          "const": "atrium",
+          "description": "Two storeys high, a balcony 128 up along the side it is turned to, whose doorway is at\nthe balcony and which a player drops from to the floor and does not climb back to. At\nleast 224 in each half-width and 320 high.",
+          "type": "string"
+        },
+        {
+          "const": "junction",
+          "description": "A small room where a corridor turns: a doorway on any side, a lamp. At least 96 in each\nhalf-width and 192 high.",
+          "type": "string"
+        },
+        {
+          "const": "lake",
+          "description": "A courtyard under the sky with a lake of water in its middle and a walk around it; needs\na sky and a water texture. At least 288 in each half-width and 256 high.",
+          "type": "string"
+        }
+      ]
+    },
+    "RoomPartKind": {
+      "description": "A part to dress a room with on top of its shape.",
+      "oneOf": [
+        {
+          "const": "bays",
+          "description": "A bay 80 deep out of each of up to two walls with no doorway; needs a wall of at least\n112. A hall, pit, court, vault or atrium.",
+          "type": "string"
+        },
+        {
+          "const": "braziers",
+          "description": "A brazier with its flame in each bay. Where bays are.",
+          "type": "string"
+        },
+        {
+          "const": "cornice",
+          "description": "A cornice under the ceiling along every wall. A hall, pit, split or atrium.",
+          "type": "string"
+        },
+        {
+          "const": "skirting",
+          "description": "A skirting along the floor of every wall with no doorway. Any shape but a chamber or a\ncross.",
+          "type": "string"
+        },
+        {
+          "const": "columns",
+          "description": "A column out from each corner. A court, vault or split.",
+          "type": "string"
+        },
+        {
+          "const": "fixtures",
+          "description": "Lamps: a panel of the light texture, the trim when not given, on the ceiling over each\nmain light and on each pilaster where its light is. Any shape.",
+          "type": "string"
+        },
+        {
+          "const": "beams",
+          "description": "Beams across the ceiling, or across a court's sky. A hall, court or atrium.",
+          "type": "string"
+        },
+        {
+          "const": "frames",
+          "description": "A frame of trim around each doorway. Any shape.",
+          "type": "string"
         }
       ]
     },
@@ -4527,6 +4587,14 @@ Parameters:
       "minItems": 2,
       "type": "array"
     },
+    "parts": {
+      "default": [],
+      "description": "The parts it is dressed with on top of its shape; none when not given. A part the\nshape does not take is passed over.",
+      "items": {
+        "$ref": "#/$defs/RoomPartKind"
+      },
+      "type": "array"
+    },
     "shape": {
       "$ref": "#/$defs/RoomKind",
       "description": "The room's shape."
@@ -4548,7 +4616,7 @@ Parameters:
     "turned": {
       "$ref": "#/$defs/RoomSide",
       "default": "east",
-      "description": "The side the room is turned to, which a `split`, a `cross` and a `vault` use; east\nwhen not given."
+      "description": "The side the room is turned to, which a `split`, a `cross`, a `vault` and an `atrium`\nuse; east when not given."
     },
     "wall": {
       "default": null,
@@ -5456,7 +5524,7 @@ Parameters:
 
 ## `map.generate`
 
-Makes a random playable level and opens it: rooms of several shapes joined by passages, stairs and doors, from a start to an exit, with lights, monsters, weapons and a key, textured from the game's own levels. One seed gives one level.
+Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave. One seed gives one level.
 
 Parameters:
 

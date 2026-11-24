@@ -34,6 +34,19 @@ Sources: id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/v
 - A jump adds 270 to the vertical speed (`PlayerJump`: `self.velocity_z = self.velocity_z +
   270`), and gravity is 800 (`sv_gravity`, PHYS-6.4). That makes the peak 270² / (2 · 800),
   about 45 units: a ledge of 40 is a safe jump.
+- A swimmer climbs out of a liquid only over an edge at most 28 units above its surface.
+  `CheckWaterJump` runs only while `self.waterlevel == 2` (waist deep, PHYS-8.4); it needs
+  solid 24 ahead at `origin + 8` and open space at `origin + 8 + self.maxs_z - 8`, then sets
+  `self.velocity_z = 225` (`client.qc`). Run in `qs-sim`, a swimmer climbs out over 28 and
+  not over 30, in water and in lava alike (`crates/qs-tests/tests/it/water_escape.rs`;
+  `qs_map_gen::CLIMB_OUT`). A pit of liquid whose rim is higher, or a dry pit deeper than a
+  step with no stairs, is a trap: give it a way out.
+- Lava does `10*self.waterlevel` every 0.2 s, up to 150 a second, and slime
+  `4*self.waterlevel` every second (`WaterMove`), so a player who falls into lava dies
+  before climbing out. Rail lava off from where the player walks: a rail higher than a step
+  stops a walking player, and only a jump goes over it.
+- A fall does at most 5 damage, when it lands faster than 650 (`PlayerPostThink`:
+  `self.jump_flag < -650`), so a drop is a safe one-way way down.
 - An `info_player_start` is required: `PutClientInServer` stops with "no
   info_player_start on level" without one (`client.qc`). Put its origin 24 units above the
   floor, where the box's bottom rests.
@@ -147,14 +160,40 @@ asked for, with its lights; `map.build_passage` joins two doorways. Each is one 
 
 ## A whole level at once
 
-Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48).
+Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48, L-74).
 
-- `map.generate` makes a random playable level in the project and opens it: rooms joined by
-  passages from a player start to an exit, with lights, monsters, weapons and, behind a
-  locked door, a key. One `seed` and `size` (`small`, `medium`, `large`) give one level.
-- It answers each room's `shape` and a place to `stand` in it. Look at a room with
-  `map.play_from_here`, the eye 22 units above that place, and `engine.screenshot`.
+- `map.generate` makes a random playable level in the project and opens it. One `seed` and
+  `size` (`small`, `medium`, `large`) give one level, the best of eight plans drawn from the
+  seed by a score of its loops, floors, teasers, secret, kinds of lock and shapes of room.
+- Its rooms are on storeys 128 apart. The path hooks back on itself: it leaves an `atrium`
+  on its floor, climbs a storey through two rooms and comes onto the atrium's balcony, which
+  the player has seen from below and drops from, one way, back to its floor.
+- Its mission is locks along the path, each opened from a room before it: the silver and
+  the gold key, a button that opens a door elsewhere, and an arena whose door opens when its
+  monsters are dead. A secret room behind a wall that opens when shot holds a megahealth; a
+  teleporter in the room before the exit takes the player back to the start; monsters just
+  past a lock lie in ambush. Rooms the same locks have opened are joined into loops, and a
+  passage that climbs a storey may have a lift.
+- Rooms differ in scale: great rooms as wide as their cell (up to 704 across), often
+  courtyards, beside ordinary rooms and `junction`s where a corridor turns; two great rooms
+  side by side open into each other through an arch. Each level takes a `form` besides its
+  hook: a `hub`, a great room early on with its keys' and buttons' rooms off it; a `lake`, a
+  courtyard with a lake of water and a walk around it; or a `canyon`, three courtyards open
+  into each other under the sky.
+- It answers each room's `shape` and a place to `stand` in it, and what the mission came to:
+  `floors`, `loops`, `locks`, `teasers`, `secrets`, `form`. Look at a room with `map.play_from_here`,
+  the eye 22 units above that place, and `engine.screenshot`.
+- Rooms are dressed with parts on top of their shapes (`map.build_room` takes them as
+  `parts`): `bays` out of walls with no doorway, needing a wall of 112, `braziers` in them,
+  a `cornice`, a `skirting`, `columns`, `beams` across a ceiling or a court's sky, `fixtures`
+  (a lamp panel of the theme's light texture over each main light and on each pilaster where
+  its light is: id's `tlight` in a base, `light1` in a city, `light3` in a runic level) and
+  `frames` of trim around the doorways. Every room has fixtures and frames; the rest are
+  chosen by the theme. A frame goes around neither a secret door, which it would show, nor a
+  lift passage's end, which is open to the passage's full height.
+- No level holds a trap: every pit's liquid comes to within 28 of its rim, and lava is
+  railed. The check of every generated level in `crates/qs-tests` (`no_trap.rs`) requires the
+  exit reachable from every place and set of keys and switches the start reaches, by
+  walking, steps of 18, falls, swimming, climbing out within 28, lifts and teleporters.
 - The level is a map like any other: edit it with the map tools, and `map.compile` and
-  `map.issues` check it. Its rooms show what a room can be other than a box: pillars, a
-  raised ceiling, cut corners, a dome of steps, a pit crossed by bridges, two floors joined by
-  stairs, an open sky, arches.
+  `map.issues` check it.

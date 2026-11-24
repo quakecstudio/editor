@@ -363,6 +363,8 @@ pub enum Text {
     Watches,
     /// The Debugger tab's breakpoints column.
     Breakpoints,
+    /// A breakpoint's checkbox, for a screen reader, before its file, line and function.
+    BreakpointAt,
     /// The hint in the box that adds a watch.
     AddWatch,
     /// Steps into the next call.
@@ -859,6 +861,8 @@ pub enum Text {
     MapShearBy,
     /// Shear the selected brushes about their middle.
     MapShearBrushes,
+    /// The Properties panel's field for how far the Shear tool shears, for a screen reader.
+    MapShearFactor,
     /// The offset of the next step of a sweep's path.
     MapSweepStep,
     /// Add the step to the sweep's path.
@@ -869,6 +873,8 @@ pub enum Text {
     MapClearPath,
     /// Move the picked face along its normal.
     MapExtrude,
+    /// The Properties panel's field for how far Extrude moves a face, for a screen reader.
+    MapExtrudeDistance,
     /// Split the picked face by a new vertex out from its middle.
     MapSplitFace,
     /// Split the edge between the picked corners by a new vertex out from it.
@@ -1139,7 +1145,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 561] = [
+    pub const ALL: [Self; 564] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1250,6 +1256,7 @@ impl Text {
         Self::CallStack,
         Self::Watches,
         Self::Breakpoints,
+        Self::BreakpointAt,
         Self::AddWatch,
         Self::StepIn,
         Self::StepOver,
@@ -1569,11 +1576,13 @@ impl Text {
         Self::MapShearAlong,
         Self::MapShearBy,
         Self::MapShearBrushes,
+        Self::MapShearFactor,
         Self::MapSweepStep,
         Self::MapAddStep,
         Self::MapSweep,
         Self::MapClearPath,
         Self::MapExtrude,
+        Self::MapExtrudeDistance,
         Self::MapSplitFace,
         Self::MapSplitEdge,
         Self::MapOut,
@@ -1828,6 +1837,7 @@ impl Text {
             Self::CallStack => "Call stack",
             Self::Watches => "Variables and watches",
             Self::Breakpoints => "Breakpoints",
+            Self::BreakpointAt => "Breakpoint at",
             Self::AddWatch => "Add a watch, for example self.owner.health",
             Self::StepIn => "Step in",
             Self::StepOver => "Step over",
@@ -2189,11 +2199,13 @@ impl Text {
             Self::MapShearAlong => "Shear along",
             Self::MapShearBy => "by",
             Self::MapShearBrushes => "Shear brushes",
+            Self::MapShearFactor => "Shear factor",
             Self::MapSweepStep => "Sweep step",
             Self::MapAddStep => "Add step",
             Self::MapSweep => "Sweep",
             Self::MapClearPath => "Clear path",
             Self::MapExtrude => "Extrude",
+            Self::MapExtrudeDistance => "Extrude distance",
             Self::MapSplitFace => "Split face",
             Self::MapSplitEdge => "Split edge",
             Self::MapOut => "Out",

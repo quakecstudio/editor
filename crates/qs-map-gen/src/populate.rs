@@ -7,7 +7,7 @@
 
 use crate::mass::Point;
 use crate::rng::Rng;
-use crate::{Classes, DOOR, KEY, TORCH};
+use crate::{Classes, DOOR, KEY, TORCH, mission};
 
 /// The monsters of the first third of a level, of its middle, and of its end.
 const EASY: &[&str] = &["monster_army", "monster_dog", "monster_knight"];
@@ -24,8 +24,23 @@ const WEAPONS: &[&str] = &[
     "weapon_supernailgun",
     "weapon_rocketlauncher",
 ];
-/// A weapon is in every room this many rooms apart.
+/// The weapons come this many rooms apart: the first is due one room from the start.
 const ROOMS_A_WEAPON: usize = 2;
+
+/// The weapons a level has handed out, in [`WEAPONS`]' order: the next is due in a room as
+/// deep as its turn, and waits for the next room with a free place when the one it is due in,
+/// such as a junction, has none.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Armoury {
+    given: usize,
+}
+
+impl Armoury {
+    /// Whether the next weapon is due in a room at `depth`.
+    fn due(self, depth: Depth) -> bool {
+        self.given.saturating_mul(ROOMS_A_WEAPON).saturating_add(1) <= depth.rooms
+    }
+}
 
 /// What lies about a level. `item_health` and the ammunition are boxes from their origin to
 /// `(32 32 32)` (`items.qc`); the armour is one around its origin.
@@ -38,7 +53,7 @@ const SUPPLIES: &[Supply] = &[
     Supply::cornered("item_rockets"),
 ];
 /// Half the width of an item whose origin is its corner.
-const CORNERED_HALF: f64 = 16.0;
+pub(crate) const CORNERED_HALF: f64 = 16.0;
 
 /// The most monsters a room holds, and how many more rooms from the start add one.
 const MOST_MONSTERS: usize = 5;
@@ -121,7 +136,16 @@ impl Classes {
             .flatten()
             .copied()
             .chain(SUPPLIES.iter().map(|supply| supply.classname))
-            .chain([KEY, TORCH, DOOR])
+            .chain([KEY, TORCH, DOOR, crate::PLAT])
+            .chain([
+                mission::GOLD_KEY,
+                mission::BUTTON,
+                mission::COUNTER,
+                mission::SECRET_DOOR,
+                mission::SECRET,
+                mission::TELEPORT,
+                mission::DESTINATION,
+            ])
     }
 
     /// Those of `wanted` the game defines.
@@ -152,9 +176,22 @@ impl Classes {
         self.of(&wanted)
     }
 
-    /// Fills a room at `depth` whose free places are `spots`: an item in each room, a weapon
-    /// in some, and monsters in every room but the first.
-    pub(crate) fn fill(&self, depth: Depth, spots: &[Point], rng: &mut Rng) -> Filled {
+    /// A monster for a room at `depth`, when the game has any: an arena's guard when its
+    /// places to stand ran out before a monster was put in one.
+    pub(crate) fn guard(&self, depth: Depth, rng: &mut Rng) -> Option<&'static str> {
+        rng.pick(&self.monsters(depth)).copied()
+    }
+
+    /// Fills a room at `depth` whose free places are `spots`: an item in each room, the next
+    /// weapon of `armoury` when it is due and the room hands out weapons, and monsters in every
+    /// room but the first.
+    pub(crate) fn fill(
+        &self,
+        depth: Depth,
+        spots: &[Point],
+        armoury: Option<&mut Armoury>,
+        rng: &mut Rng,
+    ) -> Filled {
         let mut spots = spots.to_vec();
         rng.shuffle(&mut spots);
         let mut filled = Filled::default();
@@ -170,13 +207,13 @@ impl Classes {
             });
         }
         let weapons = self.of(WEAPONS);
-        let due = depth.rooms.checked_rem(ROOMS_A_WEAPON) == Some(1);
-        let which = depth.rooms.checked_div(ROOMS_A_WEAPON).unwrap_or(0);
-        if due
-            && let Some(&classname) = weapons.get(which)
+        if let Some(armoury) = armoury
+            && armoury.due(depth)
+            && let Some(&classname) = weapons.get(armoury.given)
             && let Some(origin) = spots.pop()
         {
             filled.items.push(Placed { classname, origin });
+            armoury.given = armoury.given.saturating_add(1);
         }
         if depth.rooms == 0 {
             return filled;

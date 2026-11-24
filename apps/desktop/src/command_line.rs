@@ -19,7 +19,7 @@ use qs_commands::line::{CommandLine, Entered};
 use serde_json::Value;
 
 use crate::pick::Pick;
-use crate::shell::{Area, FocusNow, name_area, name_field};
+use crate::shell::{Area, FocusNow, name_area};
 use crate::strings::{self, Text};
 use crate::theme::{Theme, Token};
 
@@ -124,7 +124,7 @@ impl CommandLineView {
         focus: FocusNow,
     ) -> Option<(String, Value)> {
         let mut run = None;
-        egui::Panel::bottom(Id::new(Area::CommandLine))
+        egui::Panel::bottom(Id::unique(Area::CommandLine))
             .exact_size(theme.size.status_bar)
             .frame(
                 egui::Frame::NONE
@@ -148,7 +148,7 @@ impl CommandLineView {
         registry: &Registry<C>,
         focus: FocusNow,
     ) -> Option<(String, Value)> {
-        let field = Id::new(Area::CommandLineField);
+        let field = Id::unique(Area::CommandLineField);
         let mut run = None;
         if ui.memory(|memory| memory.has_focus(field)) {
             let offers = self.offers(registry);
@@ -171,7 +171,7 @@ impl CommandLineView {
                 .lock_focus(true)
                 .desired_width(ui.available_width() * FIELD_SHARE),
         );
-        name_field(ui, &response, Text::CommandLine);
+        let response = response.accessible_name(Text::CommandLine.get());
         if response.has_focus() {
             // Escape and Tab are the line's own keys: egui would drop or move the focus first.
             let own = egui::EventFilter {
@@ -299,36 +299,37 @@ impl CommandLineView {
         let takes_mark = self.takes_mark(registry);
         let muted = theme.color(Token::TextMuted);
         let mut clicked = None;
-        let area = egui::Area::new(Id::new(Area::CommandLineField).with(Text::CommandLineOffers))
-            .order(egui::Order::Foreground)
-            .pivot(egui::Align2::LEFT_BOTTOM)
-            .fixed_pos(field.rect.left_top())
-            .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    name_area(ui, accesskit::Role::ListBox, Text::CommandLineOffers);
-                    ui.set_max_width(OFFERS_WIDTH);
-                    for (index, id) in offers.iter().enumerate().skip(first).take(OFFERED) {
-                        let summary = registry.get(id).map_or_default(|info| info.summary());
-                        ui.horizontal(|ui| {
-                            let name = RichText::new(id).monospace();
-                            let marked = takes_mark && index == self.marked;
-                            if ui.selectable_label(marked, name).clicked() {
-                                clicked = Some(id.clone());
-                            }
-                            let what = RichText::new(summary).small().color(muted);
-                            ui.add(egui::Label::new(what).truncate().selectable(false));
-                        });
-                    }
-                    let more = offers.len().saturating_sub(first.saturating_add(OFFERED));
-                    if more > 0 {
-                        let text = strings::more_commands(more);
-                        ui.add(
-                            egui::Label::new(RichText::new(text).small().color(muted))
-                                .selectable(false),
-                        );
-                    }
+        let area =
+            egui::Area::new(Id::unique(Area::CommandLineField).with(Text::CommandLineOffers))
+                .order(egui::Order::Foreground)
+                .pivot(egui::Align2::LEFT_BOTTOM)
+                .fixed_pos(field.rect.left_top())
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        name_area(ui, accesskit::Role::ListBox, Text::CommandLineOffers);
+                        ui.set_max_width(OFFERS_WIDTH);
+                        for (index, id) in offers.iter().enumerate().skip(first).take(OFFERED) {
+                            let summary = registry.get(id).map_or_default(|info| info.summary());
+                            ui.horizontal(|ui| {
+                                let name = RichText::new(id).monospace();
+                                let marked = takes_mark && index == self.marked;
+                                if ui.selectable_label(marked, name).clicked() {
+                                    clicked = Some(id.clone());
+                                }
+                                let what = RichText::new(summary).small().color(muted);
+                                ui.add(egui::Label::new(what).truncate().selectable(false));
+                            });
+                        }
+                        let more = offers.len().saturating_sub(first.saturating_add(OFFERED));
+                        if more > 0 {
+                            let text = strings::more_commands(more);
+                            ui.add(
+                                egui::Label::new(RichText::new(text).small().color(muted))
+                                    .selectable(false),
+                            );
+                        }
+                    });
                 });
-            });
         self.offers_at = Some(area.response.rect);
         let id = clicked?;
         self.typed = id;

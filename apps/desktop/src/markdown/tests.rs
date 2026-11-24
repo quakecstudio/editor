@@ -15,8 +15,7 @@ use crate::theme::{Mode, Theme};
 /// state says whether they are.
 fn drawn(text: &'static str) -> Harness<'static, bool> {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let fonts = theme.clone();
-    let mut harness = Harness::builder().with_size([320.0, 600.0]).build_ui_state(
+    let mut harness = theme.harness().with_size([320.0, 600.0]).build_ui_state(
         move |ui, ready: &mut bool| {
             if *ready {
                 show(ui, &theme, Part::Message(0), text);
@@ -24,7 +23,6 @@ fn drawn(text: &'static str) -> Harness<'static, bool> {
         },
         false,
     );
-    fonts.apply(&harness.ctx);
     harness.run();
     *harness.state_mut() = true;
     harness.run();
@@ -147,8 +145,7 @@ fn blocks_in_items_and_links_in_links_are_drawn() {
 #[test]
 fn two_replies_keep_their_blocks_apart() {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let fonts = theme.clone();
-    let mut harness = Harness::builder().with_size([320.0, 600.0]).build_ui_state(
+    let mut harness = theme.harness().with_size([320.0, 600.0]).build_ui_state(
         move |ui, ready: &mut bool| {
             if *ready {
                 for (place, text) in ["one\n\n```\nfirst\n```\n", "two\n\n```\nsecond\n```\n"]
@@ -161,7 +158,6 @@ fn two_replies_keep_their_blocks_apart() {
         },
         false,
     );
-    fonts.apply(&harness.ctx);
     harness.run();
     *harness.state_mut() = true;
     harness.run();
@@ -177,9 +173,8 @@ fn two_replies_keep_their_blocks_apart() {
 #[test]
 fn a_text_out_of_sight_keeps_its_room_and_is_not_drawn() {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let fonts = theme.clone();
     // What is drawn, and how far the thread is scrolled.
-    let mut harness = Harness::builder().with_size([320.0, 200.0]).build_ui_state(
+    let mut harness = theme.harness().with_size([320.0, 200.0]).build_ui_state(
         move |ui, (text, offset): &mut (&'static str, f32)| {
             if text.is_empty() {
                 return;
@@ -195,7 +190,6 @@ fn a_text_out_of_sight_keeps_its_room_and_is_not_drawn() {
         },
         ("", 0.0),
     );
-    fonts.apply(&harness.ctx);
     harness.run();
     harness.state_mut().0 = "the first reply";
     harness.run();

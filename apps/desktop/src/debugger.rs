@@ -16,7 +16,6 @@ use qs_workbench::{
 };
 
 use crate::features::{Commands, ShellRequest};
-use crate::shell::name_field;
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -143,7 +142,7 @@ pub(crate) fn debugger_ui(
                 .code_editor()
                 .desired_width(f32::INFINITY),
         );
-        name_field(watches, &typed, Text::AddWatch);
+        let typed = typed.accessible_name(Text::AddWatch.get());
         if typed.lost_focus()
             && watches.input(|i| i.key_pressed(egui::Key::Enter))
             && !input.watch.trim().is_empty()
@@ -159,19 +158,20 @@ pub(crate) fn debugger_ui(
         }
         for breakpoint in debugger.breakpoints() {
             breakpoints.horizontal(|ui| {
+                let mut name = format!("{}:{}", breakpoint.file.to_string_lossy(), breakpoint.line);
+                if let Some(function) = &breakpoint.function {
+                    name.push(' ');
+                    name.push_str(function);
+                }
                 let mut set = true;
-                if ui.checkbox(&mut set, "").changed() {
+                let check = ui.checkbox(&mut set, "");
+                let check = check.accessible_name(format!("{} {name}", Text::BreakpointAt.get()));
+                if check.changed() {
                     action = Some(DebugAction::Breakpoint {
                         file: breakpoint.file.clone(),
                         line: breakpoint.line,
                     });
                 }
-                let name = format!(
-                    "{}:{} {}",
-                    breakpoint.file.to_string_lossy(),
-                    breakpoint.line,
-                    breakpoint.function.as_deref().unwrap_or_default()
-                );
                 if ui.link(RichText::new(name).monospace()).clicked() {
                     action = Some(DebugAction::Show {
                         file: breakpoint.file.clone(),
@@ -194,7 +194,7 @@ pub(crate) fn console(
     input: &mut DebugInput,
 ) -> Option<DebugAction> {
     let mut action = None;
-    egui::Panel::bottom(egui::Id::new(Text::ConsoleCommand.get()))
+    egui::Panel::bottom(egui::Id::unique(Text::ConsoleCommand.get()))
         .frame(egui::Frame::NONE)
         .show(ui, |ui| {
             ui.columns(2, |columns| {
@@ -214,7 +214,7 @@ pub(crate) fn console(
                             .frame(egui::Frame::NONE)
                             .desired_width(f32::INFINITY),
                     );
-                    name_field(ui, &typed, Text::ConsoleCommand);
+                    let typed = typed.accessible_name(Text::ConsoleCommand.get());
                     let entered =
                         typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if entered && !input.console.trim().is_empty() {
@@ -228,7 +228,7 @@ pub(crate) fn console(
                         .hint_text(Text::FilterConsole.get())
                         .desired_width(f32::INFINITY),
                 );
-                name_field(filter, &field, Text::FilterConsole);
+                field.accessible_name(Text::FilterConsole.get());
             });
         });
     egui::ScrollArea::vertical()

@@ -9,10 +9,13 @@
 
 use qs_map::{Brush, BrushError};
 
+mod parts;
+pub use parts::RoomPart;
+
 use crate::RoomShape;
-use crate::layout::{RAISE, RoomPlan, Side};
+use crate::layout::{RAISE, RoomPlan, STOREY, Side};
 use crate::mass::{Bounds, Coat, Mass, Point};
-use crate::theme::Paints;
+use crate::theme::{Hazard, LAMP_SIZE, Paints};
 
 /// How far from a wall something stands: room for a large monster's box, 64 wide, and to
 /// spare (`docs/agent-reference/maps.md`, Units and the player).
@@ -50,10 +53,29 @@ const DAIS_HALVES: [f64; 2] = [72.0, 48.0];
 const DAIS_CUTS: [f64; 2] = [24.0, 16.0];
 const DAIS_STEP: f64 = 16.0;
 
-/// How wide the walk around a pit is, and how deep the pit and its liquid are.
+/// How wide the walk around a pit is, and how deep the pit and its liquid are: the liquid's
+/// surface is [`PIT_DEPTH`] less [`LIQUID_DEPTH`] under the rim, which a swimmer climbs out
+/// over ([`crate::CLIMB_OUT`]).
 const PIT_RIM: f64 = 96.0;
 const PIT_DEPTH: f64 = 96.0;
-const LIQUID_DEPTH: f64 = 64.0;
+const LIQUID_DEPTH: f64 = 72.0;
+const _: () = assert!(
+    PIT_DEPTH > LIQUID_DEPTH && PIT_DEPTH - LIQUID_DEPTH <= crate::CLIMB_OUT,
+    "a pit's liquid is under its rim, near enough to climb out"
+);
+/// How wide a lake's walk is, how deep its water's bed, and how far under the walk its water
+/// comes, which a swimmer climbs out over.
+const LAKE_RIM: f64 = 96.0;
+const LAKE_DEPTH: f64 = 96.0;
+const LAKE_RIM_DROP: f64 = 24.0;
+const _: () = assert!(
+    LAKE_RIM_DROP <= crate::CLIMB_OUT,
+    "a lake's water near enough its walk to climb out"
+);
+/// A rail along the edge of a pit of lava and along its bridges: higher than a walking
+/// player climbs (`STEPSIZE`, PHYS-8.3), so no one falls in who does not jump; and how thick.
+const RAIL_HEIGHT: f64 = 32.0;
+const RAIL_THICK: f64 = 8.0;
 /// Half a bridge's width, and its thickness.
 const BRIDGE_HALF: f64 = 48.0;
 const BRIDGE_THICK: f64 = 16.0;
@@ -93,9 +115,15 @@ const PILASTER_DEPTH: f64 = 16.0;
 /// A beam under a ceiling: half its width and its depth.
 const BEAM_HALF: f64 = 16.0;
 const BEAM_DEPTH: f64 = 24.0;
+/// How far a lamp on a pilaster stands out of it.
+const LAMP_DEPTH: f64 = 4.0;
 /// How far above the floor a torch burns, and how far out of its pilaster.
 const TORCH_LIFT: f64 = 96.0;
 const TORCH_OUT: f64 = 12.0;
+
+/// How far an atrium's balcony reaches out of its wall, and how thick it is.
+const BALCONY_DEPTH: f64 = 128.0;
+const BALCONY_THICK: f64 = 16.0;
 
 /// What a room is to the level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,11 +134,33 @@ pub(crate) enum Part {
     Exit,
 }
 
+/// The rock a room is taken out of, which a bay must leave some of behind it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Block {
+    /// Its cell of the level's grid, [`crate::layout::HALF_CELL`] each way from its middle.
+    Cell,
+    /// Walls this thick around it, as the kit builds a room on its own.
+    Walls(f64),
+}
+
 /// A room being built.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Room<'a> {
     plan: &'a RoomPlan,
     part: Part,
+    /// The rock it is taken out of.
+    block: Block,
+    /// The parts it is dressed with on top of its shape.
+    dress: &'a [RoomPart],
+    /// The sides its doorways are on, which no part blocks.
+    doors: &'a [Side],
+    /// The sides of those no frame goes around: a secret door's, which a frame would show,
+    /// and a lift passage's, open to the passage's full height, whose way down a frame's
+    /// lintel at a doorway's height would close.
+    unframed: &'a [Side],
+    /// The sides open to the room beside as wide as the wall, a canyon's, where no pilaster
+    /// stands.
+    open: &'a [Side],
 }
 
 /// What a room adds to the level besides the space it takes out.
@@ -124,18 +174,28 @@ pub(crate) struct Built {
     pub(crate) lights: Vec<(Point, f64)>,
     /// Where torches burn on its walls.
     pub(crate) torches: Vec<Point>,
+    /// Where on a ceiling a main light hangs below, for a lamp's panel there.
+    pub(crate) lamps: Vec<Point>,
 }
 
 /// How bright a room's main light and its lesser lights are (`light`'s default is 300,
-/// `DEFAULTLIGHTLEVEL`).
+/// `DEFAULTLIGHTLEVEL`). A light reaches about as far as it is bright (LIGHT-4.3's falloff),
+/// so the main light, under a ceiling up to 300 above the floor, is the one that lights the
+/// floor; the lesser are kept low, pools of light and not floods.
 const MAIN_LIGHT: f64 = 450.0;
-const LESSER_LIGHT: f64 = 300.0;
-const GLOW_LIGHT: f64 = 200.0;
+const LESSER_LIGHT: f64 = 250.0;
+const GLOW_LIGHT: f64 = 150.0;
 /// How far under the ceiling the main light hangs, how far above the floor the lesser ones,
 /// and how far from the walls those are.
 const LIGHT_DROP: f64 = 40.0;
 const LIGHT_LIFT: f64 = 112.0;
 const LIGHT_INSET: f64 = 72.0;
+/// The half-width from which a room's corners need lights of their own: wider than an
+/// ordinary room's, 256.
+const WIDE_LIT: f64 = 288.0;
+/// How far in from a great room's walls its corner lights hang: past a hall's pillars, 128 in,
+/// and short of its middle.
+const CORNER_LIGHT_INSET: f64 = 200.0;
 /// How far above its liquid a pit's glow is.
 const GLOW_LIFT: f64 = 24.0;
 
@@ -157,7 +217,39 @@ fn eight_sided([x, y]: [f64; 2], [hx, hy]: [f64; 2], cut: f64) -> [[f64; 2]; 8] 
 impl<'a> Room<'a> {
     /// The room of `plan`.
     pub(crate) const fn new(plan: &'a RoomPlan, part: Part) -> Self {
-        Self { plan, part }
+        Self {
+            plan,
+            part,
+            block: Block::Cell,
+            dress: &[],
+            doors: &[],
+            unframed: &[],
+            open: &[],
+        }
+    }
+
+    /// The room taken out of `block`.
+    pub(crate) const fn in_block(self, block: Block) -> Self {
+        Self { block, ..self }
+    }
+
+    /// The room dressed with `dress`, its doorways on `doors`.
+    pub(crate) const fn dressed(self, dress: &'a [RoomPart], doors: &'a [Side]) -> Self {
+        Self {
+            dress,
+            doors,
+            ..self
+        }
+    }
+
+    /// The room with no frame around its doorways on `unframed`.
+    pub(crate) const fn unframed(self, unframed: &'a [Side]) -> Self {
+        Self { unframed, ..self }
+    }
+
+    /// The room open as wide as its wall on `open`.
+    pub(crate) const fn opened(self, open: &'a [Side]) -> Self {
+        Self { open, ..self }
     }
 
     /// How far below its floor and above its ceiling the room's space reaches: a pit, a
@@ -167,8 +259,13 @@ impl<'a> Room<'a> {
             RoomShape::Hall => [0.0, COFFER_RISE],
             RoomShape::Chamber => [0.0, DOME_RISE + DOME_RISE],
             RoomShape::Pit => [PIT_DEPTH, 0.0],
+            RoomShape::Lake => [LAKE_DEPTH, 0.0],
             RoomShape::Cross => [0.0, LANTERN_RISE],
-            RoomShape::Split | RoomShape::Court | RoomShape::Vault => [0.0, 0.0],
+            RoomShape::Split
+            | RoomShape::Court
+            | RoomShape::Vault
+            | RoomShape::Atrium
+            | RoomShape::Junction => [0.0, 0.0],
         }
     }
 
@@ -251,13 +348,23 @@ impl<'a> Room<'a> {
         let floor = self.plan.floor;
         let [hx, hy] = self.plan.half;
         match (self.plan.shape, self.part) {
-            (RoomShape::Hall | RoomShape::Pit | RoomShape::Cross | RoomShape::Vault, _)
+            (
+                RoomShape::Hall
+                | RoomShape::Pit
+                | RoomShape::Cross
+                | RoomShape::Vault
+                | RoomShape::Atrium
+                | RoomShape::Junction,
+                _,
+            )
             | (RoomShape::Chamber, Part::Exit) => self.standing([0.0, 0.0], floor),
             (RoomShape::Chamber, Part::Way) => {
                 self.standing([0.0, 0.0], floor + DAIS_STEP + DAIS_STEP)
             }
             (RoomShape::Split, _) => self.standing(self.turned_offset(-SPLIT_STAND, 0.0), floor),
             (RoomShape::Court, _) => self.standing([hx / 2.0, hy / 2.0], floor),
+            // On the walk around the water.
+            (RoomShape::Lake, _) => self.standing([0.0, hy - LAKE_RIM / 2.0], floor),
         }
     }
 
@@ -267,6 +374,44 @@ impl<'a> Room<'a> {
     ///
     /// The [`BrushError`] of a brush that could not be made.
     pub(crate) fn build(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let mut built = self.shape(mass, paints)?;
+        self.light_corners(&mut built);
+        self.dress(mass, paints, &mut built)?;
+        Ok(built)
+    }
+
+    /// Lights for a room wider and higher than an ordinary one's lights reach, a light reaching
+    /// about as far as it is bright (LIGHT-4.3): one in each corner, but in a cross, whose
+    /// corners are rock, a courtyard, whose lights are in its corners already, and a junction,
+    /// which is small; and one partway down under each lamp, whose main light hangs too high
+    /// over a great room's floor to reach it.
+    fn light_corners(&self, built: &mut Built) {
+        let widest = self.plan.half.iter().copied().fold(0.0, f64::max);
+        if widest < WIDE_LIT {
+            return;
+        }
+        let floor = self.plan.floor;
+        let lit = matches!(
+            self.plan.shape,
+            RoomShape::Cross | RoomShape::Court | RoomShape::Junction | RoomShape::Lake
+        );
+        if !lit {
+            let (corners, _) = self.around(CORNER_LIGHT_INSET);
+            for offset in corners {
+                built
+                    .lights
+                    .push((self.at(offset, floor + LIGHT_LIFT), LESSER_LIGHT));
+            }
+        }
+        for &[x, y, _] in &built.lamps.clone() {
+            built
+                .lights
+                .push(([x, y, floor + LIGHT_LIFT + LIGHT_LIFT], LESSER_LIGHT));
+        }
+    }
+
+    /// Takes the room's shape out of `mass` and builds what stands in it.
+    fn shape(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
         match self.plan.shape {
             RoomShape::Hall => self.hall(mass, paints),
             RoomShape::Chamber => self.chamber(mass, paints),
@@ -275,6 +420,9 @@ impl<'a> Room<'a> {
             RoomShape::Court => self.court(mass, paints),
             RoomShape::Cross => self.cross(mass, paints),
             RoomShape::Vault => self.vault(mass, paints),
+            RoomShape::Atrium => self.atrium(mass, paints),
+            RoomShape::Junction => self.junction(mass, paints),
+            RoomShape::Lake => self.lake(mass, paints),
         }
     }
 
@@ -285,17 +433,21 @@ impl<'a> Room<'a> {
             .boxed(self.centred(self.plan.half, [floor, floor + self.plan.height]))
     }
 
-    /// Pilasters on the room's four walls, two to a wall and clear of its doorway, from
-    /// `foot` to `head`, a torch on each.
+    /// Pilasters on the room's walls, two to a wall and clear of its doorway, from `foot` to
+    /// `head`, a torch on each; none on a wall open as wide as itself, which has no place clear
+    /// of its opening.
     fn pilasters(
         &self,
         paints: &Paints,
         [foot, head]: [f64; 2],
         built: &mut Built,
     ) -> Result<(), BrushError> {
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let [hx, hy] = self.plan.half;
-        for side in Side::ALL {
+        for side in Side::ALL
+            .into_iter()
+            .filter(|side| !self.open.contains(side))
+        {
             let [fx, fy] = side.facing();
             // Along the wall is a quarter turn from the way it faces.
             let (reach, width) = if fx.abs() > fy.abs() {
@@ -317,6 +469,28 @@ impl<'a> Room<'a> {
                     place(reach - PILASTER_DEPTH - TORCH_OUT, over),
                     foot + TORCH_LIFT,
                 ));
+                // A base's lights are electric and want a lamp; a castle's and a temple's
+                // are their torches.
+                if self.takes(RoomPart::Fixtures) && paints.world.lit_by_lamps() {
+                    // A lamp on the pilaster's face, where the light it gives is, the light
+                    // whole on the face the room sees: along the wall is its texture's s, and
+                    // down it its t.
+                    let half = LAMP_SIZE / 2.0;
+                    let [lx, ly] = place(reach - PILASTER_DEPTH - LAMP_DEPTH, over - half);
+                    let [mx, my] = place(reach - PILASTER_DEPTH, over + half);
+                    let lamp = self.bounds(
+                        [lx.min(mx), lx.max(mx)],
+                        [ly.min(my), ly.max(my)],
+                        [foot + TORCH_LIFT - half, foot + TORCH_LIFT + half],
+                    );
+                    let along = if fx.abs() > fy.abs() {
+                        lamp.min[1]
+                    } else {
+                        lamp.min[0]
+                    };
+                    let surface = paints.fixture.on([along, lamp.min[2]]);
+                    built.solids.push(Coat::all(&surface).boxed(lamp)?);
+                }
             }
         }
         Ok(())
@@ -324,7 +498,7 @@ impl<'a> Room<'a> {
 
     /// Two beams under a ceiling at `top`, across the side the room is turned to.
     fn beams(&self, paints: &Paints, top: f64, built: &mut Built) -> Result<(), BrushError> {
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let (reach, across) = self.turned();
         for along in [-reach / 2.0, reach / 2.0] {
             built.solids.push(trim.boxed(self.turned_bounds(
@@ -349,7 +523,7 @@ impl<'a> Room<'a> {
             ))?;
         mass.carve(&coffer)?;
         let mut built = Built::default();
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let (posts, _) = self.around(PILLAR_INSET);
         for [x, y] in posts {
             let [mx, my] = self.middle();
@@ -378,6 +552,7 @@ impl<'a> Room<'a> {
             self.at([0.0, 0.0], top + COFFER_RISE - LIGHT_DROP),
             MAIN_LIGHT,
         ));
+        built.lamps.push(self.at([0.0, 0.0], top + COFFER_RISE));
         Ok(built)
     }
 
@@ -408,7 +583,7 @@ impl<'a> Room<'a> {
         match self.part {
             Part::Exit => {}
             Part::Way => {
-                let step = Coat::deck(&paints.floor, &paints.trim);
+                let step = Coat::all(&paints.floor);
                 let mut foot = floor;
                 for (half, cut) in DAIS_HALVES.into_iter().zip(DAIS_CUTS) {
                     built.solids.push(step.prism(
@@ -430,6 +605,7 @@ impl<'a> Room<'a> {
         built
             .lights
             .push((self.at([0.0, 0.0], low - LIGHT_DROP), MAIN_LIGHT));
+        built.lamps.push(self.at([0.0, 0.0], low));
         let (_, lesser) = self.around(LIGHT_INSET);
         for offset in lesser {
             built
@@ -455,7 +631,7 @@ impl<'a> Room<'a> {
                 [floor - PIT_DEPTH, floor - PIT_DEPTH + LIQUID_DEPTH],
             ))?);
         }
-        let deck = Coat::deck(&paints.floor, &paints.trim);
+        let deck = Coat::all(&paints.floor);
         let z = [floor - BRIDGE_THICK, floor];
         let across = [-BRIDGE_HALF, BRIDGE_HALF];
         built
@@ -464,6 +640,9 @@ impl<'a> Room<'a> {
         // The other bridge in two parts, each up to the first: no two brushes share space.
         for y in [[-py, -BRIDGE_HALF], [BRIDGE_HALF, py]] {
             built.solids.push(deck.boxed(self.bounds(across, y, z))?);
+        }
+        if paints.liquid.as_ref().map(Hazard::of) == Some(Hazard::Deadly) {
+            self.rails([px, py], floor, paints, &mut built)?;
         }
         self.pilasters(paints, [floor, top], &mut built)?;
         self.beams(paints, top, &mut built)?;
@@ -487,13 +666,51 @@ impl<'a> Room<'a> {
         Ok(built)
     }
 
+    /// Rails on a floor at `floor` around a pit of half-widths `pit` and along both sides of
+    /// its bridges, so the only way into it is a jump: on the rim just outside each of its
+    /// edges, and on each bridge just inside each of its sides, broken where the bridges meet
+    /// the rim and each other. Rails that meet touch at a corner, which no box passes.
+    fn rails(
+        &self,
+        [px, py]: [f64; 2],
+        floor: f64,
+        paints: &Paints,
+        built: &mut Built,
+    ) -> Result<(), BrushError> {
+        let trim = Coat::all(&paints.support);
+        let z = [floor, floor + RAIL_HEIGHT];
+        let b = BRIDGE_HALF;
+        let t = RAIL_THICK;
+        let mut rail = |x: [f64; 2], y: [f64; 2]| -> Result<(), BrushError> {
+            built.solids.push(trim.boxed(self.bounds(x, y, z))?);
+            Ok(())
+        };
+        for (low, high) in [(-py, -b), (b, py)] {
+            // The rim beyond the pit's east and west edges, either side of the bridge along x.
+            rail([px, px + t], [low, high])?;
+            rail([-px - t, -px], [low, high])?;
+            // The bridge along y, each side of each of its halves.
+            rail([b - t, b], [low, high])?;
+            rail([-b, -b + t], [low, high])?;
+        }
+        for (low, high) in [(-px, -b), (b, px)] {
+            // The rim beyond the pit's north and south edges, either side of the bridge along y.
+            rail([low, high], [py, py + t])?;
+            rail([low, high], [-py - t, -py])?;
+            // The bridge along x, each side of each of its halves.
+            rail([low, high], [b - t, b])?;
+            rail([low, high], [-b, -b + t])?;
+        }
+        Ok(())
+    }
+
     /// A room on two levels: the part toward one side raised, stairs up to it in the middle.
     fn split(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
         let floor = self.plan.floor;
         let top = floor + self.plan.height;
         let (reach, across) = self.turned();
         mass.carve(&self.space(paints)?)?;
-        let step = Coat::deck(&paints.floor, &paints.trim);
+        let step = Coat::all(&paints.floor);
         let mut built = Built::default();
         built.solids.push(step.boxed(self.turned_bounds(
             [SPLIT_EDGE, reach],
@@ -546,7 +763,7 @@ impl<'a> Room<'a> {
         let sky = paints.sky.as_ref().unwrap_or(&paints.ceiling);
         let space = Coat::space(&paints.floor, sky, &paints.wall);
         mass.carve(&space.boxed(self.centred(self.plan.half, [floor, top]))?)?;
-        let trim = Coat::all(&paints.trim);
+        let trim = Coat::all(&paints.support);
         let mut built = Built::default();
         let foot_top = floor + OBELISK_FOOT_HEIGHT;
         built
@@ -617,6 +834,7 @@ impl<'a> Room<'a> {
             self.at([0.0, 0.0], top + LANTERN_RISE - LIGHT_DROP),
             MAIN_LIGHT,
         ));
+        built.lamps.push(self.at([0.0, 0.0], top + LANTERN_RISE));
         for (a, o) in [
             (reach - LIGHT_INSET, 0.0),
             (-(reach - LIGHT_INSET), 0.0),
@@ -625,6 +843,111 @@ impl<'a> Room<'a> {
         ] {
             built.lights.push((
                 self.at(self.turned_offset(a, o), floor + LIGHT_LIFT),
+                LESSER_LIGHT,
+            ));
+        }
+        Ok(built)
+    }
+
+    /// A lake: a courtyard under the sky, a lake of water in its middle and a walk around it.
+    /// The water comes to within [`LAKE_RIM_DROP`] of the walk, which a swimmer climbs out over
+    /// ([`crate::CLIMB_OUT`]); a level is given a lake only where its liquid is water, and with
+    /// any other the room is a courtyard with no water.
+    fn lake(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let floor = self.plan.floor;
+        let top = floor + self.plan.height;
+        let sky = paints.sky.as_ref().unwrap_or(&paints.ceiling);
+        let space = Coat::space(&paints.floor, sky, &paints.wall);
+        mass.carve(&space.boxed(self.centred(self.plan.half, [floor, top]))?)?;
+        let [hx, hy] = self.plan.half;
+        let water = paints
+            .liquid
+            .as_ref()
+            .filter(|liquid| Hazard::of(liquid) == Hazard::Harmless);
+        if let Some(water) = water {
+            let pool = [hx - LAKE_RIM, hy - LAKE_RIM];
+            let bed = Coat::space(&paints.floor, &paints.ceiling, &paints.wall);
+            mass.carve(&bed.boxed(self.centred(pool, [floor - LAKE_DEPTH, floor]))?)?;
+            let mut built = Built::default();
+            built.solids.push(
+                Coat::all(water)
+                    .boxed(self.centred(pool, [floor - LAKE_DEPTH, floor - LAKE_RIM_DROP]))?,
+            );
+            self.lake_rest(floor, &mut built);
+            return Ok(built);
+        }
+        let mut built = Built::default();
+        self.lake_rest(floor, &mut built);
+        Ok(built)
+    }
+
+    /// A lake's places to stand, on its walk, and its lights, over its corners.
+    fn lake_rest(&self, floor: f64, built: &mut Built) {
+        let (corners, sides) = self.around(SPOT_INSET);
+        for offset in corners.into_iter().chain(sides) {
+            built.spots.push(self.standing(offset, floor));
+        }
+        let (lit, _) = self.around(LIGHT_INSET + LIGHT_INSET);
+        for offset in lit {
+            built
+                .lights
+                .push((self.at(offset, floor + LIGHT_LIFT + LIGHT_LIFT), MAIN_LIGHT));
+        }
+    }
+
+    /// A junction: a small plain room where a corridor turns, lit by one lamp under its
+    /// ceiling, with nowhere for anything to stand but its middle, which the way through needs.
+    fn junction(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let top = self.plan.floor + self.plan.height;
+        mass.carve(&self.space(paints)?)?;
+        let mut built = Built::default();
+        built
+            .lights
+            .push((self.at([0.0, 0.0], top - LIGHT_DROP), LESSER_LIGHT));
+        built.lamps.push(self.at([0.0, 0.0], top));
+        Ok(built)
+    }
+
+    /// An atrium: a room two storeys high, a balcony along the side it is turned to a storey
+    /// up, from which a player drops to its floor and does not climb back.
+    fn atrium(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let floor = self.plan.floor;
+        let top = floor + self.plan.height;
+        let balcony = floor + STOREY;
+        let (reach, across) = self.turned();
+        mass.carve(&self.space(paints)?)?;
+        let mut built = Built::default();
+        let deck = Coat::all(&paints.floor);
+        built.solids.push(deck.boxed(self.turned_bounds(
+            [reach - BALCONY_DEPTH, reach],
+            [-across, across],
+            [balcony - BALCONY_THICK, balcony],
+        ))?);
+        // Up to the balcony's underside, which they would otherwise pass through.
+        self.pilasters(paints, [floor, balcony - BALCONY_THICK], &mut built)?;
+        let (corners, _) = self.around(SPOT_INSET);
+        for offset in corners {
+            built.spots.push(self.standing(offset, floor));
+        }
+        let up = reach - BALCONY_DEPTH / 2.0;
+        for over in [-across / 2.0, across / 2.0] {
+            built
+                .spots
+                .push(self.standing(self.turned_offset(up, over), balcony));
+        }
+        built
+            .lights
+            .push((self.at([0.0, 0.0], top - LIGHT_DROP), MAIN_LIGHT));
+        built.lamps.push(self.at([0.0, 0.0], top));
+        built.lights.push((
+            self.at(self.turned_offset(-reach / 2.0, 0.0), floor + LIGHT_LIFT),
+            LESSER_LIGHT,
+        ));
+        // A light over each end of the balcony, where its places to stand are: one in its
+        // middle leaves a long balcony's ends dark.
+        for over in [-across / 2.0, across / 2.0] {
+            built.lights.push((
+                self.at(self.turned_offset(up, over), balcony + LIGHT_LIFT),
                 LESSER_LIGHT,
             ));
         }
@@ -665,6 +988,9 @@ impl<'a> Room<'a> {
                 self.at(self.turned_offset(along, 0.0), top - LIGHT_DROP),
                 MAIN_LIGHT,
             ));
+            built
+                .lamps
+                .push(self.at(self.turned_offset(along, 0.0), top));
         }
         Ok(built)
     }

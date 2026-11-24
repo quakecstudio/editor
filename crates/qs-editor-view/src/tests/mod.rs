@@ -310,7 +310,7 @@ impl Harness {
             fonts.families.insert(family, vec!["mono".to_owned()]);
         }
         ctx.set_fonts(fonts);
-        let view = EditorView::new(egui::Id::new("editor"), text);
+        let view = EditorView::new(egui::Id::unique("editor"), text);
         let mut harness = Self {
             ctx,
             view,
@@ -512,6 +512,7 @@ fn the_wheel_scrolls_whole_lines() {
             Event::PointerMoved(Pos2::new(400.0, 200.0)),
             Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Line,
+                source: egui::MouseWheelSource::Unknown,
                 delta: Vec2::new(0.0, y),
                 phase: egui::TouchPhase::Move,
                 modifiers: Modifiers::NONE,
@@ -736,7 +737,7 @@ abcd",
 
 #[test]
 fn the_wheel_moves_whole_lines_and_keeps_the_rest() {
-    let mut view = EditorView::new(egui::Id::new("v"), &numbered(100));
+    let mut view = EditorView::new(egui::Id::unique("v"), &numbered(100));
     view.scroll(-25.0, 10.0);
     assert_eq!(view.first_line(), 2, "two and a half lines down is two");
     view.scroll(-5.0, 10.0);
@@ -1072,6 +1073,7 @@ fn a_caret_on_a_wide_line_is_scrolled_into_view_across() {
             Event::PointerMoved(Pos2::new(400.0, 200.0)),
             Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
+                source: egui::MouseWheelSource::Unknown,
                 delta: Vec2::new(x, 0.0),
                 phase: egui::TouchPhase::Move,
                 modifiers: Modifiers::NONE,
@@ -1187,6 +1189,7 @@ fn a_drag_of_the_bar_across_scrolls_to_the_widest_lines_end() {
         Event::PointerMoved(Pos2::new(400.0, 200.0)),
         Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
+            source: egui::MouseWheelSource::Unknown,
             delta: Vec2::new(-300.0, 0.0),
             phase: egui::TouchPhase::Move,
             modifiers: Modifiers::NONE,

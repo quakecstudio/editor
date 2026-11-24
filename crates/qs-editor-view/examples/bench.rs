@@ -92,6 +92,7 @@ fn wheel(lines: f32) -> Vec<Event> {
         Event::PointerMoved(egui::Pos2::new(400.0, 300.0)),
         Event::MouseWheel {
             unit: egui::MouseWheelUnit::Line,
+            source: egui::MouseWheelSource::Unknown,
             delta: Vec2::new(0.0, -lines),
             phase: egui::TouchPhase::Move,
             modifiers: Modifiers::NONE,
@@ -322,7 +323,7 @@ fn main() -> ExitCode {
         .join("\n");
     let result = std::sync::Arc::new(std::sync::Mutex::new(None));
     let app = Bench {
-        view: EditorView::new(egui::Id::new("bench-editor"), &text),
+        view: EditorView::new(egui::Id::unique("bench-editor"), &text),
         style: ViewStyle::default(),
         steps: script(),
         next: 0,

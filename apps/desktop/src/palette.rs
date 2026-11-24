@@ -13,7 +13,7 @@ use std::ops::Range;
 use eframe::egui::text::{LayoutJob, TextFormat};
 use eframe::egui::{
     self, Align, Align2, Color32, FontFamily, FontId, Id, Key, Layout, Modifiers, Order, RichText,
-    Sense, TextEdit, Ui, Vec2, WidgetInfo, WidgetType, accesskit,
+    Role, Sense, TextEdit, Ui, Vec2, WidgetInfo, accesskit,
 };
 use qs_commands::palette::{PaletteMatch, search};
 use qs_commands::params::{self, Field, FieldKind, Input};
@@ -24,7 +24,6 @@ use serde_json::Value;
 
 use crate::icons::Icon;
 use crate::keymap;
-use crate::shell::name_field;
 use crate::strings::{Text, command_count};
 use crate::theme::{Theme, Token};
 
@@ -121,6 +120,8 @@ impl Palette {
         }
         let mut chosen = None;
         egui::Area::new(id)
+            .role(accesskit::Role::Dialog)
+            .accessible_name(Text::CommandPalette.get())
             .order(Order::Foreground)
             .anchor(Align2::CENTER_TOP, Vec2::new(0.0, TOP))
             .show(ui.ctx(), |ui| {
@@ -130,10 +131,6 @@ impl Palette {
                     .corner_radius(theme.radius.card)
                     .inner_margin(theme.space(2))
                     .show(ui, |ui| {
-                        ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
-                            node.set_role(accesskit::Role::Dialog);
-                            node.set_label(Text::CommandPalette.get());
-                        });
                         ui.set_width(WIDTH);
                         ui.set_max_width(WIDTH);
                         chosen = match self.prompt.take() {
@@ -190,7 +187,7 @@ impl Palette {
                 .frame(egui::Frame::NONE)
                 .desired_width(WIDTH - 200.0);
             let response = ui.add(field);
-            name_field(ui, &response, Text::SearchCommands);
+            let response = response.accessible_name(Text::SearchCommands.get());
             if self.focus {
                 response.request_focus();
                 self.focus = false;
@@ -349,7 +346,7 @@ fn row(
     // The row's name says the id, which tells commands with alike summaries apart.
     response.widget_info(|| {
         let name = format!("{}: {}", item.info.id().as_str(), item.info.summary());
-        WidgetInfo::selected(WidgetType::Button, true, selected, name)
+        WidgetInfo::selected(Role::Button, true, selected, name)
     });
     if selected || response.hovered() {
         let fill = if selected {
@@ -425,7 +422,7 @@ fn task_row(ui: &mut Ui, theme: &Theme, task: &TaskInfo, selection: Selection) -
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
     let label = format!("{} {}", Text::RunTask.get(), task.name);
-    response.widget_info(|| WidgetInfo::selected(WidgetType::Button, true, selected, &label));
+    response.widget_info(|| WidgetInfo::selected(Role::Button, true, selected, &label));
     if selected || response.hovered() {
         let fill = if selected {
             theme.color(Token::SelectFocus)
@@ -545,10 +542,12 @@ fn field_ui(ui: &mut Ui, theme: &Theme, focus: bool, field: &Field, input: &mut 
             });
         }
         (FieldKind::Boolean, Input::Bool(value)) => {
-            ui.checkbox(value, "");
+            let response = ui.checkbox(value, "");
+            response.accessible_name(&field.name);
         }
         (_, Input::Text(text)) => {
             let response = ui.add(TextEdit::singleline(text).desired_width(WIDTH - 32.0));
+            let response = response.accessible_name(&field.name);
             if focus {
                 response.request_focus();
             }

@@ -8,8 +8,8 @@
 use qs_commands::{Command, Outcome};
 use qs_map::{Brush, Entity, Item};
 use qs_map_gen::{
-    Arch, DOOR, DOOR_SILVER_KEY, Door, KIT_WALL, PassageKit, RoomKit, RoomShape, Side, TORCH,
-    TORCH_LIGHT, Textures, UP, WallLights,
+    Arch, DOOR, DOOR_SILVER_KEY, Door, KIT_WALL, PassageKit, RoomKit, RoomPart, RoomShape, Side,
+    TORCH, TORCH_LIGHT, Textures, UP, WallLights,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -49,6 +49,73 @@ pub enum RoomKind {
     /// A long room under a pitched ceiling, its ridge toward the side it is turned to. At
     /// least 192 in each half-width and 224 high.
     Vault,
+    /// Two storeys high, a balcony 128 up along the side it is turned to, whose doorway is at
+    /// the balcony and which a player drops from to the floor and does not climb back to. At
+    /// least 224 in each half-width and 320 high.
+    Atrium,
+    /// A small room where a corridor turns: a doorway on any side, a lamp. At least 96 in each
+    /// half-width and 192 high.
+    Junction,
+    /// A courtyard under the sky with a lake of water in its middle and a walk around it; needs
+    /// a sky and a water texture. At least 288 in each half-width and 256 high.
+    Lake,
+}
+
+/// A part to dress a room with on top of its shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RoomPartKind {
+    /// A bay 80 deep out of each of up to two walls with no doorway; needs a wall of at least
+    /// 112. A hall, pit, court, vault or atrium.
+    Bays,
+    /// A brazier with its flame in each bay. Where bays are.
+    Braziers,
+    /// A cornice under the ceiling along every wall. A hall, pit, split or atrium.
+    Cornice,
+    /// A skirting along the floor of every wall with no doorway. Any shape but a chamber or a
+    /// cross.
+    Skirting,
+    /// A column out from each corner. A court, vault or split.
+    Columns,
+    /// Lamps: a panel of the light texture, the trim when not given, on the ceiling over each
+    /// main light and on each pilaster where its light is. Any shape.
+    Fixtures,
+    /// Beams across the ceiling, or across a court's sky. A hall, court or atrium.
+    Beams,
+    /// A frame of trim around each doorway. Any shape.
+    Frames,
+}
+
+impl From<RoomPartKind> for RoomPart {
+    fn from(kind: RoomPartKind) -> Self {
+        match kind {
+            RoomPartKind::Bays => Self::Bays,
+            RoomPartKind::Braziers => Self::Braziers,
+            RoomPartKind::Cornice => Self::Cornice,
+            RoomPartKind::Skirting => Self::Skirting,
+            RoomPartKind::Columns => Self::Columns,
+            RoomPartKind::Fixtures => Self::Fixtures,
+            RoomPartKind::Beams => Self::Beams,
+            RoomPartKind::Frames => Self::Frames,
+        }
+    }
+}
+
+impl From<RoomShape> for RoomKind {
+    fn from(shape: RoomShape) -> Self {
+        match shape {
+            RoomShape::Hall => Self::Hall,
+            RoomShape::Chamber => Self::Chamber,
+            RoomShape::Pit => Self::Pit,
+            RoomShape::Split => Self::Split,
+            RoomShape::Court => Self::Court,
+            RoomShape::Cross => Self::Cross,
+            RoomShape::Vault => Self::Vault,
+            RoomShape::Atrium => Self::Atrium,
+            RoomShape::Junction => Self::Junction,
+            RoomShape::Lake => Self::Lake,
+        }
+    }
 }
 
 impl From<RoomKind> for RoomShape {
@@ -61,6 +128,9 @@ impl From<RoomKind> for RoomShape {
             RoomKind::Court => Self::Court,
             RoomKind::Cross => Self::Cross,
             RoomKind::Vault => Self::Vault,
+            RoomKind::Atrium => Self::Atrium,
+            RoomKind::Junction => Self::Junction,
+            RoomKind::Lake => Self::Lake,
         }
     }
 }
@@ -247,8 +317,8 @@ pub struct BuildRoomParams {
     pub half: [f64; 2],
     /// Floor to ceiling.
     pub height: f64,
-    /// The side the room is turned to, which a `split`, a `cross` and a `vault` use; east
-    /// when not given.
+    /// The side the room is turned to, which a `split`, a `cross`, a `vault` and an `atrium`
+    /// use; east when not given.
     #[serde(default)]
     pub turned: RoomSide,
     /// The sides to open a doorway on, each 112 wide and 128 high, in the middle of its side;
@@ -268,6 +338,10 @@ pub struct BuildRoomParams {
     /// Whether its lights are placed with it; placed when not given.
     #[serde(default)]
     pub lights: Lighting,
+    /// The parts it is dressed with on top of its shape; none when not given. A part the
+    /// shape does not take is passed over.
+    #[serde(default)]
+    pub parts: Vec<RoomPartKind>,
 }
 
 /// A doorway of a room built.
@@ -370,8 +444,8 @@ impl<C: HasMap + 'static> Command<C> for MapBuildRoom {
     const SUMMARY: &'static str = "Builds one room of a shape of id's levels into the open map, \
         sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided \
         domed chamber, a hall around a pit crossed by bridges, a room on two levels, a \
-        courtyard, a cross of two aisles, or a vaulted room. Answers its doorways, for \
-        map.build_passage, and where things may stand.";
+        courtyard, a cross of two aisles, a vaulted room, or an atrium with a balcony. Answers its \
+        doorways, for map.build_passage, and where things may stand.";
     type Params = BuildRoomParams;
     type Output = RoomBuilt;
     type Error = MapEditError;
@@ -394,6 +468,7 @@ impl<C: HasMap + 'static> Command<C> for MapBuildRoom {
             doors: params.doors.iter().map(|&side| side.into()).collect(),
             arch: params.arch.into(),
             wall: params.wall.unwrap_or(KIT_WALL),
+            parts: params.parts.iter().map(|&part| part.into()).collect(),
         }
         .build(&textures)
         .map_err(|error| MapEditError::Generate { error })?;

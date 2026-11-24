@@ -22,7 +22,7 @@ fn shown(
     act: impl FnOnce(&mut Harness<'_, (PrefabBrowser, Vec<MapAction>)>),
 ) -> Vec<MapAction> {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let mut harness = Harness::new_ui_state(
+    let mut harness = theme.harness().build_ui_state(
         |ui, (browser, actions): &mut (PrefabBrowser, Vec<MapAction>)| {
             actions.extend(browser.header(ui, &theme));
             browser.body(ui, &theme);

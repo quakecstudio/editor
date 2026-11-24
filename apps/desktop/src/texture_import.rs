@@ -140,7 +140,9 @@ impl ImportPreview {
                 );
                 ui.horizontal(|ui| {
                     ui.label(Text::MapTextureName.get());
-                    ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(NAME_WIDTH));
+                    let field = ui
+                        .add(egui::TextEdit::singleline(&mut self.name).desired_width(NAME_WIDTH));
+                    field.accessible_name(Text::MapTextureName.get());
                 });
                 ui.horizontal(|ui| {
                     ui.selectable_value(

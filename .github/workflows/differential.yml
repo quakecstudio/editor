@@ -100,7 +100,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: differential-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -156,7 +156,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: differential-${{ runner.os }}
           save-if: false
@@ -240,7 +240,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: view-diff-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -294,7 +294,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: differential-${{ runner.os }}
           save-if: false
@@ -345,7 +345,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: differential-${{ runner.os }}
           save-if: false
@@ -422,7 +422,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: differential-${{ runner.os }}
           save-if: false
@@ -453,7 +453,7 @@ jobs:
         run: cargo xtask compiler-diff --functions "$CODEBASE"
       - name: Upload the logs of refused cuts
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: per-function-${{ matrix.codebase }}
           path: target/compiler-diff/functions/${{ matrix.codebase }}/failed/
@@ -485,7 +485,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: differential-${{ runner.os }}
           save-if: false
@@ -513,14 +513,14 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: cargo xtask compiler-diff --functions "$CODEBASE" --shard "$SHARD/4"
       - name: Upload the statements the shard reached
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: executed-arcane-dimensions-${{ matrix.shard }}
           path: target/compiler-diff/functions/arcane-dimensions/executed.tsv
           if-no-files-found: error
       - name: Upload the logs of refused cuts
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: per-function-arcane-dimensions-${{ matrix.shard }}
           path: target/compiler-diff/functions/arcane-dimensions/failed/
@@ -545,7 +545,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: differential-${{ runner.os }}
           save-if: false

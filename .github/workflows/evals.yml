@@ -82,7 +82,7 @@ jobs:
         with:
           path: target/evals/history.jsonl
           key: evals-history-${{ github.run_id }}
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         if: always() && steps.key.outputs.set == 'true'
         with:
           name: evals

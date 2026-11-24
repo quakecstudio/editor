@@ -18,7 +18,7 @@ use std::time::Duration;
 use eframe::egui::accesskit::{Role, Toggled};
 use eframe::egui::{self, FontId, Pos2, RawInput, Rect, Vec2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::{NodeT as _, Queryable as _};
+use egui_kittest::kittest::{By, NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
@@ -54,6 +54,11 @@ use crate::strings::{
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
+
+/// The frames the whole window may take to settle in a test: egui styles a widget from its state
+/// in the frame before, so a popup that appears asks for one frame more, and the map's disk
+/// watch asks for one after its interval.
+pub(crate) const APP_STEPS: u64 = 8;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -1158,7 +1163,7 @@ fn focus_shortcuts_reach_out_of_the_editor() {
     let editor_has_keyboard = |harness: &Harness<'static, Option<App>>| {
         harness
             .ctx
-            .memory(|m| m.has_focus(egui::Id::new(EDITOR_AREA)))
+            .memory(|m| m.has_focus(egui::Id::unique(EDITOR_AREA)))
     };
     run_command(&mut harness, qs_layout::FOCUS_EDITOR);
     harness.run();
@@ -1172,7 +1177,7 @@ fn focus_shortcuts_reach_out_of_the_editor() {
     // Back to the editor by a click, then the same panel again by its key.
     harness
         .ctx
-        .memory_mut(|m| m.request_focus(egui::Id::new(EDITOR_AREA)));
+        .memory_mut(|m| m.request_focus(egui::Id::unique(EDITOR_AREA)));
     harness.run();
     assert!(editor_has_keyboard(&harness));
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num3);
@@ -1314,7 +1319,16 @@ fn the_debugger_tab_lists_breakpoints_and_steps_only_when_stopped() {
         )
         .unwrap();
     harness.run();
-    assert!(harness.query_by_label_contains("src/a.qc:3").is_some());
+    let link = || By::new().role(Role::Link).label_contains("src/a.qc:3");
+    assert!(harness.query(link()).is_some());
+    assert!(
+        harness
+            .query_by_role_and_label(
+                Role::CheckBox,
+                &format!("{} src/a.qc:3", Text::BreakpointAt.get())
+            )
+            .is_some()
+    );
     assert!(
         harness
             .query_by_label_contains(Text::NotStopped.get())
@@ -1325,7 +1339,7 @@ fn the_debugger_tab_lists_breakpoints_and_steps_only_when_stopped() {
     harness.get_by_role(Role::CheckBox).click();
     harness.run();
     harness.run();
-    assert!(harness.query_by_label_contains("src/a.qc:3").is_none());
+    assert!(harness.query(link()).is_none());
 }
 
 // No spec statement: a call stack frame reads as its file's name and line, or `engine`
@@ -1992,7 +2006,7 @@ fn the_tab_switcher_and_the_split() {
     assert!(
         harness
             .ctx
-            .memory(|m| m.has_focus(egui::Id::new(EDITOR_AREA)))
+            .memory(|m| m.has_focus(egui::Id::unique(EDITOR_AREA)))
     );
     run_command(&mut harness, qs_layout::CLOSE_SPLIT);
     harness.run();
@@ -2437,6 +2451,7 @@ fn the_2d_views_draw_the_soft_map_bounds() {
     for _ in 0..20 {
         harness.event(egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
+            source: egui::MouseWheelSource::Unknown,
             delta: egui::vec2(0.0, -400.0),
             phase: egui::TouchPhase::Move,
             modifiers: egui::Modifiers::NONE,
@@ -2556,6 +2571,7 @@ fn the_camera_settings_reach_the_3d_view() {
         harness.event_modifiers(
             egui::Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
+                source: egui::MouseWheelSource::Unknown,
                 delta: egui::vec2(0.0, 100.0),
                 phase: egui::TouchPhase::Move,
                 modifiers: egui::Modifiers::SHIFT,
@@ -3047,7 +3063,7 @@ fn the_outline_selects_frames_and_moves() {
         .rect()
         .center();
     let lights = harness
-        .get_by_role_and_label(Role::Button, "Lights")
+        .get_by_role_and_label(Role::DisclosureTriangle, "Lights")
         .rect()
         .center();
     drag(&mut harness, ogre, lights, egui::Modifiers::NONE);

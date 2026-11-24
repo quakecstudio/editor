@@ -50,7 +50,7 @@ fn after(
     act: impl FnOnce(&mut Harness<'_, (IssueBrowser, Vec<MapAction>)>),
 ) -> Vec<MapAction> {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let mut harness = Harness::new_ui_state(
+    let mut harness = theme.harness().build_ui_state(
         |ui, (browser, actions): &mut (IssueBrowser, Vec<MapAction>)| {
             actions.extend(browser.header(ui, &theme));
             actions.extend(browser.body(ui, &theme));

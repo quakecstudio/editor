@@ -143,16 +143,6 @@ fn project_step(ui: &mut Ui, theme: &Theme, page: &Page<'_>) -> Option<WelcomeAc
     action.map(WelcomeAction::Project)
 }
 
-/// A link a screen reader names by its text.
-fn link(ui: &mut Ui, text: Text) -> egui::Response {
-    let link = ui.link(text.get());
-    ui.ctx().accesskit_node_builder(link.id, |node| {
-        node.set_role(egui::accesskit::Role::Link);
-        node.set_label(text.get());
-    });
-    link
-}
-
 /// The page's column; a click returns what it asks for.
 fn column(ui: &mut Ui, theme: &Theme, page: &Page<'_>) -> Option<WelcomeAction> {
     let muted = theme.color(Token::TextMuted);
@@ -182,12 +172,12 @@ fn column(ui: &mut Ui, theme: &Theme, page: &Page<'_>) -> Option<WelcomeAction> 
     ui.add_space(theme.space(GAP));
     ui.separator();
     ui.horizontal_wrapped(|ui| {
-        if link(ui, Text::WelcomePalette).clicked() {
+        if ui.link(Text::WelcomePalette.get()).clicked() {
             action = Some(WelcomeAction::Palette);
         }
         ui.label(RichText::new(&page.palette_key).monospace().color(muted));
         ui.add_space(theme.space(GAP));
-        if link(ui, Text::WelcomeGuide).clicked() {
+        if ui.link(Text::WelcomeGuide.get()).clicked() {
             action = Some(WelcomeAction::UserGuide);
         }
     });

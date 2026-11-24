@@ -34,7 +34,6 @@ use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
 pub(crate) use crate::map_uv::PickMode;
 use crate::map_uv::UvEditor;
-use crate::shell::name_field;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
 use qs_layout::{MapGrid, TextureStep, ViewKey};
@@ -485,14 +484,15 @@ impl ShapeOptions {
 
     /// The shape's settings in the toolbar.
     fn toolbar(&mut self, ui: &mut Ui) {
-        let kind = egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShapeKind>()))
-            .selected_text(self.kind.text().get())
-            .show_ui(ui, |ui| {
-                for kind in ShapeKind::ALL {
-                    ui.selectable_value(&mut self.kind, kind, kind.text().get());
-                }
-            });
-        name_field(ui, &kind.response, Text::MapShapeKind);
+        let kind =
+            egui::ComboBox::from_id_salt(ui.scope_id().with(core::any::TypeId::of::<ShapeKind>()))
+                .selected_text(self.kind.text().get())
+                .show_ui(ui, |ui| {
+                    for kind in ShapeKind::ALL {
+                        ui.selectable_value(&mut self.kind, kind, kind.text().get());
+                    }
+                });
+        kind.response.accessible_name(Text::MapShapeKind.get());
         match self.kind {
             ShapeKind::Curve => {
                 ui.label(Text::MapShapeSides.get());
@@ -509,7 +509,7 @@ impl ShapeOptions {
             | ShapeKind::SpiralStairs => {
                 ui.label(Text::MapShapeSides.get());
                 let sides = ui.add(egui::DragValue::new(&mut self.sides).range(SIDES));
-                name_field(ui, &sides, Text::MapShapeSides);
+                sides.accessible_name(Text::MapShapeSides.get());
             }
         }
         if self.kind.takes_circle() {
@@ -529,7 +529,7 @@ impl ShapeOptions {
         {
             ui.label(Text::MapShapeWall.get());
             let wall = ui.add(egui::DragValue::new(&mut self.wall).speed(WALL_STEP));
-            name_field(ui, &wall, Text::MapShapeWall);
+            wall.accessible_name(Text::MapShapeWall.get());
         }
         if self.kind == ShapeKind::Stairs {
             for (climb, text) in [
@@ -1737,7 +1737,7 @@ impl BrushTools {
                     .speed(1.0)
                     .suffix(Text::DegreesSuffix.get()),
             );
-            name_field(ui, &turn, Text::MapTurnBy);
+            turn.accessible_name(Text::MapTurnBy.get());
             if Icon::Turn.tool(ui, Text::MapTurn).clicked() {
                 self.reshaped.clone_from(&self.chosen);
                 asked.push(BrushAction::Arrange(Arrange::Turn(
@@ -1803,41 +1803,44 @@ impl BrushTools {
                 .collect::<Vec<_>>()
         };
         let align = &mut self.align;
-        egui::Grid::new(ui.id().with(core::any::TypeId::of::<AlignFields>())).show(ui, |ui| {
-            ui.label(Text::MapTextureShift.get());
-            for (shift, name) in align
-                .shift
-                .iter_mut()
-                .zip([Text::MapTextureShiftX, Text::MapTextureShiftY])
-            {
-                let field = ui.add(egui::DragValue::new(shift).speed(ALIGN_STEP));
-                name_field(ui, &field, name);
-                if field.changed() {
-                    align.edited.insert(AlignPart::Shift);
+        egui::Grid::new(ui.scope_id().with(core::any::TypeId::of::<AlignFields>())).show(
+            ui,
+            |ui| {
+                ui.label(Text::MapTextureShift.get());
+                for (shift, name) in align
+                    .shift
+                    .iter_mut()
+                    .zip([Text::MapTextureShiftX, Text::MapTextureShiftY])
+                {
+                    let field = ui.add(egui::DragValue::new(shift).speed(ALIGN_STEP));
+                    let field = field.accessible_name(name.get());
+                    if field.changed() {
+                        align.edited.insert(AlignPart::Shift);
+                    }
                 }
-            }
-            ui.end_row();
-            ui.label(Text::MapTextureRotate.get());
-            let rotate = ui.add(egui::DragValue::new(&mut align.rotate).speed(ALIGN_STEP));
-            name_field(ui, &rotate, Text::MapTextureRotation);
-            if rotate.changed() {
-                align.edited.insert(AlignPart::Rotate);
-            }
-            ui.end_row();
-            ui.label(Text::MapTextureScale.get());
-            for (scale, name) in align
-                .scale
-                .iter_mut()
-                .zip([Text::MapTextureScaleX, Text::MapTextureScaleY])
-            {
-                let field = ui.add(egui::DragValue::new(scale).speed(SCALE_STEP));
-                name_field(ui, &field, name);
-                if field.changed() {
-                    align.edited.insert(AlignPart::Scale);
+                ui.end_row();
+                ui.label(Text::MapTextureRotate.get());
+                let rotate = ui.add(egui::DragValue::new(&mut align.rotate).speed(ALIGN_STEP));
+                let rotate = rotate.accessible_name(Text::MapTextureRotation.get());
+                if rotate.changed() {
+                    align.edited.insert(AlignPart::Rotate);
                 }
-            }
-            ui.end_row();
-        });
+                ui.end_row();
+                ui.label(Text::MapTextureScale.get());
+                for (scale, name) in align
+                    .scale
+                    .iter_mut()
+                    .zip([Text::MapTextureScaleX, Text::MapTextureScaleY])
+                {
+                    let field = ui.add(egui::DragValue::new(scale).speed(SCALE_STEP));
+                    let field = field.accessible_name(name.get());
+                    if field.changed() {
+                        align.edited.insert(AlignPart::Scale);
+                    }
+                }
+                ui.end_row();
+            },
+        );
         ui.horizontal_wrapped(|ui| {
             let edited = !align.edited.is_empty();
             let align_now = ui

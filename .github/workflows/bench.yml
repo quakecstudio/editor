@@ -37,7 +37,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: bench-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -58,7 +58,7 @@ jobs:
         run: cargo xtask bench history --history "$RUNNER_TEMP/bench-history/history.json"
       - name: Upload the history
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: bench-history
           path: ${{ runner.temp }}/bench-history/history.json

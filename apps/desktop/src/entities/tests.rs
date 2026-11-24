@@ -71,14 +71,14 @@ fn grunt(health: f64) -> Entities {
 /// The Properties panel drawn over a paused game whose grunt has 30 health.
 fn drawn() -> Harness<'static, Drawn> {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let fonts = theme.clone();
     let state = Drawn {
         entities: grunt(30.0),
         game: PlayState::Paused,
         panel: Properties::default(),
         asked: None,
     };
-    let mut harness = Harness::builder()
+    let mut harness = theme
+        .harness()
         .with_size(Vec2::new(400.0, 300.0))
         .build_ui_state(
             move |ui, drawn: &mut Drawn| {
@@ -93,7 +93,6 @@ fn drawn() -> Harness<'static, Drawn> {
             },
             state,
         );
-    fonts.apply(&harness.ctx);
     harness.run();
     harness
 }

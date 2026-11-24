@@ -16,7 +16,8 @@
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Entity, Item, MapFile};
 use qs_map_gen::{
-    Arch, Door, KIT_WALL, PassageKit, RoomKit, RoomParts, RoomShape, Side, Textures, WallLights,
+    Arch, Door, KIT_MIN_WALL, KIT_WALL, KitError, PassageKit, RoomKit, RoomPart, RoomParts,
+    RoomShape, Side, Textures, WallLights,
 };
 use qs_sim::collision::HullSet;
 
@@ -32,7 +33,8 @@ fn textures() -> Textures {
         ceiling: "ceiling".to_owned(),
         trim: "trim".to_owned(),
         door: "door".to_owned(),
-        liquid: Some("*lava1".to_owned()),
+        // Water: a lake holds only water, and a pit any liquid (lava's rails are in qs-map-gen).
+        liquid: Some("*water1".to_owned()),
         sky: Some("sky1".to_owned()),
         wall_lights: WallLights::Torches,
     }
@@ -49,7 +51,10 @@ fn kit(shape: RoomShape, middle: [f64; 2], floor: f64, turned: Side, doors: &[Si
         | RoomShape::Split
         | RoomShape::Court
         | RoomShape::Cross
-        | RoomShape::Vault => [least + 32.0, least],
+        | RoomShape::Vault
+        | RoomShape::Atrium
+        | RoomShape::Junction
+        | RoomShape::Lake => [least + 32.0, least],
     };
     RoomKit {
         shape,
@@ -61,6 +66,7 @@ fn kit(shape: RoomShape, middle: [f64; 2], floor: f64, turned: Side, doors: &[Si
         doors: doors.to_vec(),
         arch: Arch::Cut,
         wall: KIT_WALL,
+        parts: Vec::new(),
     }
 }
 
@@ -125,9 +131,66 @@ fn a_room_alone_is_sealed() {
     }
 }
 
+// No spec statement: L-74, each shape dressed with every part, with no doorway and its wall
+// thick enough for bays, is sealed, its standing place and spots are open, and each is
+// walked to; bays asked of a thin wall are refused where the shape takes them
+#[test]
+fn a_room_dressed_with_every_part_is_sealed_and_walked() {
+    for shape in RoomShape::ALL {
+        let mut asked = kit(shape, [0.0, 0.0], 0.0, Side::North, &[]);
+        asked.parts = RoomPart::ALL.to_vec();
+        let thin = asked.build(&textures());
+        if RoomPart::Bays.fits(shape) {
+            assert!(matches!(
+                thin,
+                Err(qs_map_gen::GenError::Kit(KitError::BayWall { .. }))
+            ));
+        } else {
+            assert!(
+                thin.is_ok(),
+                "{}: bays it does not take refused",
+                shape.name()
+            );
+        }
+        asked.wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
+        let room = asked.build(&textures()).unwrap();
+        let plain = kit(shape, [0.0, 0.0], 0.0, Side::North, &[])
+            .build(&textures())
+            .unwrap();
+        let fits = RoomPart::ALL.iter().any(|part| part.fits(shape));
+        assert_eq!(
+            room.brushes.len() > plain.brushes.len(),
+            fits,
+            "{}",
+            shape.name()
+        );
+        let mut stands = room.spots.clone();
+        stands.push(room.stand);
+        let reached = walk(
+            &map(room.brushes, room.stand),
+            room.stand,
+            &stands,
+            shape.name(),
+        );
+        for stand in &stands {
+            let [x, y, z] = stand.map(|at| at as f32);
+            let near = reached.iter().any(|at| {
+                (at[0] - x).abs() <= NEAR && (at[1] - y).abs() <= NEAR && (at[2] - z).abs() <= NEAR
+            });
+            // An atrium's balcony is not climbed to from its floor.
+            let balcony = shape == RoomShape::Atrium && z > room.stand[2] as f32 + 64.0;
+            assert!(
+                near || balcony,
+                "{}: {stand:?} is not reached",
+                shape.name()
+            );
+        }
+    }
+}
+
 // No spec statement: L-49, each shape with a doorway on each side, joined by passages to four
 // rooms of the other shapes on floors up to 64 above and below, is sealed with them, and a
-// player walks from its middle to each of them
+// player walks from its middle to each of them, but for an atrium's balcony, which is one way
 #[test]
 fn a_room_joined_on_each_side_is_sealed_and_walked() {
     let sides = [Side::East, Side::North, Side::West, Side::South];
@@ -172,13 +235,28 @@ fn a_room_joined_on_each_side_is_sealed_and_walked() {
             brushes.extend(passage.brushes);
             stands.push(room.stand);
         }
-        let reached = walk(&map(brushes, centre.stand), centre.stand, &stands, what);
-        for stand in &stands {
+        let map = map(brushes, centre.stand);
+        let reached = walk(&map, centre.stand, &stands, what);
+        let near = |reached: &[[f32; 3]], stand: [f64; 3]| {
             let [x, y, z] = stand.map(|at| at as f32);
-            let near = reached.iter().any(|at| {
+            reached.iter().any(|at| {
                 (at[0] - x).abs() <= NEAR && (at[1] - y).abs() <= NEAR && (at[2] - z).abs() <= NEAR
-            });
-            assert!(near, "{what}: {stand:?} is not reached");
+            })
+        };
+        for (n, &stand) in stands.iter().enumerate() {
+            // An atrium's balcony, on the side it is turned to (east, the first room after the
+            // centre), is dropped from and not climbed to: that room is not walked to from the
+            // atrium's floor, and the atrium is walked to from it.
+            if shape == RoomShape::Atrium && n == 1 {
+                assert!(!near(&reached, stand), "{what}: the balcony is climbed to");
+                let back = walk(&map, stand, &stands, what);
+                assert!(
+                    near(&back, centre.stand),
+                    "{what}: not reached from the balcony"
+                );
+                continue;
+            }
+            assert!(near(&reached, stand), "{what}: {stand:?} is not reached");
         }
     }
 }
@@ -259,4 +337,17 @@ fn a_passage_out_of_bounds_is_refused() {
     .build(&paints)
     .unwrap();
     assert_eq!(most.steps, 32);
+}
+
+// No spec statement: L-74, a room built on its own takes the bays asked of it wherever its wall
+// is thick enough for them, however large it is: its block is its walls, not a level's cell
+#[test]
+fn a_large_room_on_its_own_takes_its_bays() {
+    let mut asked = kit(RoomShape::Hall, [0.0, 0.0], 0.0, Side::North, &[]);
+    asked.half = [320.0, 320.0];
+    asked.wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
+    let plain = asked.build(&textures()).unwrap();
+    asked.parts = vec![RoomPart::Bays];
+    let bayed = asked.build(&textures()).unwrap();
+    assert!(bayed.brushes.len() > plain.brushes.len());
 }

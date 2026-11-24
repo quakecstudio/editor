@@ -54,7 +54,7 @@ impl NewProject {
         let Self::Shown(chosen) = self else {
             return None;
         };
-        let modal = egui::Modal::new(egui::Id::new(Text::NewProjectHeading)).show(ctx, |ui| {
+        let modal = egui::Modal::new(egui::Id::unique(Text::NewProjectHeading)).show(ctx, |ui| {
             heading(ui, theme, Text::NewProjectHeading);
             ui.add_space(theme.space(1));
             body(ui, theme, chosen)

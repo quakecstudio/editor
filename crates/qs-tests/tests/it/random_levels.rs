@@ -9,15 +9,18 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
     reason = "test code: a failed unwrap, panic or index is a failed test, and map units fit"
 )]
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Diagnostic, DiagnosticKind};
 use qs_map_gen::{Classes, Level, Request, Size};
 use qs_sim::collision::{Hull, HullSet};
+
+use crate::no_trap::Ground;
 
 /// `CONTENTS_SOLID` (BSP-10.2).
 const SOLID: i32 = -2;
@@ -28,24 +31,26 @@ const CLIMB: f32 = 18.0;
 const FINE: f32 = 2.0;
 /// How far a walker may be from a place and have reached it.
 pub(crate) const NEAR: f32 = 48.0;
+/// How far behind a button's middle its wall is tried: past its 8 of depth.
+const BEHIND: f64 = 16.0;
 /// Below every level.
 const BOTTOM: f32 = -1024.0;
 
 /// The textures of id's levels a theme may name, and a liquid and a sky.
 const ID_TEXTURES: &[&str] = &[
-    "tech01_1",
+    "tech04_1",
     "sfloor4_1",
-    "ceiling4",
+    "tech01_1",
     "tech03_1",
     "adoor01_2",
+    "wbrick1_5",
     "city4_7",
-    "ground1_6",
-    "wood1_5",
-    "wmet2_1",
+    "wizwood1_8",
+    "wizmet1_2",
     "door02_2",
+    "metal4_4",
     "metal5_2",
-    "metal5_8",
-    "metal5_1",
+    "metal2_2",
     "rune1_1",
     "door01_2",
     "*lava1",
@@ -58,22 +63,23 @@ const ID_TEXTURES: &[&str] = &[
 /// The same of LibreQuake's levels.
 const LIBREQUAKE_TEXTURES: &[&str] = &[
     "med_csl_brk10b",
+    "med_csl_flr4_1",
     "med_csl_flr1_1",
-    "med_wood2",
     "med_csl_trm1",
     "med_door3b",
     "grk_wall1",
     "grk_flr4_2",
-    "grk_bl_flt1",
+    "grk_brk15_f",
     "grk_trim1",
     "grk_door3",
     "may_blok1_1",
     "may_flr1_1",
-    "may_flt1_1",
+    "may_blok2_1",
     "may_trm1_1",
     "may_door2_1",
     "t_wall1ba",
     "t_flor1a",
+    "t_indent01",
     "t_metalsheeta",
     "t_trim1aa",
     "edoor01_1",
@@ -171,7 +177,33 @@ fn check(level: &Level, what: &str) {
             "{what}: room {place} stands in rock"
         );
     }
-    let reached = walked(&hull, h1, stand(0));
+    // Every button is set in a wall: the rock behind it, the way it moves, is solid.
+    let (drawn, head) = (hulls.hull(0, [h0, h1, h2]), h0);
+    for entity in &level.map.entities {
+        if entity.classname() != Some(b"func_button".as_slice()) {
+            continue;
+        }
+        let points: Vec<[f64; 3]> = entity.brushes().flat_map(qs_map::Brush::vertices).collect();
+        let middle =
+            [0, 1, 2].map(|axis| points.iter().map(|p| p[axis]).sum::<f64>() / points.len() as f64);
+        let angle: f64 = std::str::from_utf8(entity.value(b"angle").unwrap())
+            .unwrap()
+            .parse()
+            .unwrap();
+        let (dy, dx) = angle.to_radians().sin_cos();
+        let behind =
+            [middle[0] + dx * BEHIND, middle[1] + dy * BEHIND, middle[2]].map(|at| at as f32);
+        assert_eq!(
+            drawn.point_contents(head, behind).unwrap(),
+            SOLID,
+            "{what}: a button at {middle:?} is not set in a wall"
+        );
+    }
+    let exit = stand(level.exit);
+    let ground = Ground::new(&bsp, &level.map);
+    assert_eq!(ground.check(stand(0), exit), Ok(()), "{what}: a trap");
+    // A player who walks, swims, rides lifts, picks up keys and presses buttons.
+    let reached = ground.reached(stand(0));
     for (place, room) in level.rooms.iter().enumerate() {
         let [x, y, z] = stand(place);
         let near = reached.iter().any(|at| {
@@ -194,6 +226,29 @@ fn check_all(seeds: std::ops::Range<u64>, textures: &[&str]) {
                 &format!("seed {seed} {size:?}"),
             );
         }
+    }
+}
+
+/// How many seeds' levels are drawn, not compiled, to find each theme a game's textures allow.
+const THEME_SEEDS: u64 = 64;
+
+// No spec statement: L-74, each game's texture list above lets every theme of that game be
+// drawn, so the levels checked can be of any of them: a theme whose wall, floor or ceiling the
+// list lacks would never be
+#[test]
+fn every_theme_is_drawn_from_its_games_textures() {
+    for (textures, themes) in [
+        (ID_TEXTURES, &["base", "city", "runic"][..]),
+        (
+            LIBREQUAKE_TEXTURES,
+            &["castle", "temple", "ruin", "station"][..],
+        ),
+    ] {
+        let drawn: BTreeSet<&str> = (0..THEME_SEEDS)
+            .map(|seed| level(seed, Size::Small, textures).theme)
+            .collect();
+        let wanted: BTreeSet<&str> = themes.iter().copied().collect();
+        assert_eq!(drawn, wanted);
     }
 }
 

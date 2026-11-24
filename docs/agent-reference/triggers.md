@@ -218,6 +218,45 @@ A `use` function runs with `self` the entity used, `other` the one that fired it
 `activator` who began the chain. A point entity like this needs no `InitTrigger`, no model
 and no `solid`.
 
+## Puzzles from id's entities
+
+Sources: id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/v101qc`:
+`doors.qc`, `buttons.qc`, `triggers.qc`, `plats.qc`, `monsters.qc`, `combat.qc`, `ai.qc`,
+`items.qc`. What `map.generate` builds them into is in [`maps.md`](maps.md).
+
+- **Keys.** A `func_door` with `spawnflags` 16 (`DOOR_SILVER_KEY`) needs `item_key1`, with 8
+  (`DOOR_GOLD_KEY`) `item_key2`. "Key doors are allways wait -1", and `door_touch` takes the
+  key away: `other.items = other.items - self.items`. One key opens one door.
+- **A door opened from elsewhere.** A door with a `targetname` spawns no touch field ("a
+  remote button or trigger field activates the door"). Give it `wait` -1 to stay open;
+  the default is 3, after which it closes.
+- **A button.** `func_button` fires its `target` when touched, or shot when it has
+  `health`; `wait` -1 "never return". `angle` is the way it moves: into its wall.
+- **An arena.** A monster fires its `target` when it dies: `Killed` calls
+  `monster_death_use`, which does `activator = self.enemy; SUB_UseTargets ();`. Point every
+  monster of a room at one `trigger_counter` with `count` the number of monsters and its
+  `target` the door. A counter with no `count` takes 2 (`if (!self.count) self.count =
+  2;`), so a counter whose monsters never spawn never fires: give it monsters. Its messages,
+  "Only 2 more to go...", are silenced by `spawnflags` 1.
+- **A secret door.** `func_door_secret` with no `targetname` opens when shot (`health
+  10000`, `th_pain = fd_secret_use`). `spawnflags` 1 (`SECRET_OPEN_ONCE`) keeps it open, 4
+  (`SECRET_1ST_DOWN`) moves it down first; otherwise it closes after `wait`, 5 seconds.
+  Doors that touch are linked by `LinkDoors`, which finds them by `classname` "door", which
+  a secret door's is too: keep a secret door from touching another.
+- **A secret.** `trigger_secret` counts toward `total_secrets` and, touched by the player,
+  prints "You found a secret area!".
+- **A lift.** `func_plat` is "always drawn in the extended position": build it at the top,
+  and its `height` is how far it moves down (`pos2_z = self.origin_z - self.height`). It
+  rises when a player stands on it at the bottom, waits 3 seconds at the top and goes down;
+  a player standing on it keeps it up.
+- **A teleporter.** `trigger_teleport` sends what touches it to the
+  `info_teleport_destination` whose `targetname` is its `target`, facing that entity's
+  `angle`; the destination raises its own origin by 27 (`self.origin = self.origin + '0 0
+  27'`), so put it on the floor.
+- **An ambush.** A monster with `spawnflags` 1 "will only wake up on really seeing the
+  player, not another monster getting angry" (`FindTarget`). The zombie uses that bit for
+  crucified, so leave it off zombies.
+
 ## What a model gets wrong
 
 - Testing `other.classname == "player"` and then reading `other.health`: a dead player

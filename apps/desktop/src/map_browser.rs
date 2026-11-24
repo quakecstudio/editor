@@ -7,11 +7,10 @@
 
 use std::collections::HashMap;
 
-use eframe::egui::{self, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, WidgetInfo, WidgetType};
+use eframe::egui::{self, Pos2, Rect, RichText, Role, Sense, Stroke, Ui, Vec2, WidgetInfo};
 
 use crate::map_editor::{box_lines, rgb};
 use crate::map_scene::{ClassLook, Line};
-use crate::shell::name_field;
 use crate::strings::{Text, class_count};
 use crate::theme::{Theme, Token};
 
@@ -62,7 +61,7 @@ impl EntityBrowser {
                 .hint_text(Text::MapFilterEntities.get())
                 .desired_width(FILTER_WIDTH),
         );
-        name_field(ui, &filter, Text::MapFilterEntities);
+        filter.accessible_name(Text::MapFilterEntities.get());
         let shown = self.shown(names).len();
         ui.label(
             RichText::new(class_count(shown, names.len())).color(theme.color(Token::TextMuted)),
@@ -92,7 +91,7 @@ impl EntityBrowser {
         {
             let painter = ui.ctx().layer_painter(egui::LayerId::new(
                 egui::Order::Tooltip,
-                egui::Id::new(core::any::TypeId::of::<ClassDrag>()),
+                egui::Id::unique(core::any::TypeId::of::<ClassDrag>()),
             ));
             painter.text(
                 Pos2::new(at.x + MARGIN * 2.0, at.y + MARGIN * 2.0),
@@ -116,7 +115,7 @@ fn cell(
     ui.vertical(|ui| {
         ui.set_width(CELL);
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(CELL), Sense::drag());
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, name));
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
         let response = if look.brush {
             response.on_hover_text(Text::MapBrushClass.get())
         } else {

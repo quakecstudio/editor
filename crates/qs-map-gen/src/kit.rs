@@ -7,11 +7,14 @@
 
 use qs_map::{Brush, Surface, TexDef};
 
-use crate::layout::{Doorway, RoomPlan, Side};
+use crate::layout::{Doorway, RoomPlan, STOREY, Side};
 use crate::mass::{Bounds, Mass};
+use crate::mission::{KeyColour, Role};
 use crate::passage::Passage;
 use crate::rng::Rng;
-use crate::rooms::{Part, Room};
+use crate::rooms::RoomPart;
+use crate::rooms::{Block, Part, Room};
+use crate::theme::{Hazard, surface};
 use crate::theme::{Paints, WorldType};
 use crate::{GenError, RoomShape};
 
@@ -43,10 +46,17 @@ const WIDE_HALF: f64 = 224.0;
 const LOW_HEIGHT: f64 = 192.0;
 const VAULT_HEIGHT: f64 = 224.0;
 const HIGH_HEIGHT: f64 = 256.0;
+/// A junction holds a doorway and its frame on each side: half a passage's width, 56, and a
+/// frame's 16, with room to spare.
+pub(crate) const JUNCTION_HALF: f64 = 96.0;
+/// A lake's walk around its water, and the water: its least half-width.
+const LAKE_HALF: f64 = 288.0;
+/// An atrium's balcony is a storey up, and a doorway's height above it.
+const ATRIUM_HEIGHT: f64 = STOREY + LOW_HEIGHT;
 
 impl RoomShape {
     /// Every shape.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 10] = [
         Self::Hall,
         Self::Chamber,
         Self::Pit,
@@ -54,6 +64,9 @@ impl RoomShape {
         Self::Court,
         Self::Cross,
         Self::Vault,
+        Self::Atrium,
+        Self::Junction,
+        Self::Lake,
     ];
 
     /// The least half-width a room of the shape has, in x and in y.
@@ -61,7 +74,9 @@ impl RoomShape {
     pub const fn least_half(self) -> f64 {
         match self {
             Self::Hall | Self::Court | Self::Vault => SMALL_HALF,
-            Self::Chamber | Self::Pit | Self::Split | Self::Cross => WIDE_HALF,
+            Self::Chamber | Self::Pit | Self::Split | Self::Cross | Self::Atrium => WIDE_HALF,
+            Self::Junction => JUNCTION_HALF,
+            Self::Lake => LAKE_HALF,
         }
     }
 
@@ -69,9 +84,10 @@ impl RoomShape {
     #[must_use]
     pub const fn least_height(self) -> f64 {
         match self {
-            Self::Hall | Self::Chamber | Self::Pit | Self::Cross => LOW_HEIGHT,
+            Self::Hall | Self::Chamber | Self::Pit | Self::Cross | Self::Junction => LOW_HEIGHT,
             Self::Vault => VAULT_HEIGHT,
-            Self::Split | Self::Court => HIGH_HEIGHT,
+            Self::Split | Self::Court | Self::Lake => HIGH_HEIGHT,
+            Self::Atrium => ATRIUM_HEIGHT,
         }
     }
 }
@@ -199,6 +215,9 @@ pub struct RoomKit {
     pub arch: Arch,
     /// How thick the rock around its space is.
     pub wall: f64,
+    /// The parts it is dressed with on top of its shape; a part its shape does not take is
+    /// passed over.
+    pub parts: Vec<RoomPart>,
 }
 
 /// A doorway of a room built: where a passage to it starts.
@@ -258,6 +277,11 @@ pub enum KitError {
         /// The least length that holds them.
         least_length: f64,
     },
+    /// Bays asked of a room whose wall is too thin to hold them.
+    BayWall {
+        /// The least wall that holds them.
+        least_wall: f64,
+    },
 }
 
 impl core::fmt::Display for KitError {
@@ -283,12 +307,15 @@ impl core::fmt::Display for KitError {
                 shape.name(),
                 match shape {
                     RoomShape::Court => "sky",
+                    RoomShape::Lake => "sky and a water",
                     RoomShape::Hall
                     | RoomShape::Chamber
                     | RoomShape::Pit
                     | RoomShape::Split
                     | RoomShape::Cross
-                    | RoomShape::Vault => "liquid",
+                    | RoomShape::Vault
+                    | RoomShape::Atrium
+                    | RoomShape::Junction => "liquid",
                 }
             ),
             Self::Askew => {
@@ -298,6 +325,9 @@ impl core::fmt::Display for KitError {
                 f,
                 "a passage is at most {KIT_MAX_LENGTH} long and climbs at most {KIT_MAX_CLIMB}"
             ),
+            Self::BayWall { least_wall } => {
+                write!(f, "bays need a wall at least {least_wall} thick")
+            }
             Self::TooSteep { least_length } => write!(
                 f,
                 "the passage is too short for its stairs: it needs a length of {least_length}"
@@ -340,6 +370,11 @@ impl RoomKit {
         if !(KIT_MIN_WALL..=KIT_MAX_WALL).contains(&self.wall) {
             return Err(KitError::Wall);
         }
+        let least_wall = RoomPart::BAY_DEPTH + RoomPart::BAY_ROCK;
+        let bays = self.parts.contains(&RoomPart::Bays) && RoomPart::Bays.fits(self.shape);
+        if bays && self.wall < least_wall {
+            return Err(KitError::BayWall { least_wall });
+        }
         let twice = self.doors.iter().enumerate().any(|(place, side)| {
             self.doors
                 .iter()
@@ -357,13 +392,25 @@ impl RoomKit {
             RoomShape::Court if textures.sky.is_none() => {
                 Err(KitError::NeedsTexture(RoomShape::Court))
             }
+            RoomShape::Lake
+                if textures.sky.is_none()
+                    || textures
+                        .liquid
+                        .as_deref()
+                        .is_none_or(|name| Hazard::of(&surface(name)) != Hazard::Harmless) =>
+            {
+                Err(KitError::NeedsTexture(RoomShape::Lake))
+            }
             RoomShape::Hall
             | RoomShape::Chamber
             | RoomShape::Pit
             | RoomShape::Split
             | RoomShape::Court
             | RoomShape::Cross
-            | RoomShape::Vault => Ok(()),
+            | RoomShape::Vault
+            | RoomShape::Atrium
+            | RoomShape::Junction
+            | RoomShape::Lake => Ok(()),
         }
     }
 
@@ -384,8 +431,11 @@ impl RoomKit {
             height: self.height,
             turned: self.turned,
             depth: 0,
+            role: Role::Way,
         };
-        let room = Room::new(&plan, Part::Way);
+        let room = Room::new(&plan, Part::Way)
+            .in_block(Block::Walls(self.wall))
+            .dressed(&self.parts, &self.doors);
         let [mx, my] = self.middle;
         let [hx, hy] = self.half;
         let [below, above] = room.beyond();
@@ -506,7 +556,7 @@ impl PassageKit {
         }
         let doorway = match (self.door, self.arch) {
             (Door::Plain, _) => Doorway::Door,
-            (Door::Locked, _) => Doorway::Locked,
+            (Door::Locked, _) => Doorway::Locked(KeyColour::Silver),
             (Door::None, Arch::Cut) => Doorway::Arch,
             (Door::None, Arch::Square) => Doorway::Open,
         };

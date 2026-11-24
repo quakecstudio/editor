@@ -22,6 +22,7 @@ use crate::App;
 use crate::icons::Icon;
 use crate::shell::EDITOR_AREA;
 use crate::strings::{Text, panel_button};
+use crate::tests::APP_STEPS;
 
 /// The test project: two problems in `src/weapons.qc`, an error each, and a warning in
 /// `src/world.qc`.
@@ -45,6 +46,7 @@ fn show(harness: &mut Harness<'static, Option<App>>, panel: DockPanel) {
 fn harness() -> Harness<'static, Option<App>> {
     let mut harness = Harness::builder()
         .with_size([1440.0, 900.0])
+        .with_max_steps(APP_STEPS)
         .build_ui_state(
             |ui, app: &mut Option<App>| {
                 if let Some(app) = app {
@@ -225,7 +227,7 @@ fn opening_the_shown_file_again_keeps_its_edits() {
     let mut harness = harness();
     harness.get_by_label("weapons.qc").click();
     harness.run();
-    let id = egui::Id::new(EDITOR_AREA);
+    let id = egui::Id::unique(EDITOR_AREA);
     harness.ctx.memory_mut(|m| m.request_focus(id));
     harness.run();
     harness.event(egui::Event::Text("zz".to_owned()));
@@ -257,6 +259,7 @@ fn a_long_list_scrolls_in_its_panel() {
     std::fs::write(dir.join("progs.src"), src).unwrap();
     let mut harness = Harness::builder()
         .with_size([1440.0, 900.0])
+        .with_max_steps(APP_STEPS)
         .build_ui_state(
             |ui, app: &mut Option<App>| {
                 if let Some(app) = app {

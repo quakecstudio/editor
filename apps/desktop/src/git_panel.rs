@@ -20,7 +20,6 @@ use qs_workbench::git::{
 };
 
 use crate::features::{Commands, ShellRequest};
-use crate::shell::name_field;
 use crate::strings::{Text, conflict_at};
 use crate::theme::{SECTION_GAP, Theme, Token};
 
@@ -149,7 +148,7 @@ pub(crate) fn git_ui(
         if let Some(status) = &data.status {
             ui.label(Text::Branch.get());
             let current = status.branch.clone().unwrap_or_default();
-            egui::ComboBox::from_id_salt(Text::Branch.get())
+            let picker = egui::ComboBox::from_id_salt(Text::Branch.get())
                 .selected_text(current.as_str())
                 .show_ui(ui, |ui| {
                     for branch in &data.branches {
@@ -160,12 +159,13 @@ pub(crate) fn git_ui(
                         }
                     }
                 });
+            picker.response.accessible_name(Text::Branch.get());
             let typed = ui.add(
                 egui::TextEdit::singleline(new_branch)
                     .hint_text(Text::NewBranchName.get())
                     .desired_width(BRANCH_FIELD_WIDTH),
             );
-            name_field(ui, &typed, Text::NewBranchName);
+            typed.accessible_name(Text::NewBranchName.get());
             let name = new_branch.trim().to_owned();
             if ui
                 .add_enabled(
@@ -208,7 +208,7 @@ pub(crate) fn git_ui(
                     .desired_rows(2)
                     .desired_width(f32::INFINITY),
             );
-            name_field(ui, &typed, Text::CommitMessage);
+            typed.accessible_name(Text::CommitMessage.get());
             let text = message.trim().to_owned();
             if ui
                 .add_enabled(!text.is_empty(), egui::Button::new(Text::Commit.get()))

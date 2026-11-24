@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![expect(
+    clippy::panic,
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is the test's failure"
+    reason = "test code: a failed unwrap, index or panic is the test's failure"
 )]
 
 use super::*;
@@ -14,15 +15,17 @@ fn names(list: &[&str]) -> Vec<String> {
 
 fn id_names() -> Vec<String> {
     names(&[
+        "tech04_1",
         "tech01_1",
         "sfloor4_1",
         "ceiling4",
         "tech03_1",
         "adoor01_2",
+        "wbrick1_5",
         "city4_7",
         "ground1_6",
-        "wood1_5",
-        "wmet2_1",
+        "wizwood1_8",
+        "wizmet1_2",
         "door02_2",
         "*lava1",
         "*water1",
@@ -81,12 +84,13 @@ fn every_brush_is_valid_and_on_the_grid() {
     }
 }
 
-// No spec statement: L-48, a level has its size's rooms, one start, one exit in a chamber, and a key when a door is locked
+// No spec statement: L-48 and L-74, a level has its size's rooms on its path and more off it,
+// one start, one exit in a chamber, hall or vault, and each key its locks need
 #[test]
 fn a_level_has_a_start_an_exit_and_its_rooms() {
     for (size, rooms) in [(Size::Small, 5), (Size::Medium, 8), (Size::Large, 12)] {
         let level = level(3, size);
-        assert_eq!(level.rooms.len(), rooms);
+        assert!(level.rooms.len() > rooms, "{size:?}: {}", level.rooms.len());
         let count = |classname: &[u8]| {
             level
                 .map
@@ -98,13 +102,33 @@ fn a_level_has_a_start_an_exit_and_its_rooms() {
         assert_eq!(count(b"worldspawn"), 1);
         assert_eq!(count(b"info_player_start"), 1);
         assert_eq!(count(b"trigger_changelevel"), 1);
-        assert_eq!(count(b"item_key1"), usize::from(level.locked));
+        let locks = &level.report.locks;
+        assert_eq!(
+            count(b"item_key1"),
+            usize::from(locks.contains(&LockKind::SilverKey))
+        );
+        assert_eq!(
+            count(b"item_key2"),
+            usize::from(locks.contains(&LockKind::GoldKey))
+        );
+        assert_eq!(
+            count(b"func_button"),
+            usize::from(locks.contains(&LockKind::Button))
+        );
+        assert_eq!(
+            count(b"trigger_counter"),
+            usize::from(locks.contains(&LockKind::Arena))
+        );
         assert!(level.monsters > 0);
-        assert_eq!(level.rooms[level.exit].shape, RoomShape::Chamber);
+        assert!(matches!(
+            level.rooms[level.exit].shape,
+            RoomShape::Chamber | RoomShape::Hall | RoomShape::Vault
+        ));
     }
 }
 
-// No spec statement: L-48, only classes the game defines are placed: no key locks no door, and no door class leaves none
+// No spec statement: L-48 and L-74, only classes the game defines are placed: a lock whose
+// classes the game lacks is an open door or an opening, and no door class leaves none
 #[test]
 fn only_the_classes_there_are_placed() {
     let textures = id_names();
@@ -134,10 +158,10 @@ fn only_the_classes_there_are_placed() {
             .iter()
             .any(|entity| entity.classname() == Some(classname))
     };
-    // With every class, seed 1 has a locked door, its key and torches.
+    // With every class, a large level has locked doors and torches.
     let whole = level(&Classes::Any);
-    assert!(whole.locked);
-    assert!(holds(&whole, b"item_key1") && holds(&whole, b"func_door"));
+    assert_eq!(whole.report.locks.len(), 3);
+    assert!(holds(&whole, b"func_door"));
     assert!(holds(&whole, b"light_torch_small_walltorch"));
 
     // A game with doors and no key locks none; one with neither has no door.
@@ -149,8 +173,9 @@ fn only_the_classes_there_are_placed() {
         let classname = entity.classname().unwrap();
         let named: &[&[u8]] = &[b"monster_dog", b"item_health", b"func_door"];
         assert!(always.contains(&classname) || named.contains(&classname));
-        // No lock is left on a door.
+        // No lock is left on a door, and no door waits for a button or an arena.
         assert_eq!(entity.value(b"spawnflags"), None);
+        assert_eq!(entity.value(b"targetname"), None);
     }
     let doorless = level(&named(&["monster_dog", "item_key1"]));
     assert!(!doorless.locked);
@@ -209,4 +234,624 @@ fn a_game_with_no_theme_is_painted_plain() {
             assert!(!matches!(room.shape, RoomShape::Pit | RoomShape::Court));
         }
     }
+}
+
+// No spec statement: L-74, a liquid's hazard is read from its texture's name: lava is deadly,
+// slime survivable, any other liquid harmless
+#[test]
+fn a_liquid_is_as_hazardous_as_its_name() {
+    let of = |name: &str| theme::Hazard::of(&theme::surface(name));
+    assert_eq!(of("*lava1"), theme::Hazard::Deadly);
+    assert_eq!(of("*LAVA1"), theme::Hazard::Deadly);
+    assert_eq!(of("*slime0"), theme::Hazard::Survivable);
+    assert_eq!(of("*water1"), theme::Hazard::Harmless);
+    assert_eq!(of("*04water"), theme::Hazard::Harmless);
+}
+
+/// The solids a pit room of `liquid` builds in a room of half-width 256.
+fn pit_solids(liquid: &str) -> usize {
+    let plan = layout::RoomPlan {
+        middle: [0.0, 0.0],
+        shape: RoomShape::Pit,
+        floor: 0.0,
+        half: [256.0, 256.0],
+        height: 256.0,
+        turned: Side::East,
+        depth: 0,
+        role: mission::Role::Way,
+    };
+    let wall = theme::surface("wall");
+    let paints = theme::Paints::named(
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        Some(theme::surface(liquid)),
+        None,
+    );
+    let mut mass = mass::Mass::of_blocks(
+        &[mass::Bounds {
+            min: [-384.0, -384.0, -384.0],
+            max: [384.0, 384.0, 704.0],
+        }],
+        &wall,
+    )
+    .unwrap();
+    rooms::Room::new(&plan, rooms::Part::Way)
+        .build(&mut mass, &paints)
+        .unwrap()
+        .solids
+        .len()
+}
+
+// No spec statement: L-74, a pit of lava has a rail along its edge and its bridges, which a pit
+// of water or slime does not need: sixteen rails
+#[test]
+fn only_a_pit_of_lava_is_railed() {
+    let water = pit_solids("*water1");
+    assert_eq!(pit_solids("*slime0"), water);
+    assert_eq!(pit_solids("*lava1"), water + 16);
+}
+
+// No spec statement: L-74, every medium and large level is on two floors or more, has a loop,
+// two kinds of lock, a space seen before it is reached and a secret, by its report
+#[test]
+fn a_level_is_designed() {
+    let mut shortcuts = 0;
+    for seed in 0..64 {
+        for size in [Size::Medium, Size::Large] {
+            let report = level(seed, size).report;
+            let what = format!("seed {seed} {size:?}: {report:?}");
+            assert!(report.floors >= 2, "{what}");
+            assert!(report.loops >= 1, "{what}");
+            let mut kinds = report.locks.clone();
+            kinds.sort_unstable();
+            kinds.dedup();
+            assert!(kinds.len() >= 2, "{what}");
+            assert!(report.teasers >= 1, "{what}");
+            assert_eq!(report.secrets, 1, "{what}");
+            shortcuts += report.shortcuts;
+        }
+    }
+    assert!(shortcuts > 0, "no level has a teleporter back to its start");
+}
+
+// No spec statement: L-74, the plan kept is the best of those drawn: it scores at least the
+// first, which a level of one candidate would have been
+#[test]
+fn the_best_plan_is_kept() {
+    let textures = id_names();
+    let mut better = 0;
+    for seed in 0..16 {
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let has = layout::Has {
+            liquid: layout::Liquid::Water,
+            sky: layout::Sky::There,
+        };
+        let mut rng = Rng::new(seed);
+        let mut first = Plan::draw(Size::Large, has, &mut rng).unwrap();
+        let first_report = Mission::arrange(&mut first, Size::Large, &Classes::Any, &mut rng);
+        let first = Score::of(&first, &first_report);
+        let (kept, kept_report) = request.best(has, &mut Rng::new(seed)).unwrap();
+        let kept = Score::of(&kept, &kept_report);
+        assert!(kept >= first, "seed {seed}");
+        if kept > first {
+            better += 1;
+        }
+    }
+    assert!(better > 0, "no seed's first plan was bettered");
+}
+
+// No spec statement: L-74, a lock or a reward whose classes the game lacks is not reported or
+// placed: an arena with no monster to fire its counter is a plain door, and a secret room has
+// no megahealth where the game has no item_health
+#[test]
+fn what_the_game_lacks_is_not_reported_or_placed() {
+    let textures = id_names();
+    let named =
+        |names: &[&str]| Classes::Named(names.iter().map(|name| (*name).to_owned()).collect());
+    let classes = named(&[
+        "func_door",
+        "trigger_counter",
+        "func_door_secret",
+        "trigger_secret",
+    ]);
+    for seed in 0..8 {
+        let level = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &classes,
+            name: "random",
+        }
+        .generate()
+        .unwrap();
+        assert!(
+            !level.report.locks.contains(&LockKind::Arena),
+            "seed {seed}"
+        );
+        assert_eq!(level.report.secrets, 1, "seed {seed}");
+        let holds = |classname: &[u8]| {
+            level
+                .map
+                .entities
+                .iter()
+                .any(|entity| entity.classname() == Some(classname))
+        };
+        assert!(
+            !holds(b"trigger_counter") && !holds(b"item_health"),
+            "seed {seed}"
+        );
+        assert!(
+            holds(b"func_door_secret") && holds(b"trigger_secret"),
+            "seed {seed}"
+        );
+    }
+}
+
+// No spec statement: L-74, bays asked of a shape that takes none are passed over, whatever its
+// wall, and asked of one that takes them need a wall that holds them
+#[test]
+fn bays_need_a_wall_only_where_they_fit() {
+    let kit = |shape: RoomShape| RoomKit {
+        shape,
+        middle: [0.0, 0.0],
+        floor: 0.0,
+        half: [shape.least_half(), shape.least_half()],
+        height: shape.least_height(),
+        turned: Side::North,
+        doors: Vec::new(),
+        arch: Arch::Cut,
+        wall: KIT_WALL,
+        parts: vec![RoomPart::Bays],
+    };
+    let textures = Textures {
+        wall: "wall".to_owned(),
+        floor: "floor".to_owned(),
+        ceiling: "ceiling".to_owned(),
+        trim: "trim".to_owned(),
+        door: "door".to_owned(),
+        liquid: None,
+        sky: None,
+        wall_lights: WallLights::Lamps,
+    };
+    assert!(kit(RoomShape::Chamber).build(&textures).is_ok());
+    assert!(matches!(
+        kit(RoomShape::Hall).build(&textures),
+        Err(GenError::Kit(KitError::BayWall { .. }))
+    ));
+}
+
+// No spec statement: L-74, every monster faces a way set by the level, not the default east;
+// the world names a music track of id's, 2 to 11, which the server sends as the CD track; and
+// no light is brighter than a room's main light
+#[test]
+fn monsters_face_in_and_the_level_has_music() {
+    for seed in 0..8 {
+        let level = level(seed, Size::Large);
+        let mut faced = Vec::new();
+        for entity in &level.map.entities {
+            let classname = entity.classname().unwrap();
+            if classname.starts_with(b"monster_") {
+                let angle = entity.value(b"angle").unwrap();
+                faced.push(angle.to_vec());
+            }
+            if classname == b"worldspawn" {
+                let track: usize = std::str::from_utf8(entity.value(b"sounds").unwrap())
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!((2..=11).contains(&track), "seed {seed}: track {track}");
+            }
+            if classname == b"light" {
+                let light: f64 = std::str::from_utf8(entity.value(b"light").unwrap())
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                assert!(light <= 450.0, "seed {seed}: light {light}");
+            }
+        }
+        faced.sort();
+        faced.dedup();
+        assert!(faced.len() > 1, "seed {seed}: every monster faces one way");
+    }
+}
+
+// No spec statement: L-74, a level's lamps are of its theme's light texture, as id's levels
+// mount their lights: a base's tlight, a city's light1
+#[test]
+fn lamps_are_of_the_themes_light_texture() {
+    let lamps = |names: &[&str], prefix: &[u8]| {
+        let textures = self::names(names);
+        (0..8).any(|seed| {
+            let level = Request {
+                seed,
+                size: Size::Medium,
+                textures: &textures,
+                classes: &Classes::Any,
+                name: "random",
+            }
+            .generate()
+            .unwrap();
+            level.map.entities[0].brushes().any(|brush| {
+                brush
+                    .faces
+                    .iter()
+                    .any(|face| face.texture().starts_with(prefix))
+            })
+        })
+    };
+    // Only a base's names: tech walls, and its lamps.
+    let base = &[
+        "tech01_1",
+        "tech04_1",
+        "sfloor4_1",
+        "ceiling4",
+        "tech03_1",
+        "adoor01_2",
+        "tlight01",
+    ];
+    assert!(lamps(base, b"tlight"));
+    let city = &[
+        "wbrick1_5",
+        "city4_7",
+        "wizwood1_8",
+        "wizmet1_2",
+        "door02_2",
+        "light1_4",
+    ];
+    assert!(lamps(city, b"light1"));
+}
+
+// No spec statement: L-74, a lamp's light texture is scaled to the lamp and shifted so the
+// lamp's corner is a corner of the texture, wherever the lamp is: s from its start, and t from
+// its far edge (a face's t runs down it)
+#[test]
+fn a_lamp_shows_its_light_whole() {
+    let lamp = theme::Lamp::sized(theme::surface("tlight02"), 64.0);
+    for [s, t] in [
+        [-784.0, 100.0],
+        [0.0, 0.0],
+        [1040.0, -2312.0],
+        [-16.0, 48.0],
+    ] {
+        let surface = lamp.on([s, t]);
+        let qs_map::TexDef::Standard { shift, scale, .. } = surface.texdef else {
+            panic!("a standard texture")
+        };
+        assert_eq!(scale, [0.5, 0.5]);
+        let [ss, st] = shift;
+        assert_eq!((s / scale[0] + ss).rem_euclid(64.0), 0.0, "s at {s}");
+        let far = t + theme::LAMP_SIZE;
+        assert_eq!((-far / scale[1] + st).rem_euclid(64.0), 0.0, "t at {t}");
+    }
+    // A lamp of no light of the theme's is painted as it comes.
+    let plain = theme::Lamp::plain(theme::surface("trim"));
+    assert_eq!(plain.on([5.0, 7.0]), theme::surface("trim"));
+}
+
+// No spec statement: L-74, levels differ in their make: great rooms beside ordinary ones and
+// junctions where corridors turn, the exit in rooms of more than one shape, and the hook at
+// more than one place along the path
+#[test]
+fn levels_differ_in_scale_and_shape() {
+    let mut halves = Vec::new();
+    let mut exits = Vec::new();
+    let mut junctions = 0;
+    for seed in 0..32 {
+        let level = level(seed, Size::Large);
+        for room in &level.rooms {
+            if room.shape == RoomShape::Junction {
+                junctions += 1;
+            }
+        }
+        exits.push(level.rooms[level.exit].shape);
+        let textures = id_names();
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let mut rng = Rng::new(seed);
+        let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+        let has = layout::Has::of(&paints);
+        let (plan, _) = request.best(has, &mut rng).unwrap();
+        for room in &plan.rooms {
+            halves.extend(room.half);
+        }
+    }
+    let widest = halves.iter().copied().fold(0.0, f64::max);
+    let narrowest = halves.iter().copied().fold(f64::INFINITY, f64::min);
+    assert!(widest >= 288.0, "no great room: {widest}");
+    assert!(narrowest <= kit::JUNCTION_HALF, "no junction: {narrowest}");
+    assert!(junctions > 0);
+    exits.sort_by_key(|shape| shape.name());
+    exits.dedup();
+    assert!(exits.len() > 1, "the exit is always a {:?}", exits);
+}
+
+// No spec statement: L-74, a junction, a corridor's turn, is never an arena nor holds the
+// teleporter back to the start: it has no place for monsters or a pad
+#[test]
+fn a_junction_is_only_a_way_through() {
+    for seed in 0..48 {
+        let textures = id_names();
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let mut rng = Rng::new(seed);
+        let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+        let has = layout::Has::of(&paints);
+        let (plan, _) = request.best(has, &mut rng).unwrap();
+        for room in &plan.rooms {
+            if room.shape == RoomShape::Junction {
+                assert_eq!(room.role, mission::Role::Way, "seed {seed}");
+            }
+        }
+    }
+}
+
+// No spec statement: L-74, an arena's monsters stand in its places to stand, none where the
+// room is stood in: each of a level's monsters that targets a counter is away from the counter
+#[test]
+fn an_arenas_monsters_stand_apart_from_its_stand() {
+    for seed in 0..32 {
+        for size in [Size::Medium, Size::Large] {
+            let level = level(seed, size);
+            let counters: Vec<[f64; 3]> = level
+                .map
+                .entities
+                .iter()
+                .filter(|entity| entity.classname() == Some(b"trigger_counter".as_slice()))
+                .map(qs_map::Entity::origin)
+                .collect();
+            for entity in &level.map.entities {
+                let guards = entity
+                    .value(b"target")
+                    .is_some_and(|t| t.ends_with(b"_count"));
+                if guards {
+                    assert!(
+                        !counters.contains(&entity.origin()),
+                        "seed {seed} {size:?}: a guard on the arena's stand"
+                    );
+                }
+            }
+        }
+    }
+}
+
+// No spec statement: L-74, levels take each form, and each is what it says: a canyon's
+// courtyards open into each other as wide as they are, a lake level has its lake, a hub has the
+// rooms of its keys and buttons off it
+#[test]
+fn levels_take_every_form() {
+    let textures = id_names();
+    let mut forms = Vec::new();
+    for seed in 0..48 {
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let mut rng = Rng::new(seed);
+        let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+        let has = layout::Has::of(&paints);
+        let (mut plan, report) = request.best(has, &mut rng).unwrap();
+        plan.fit_passages();
+        assert_eq!(report.form, plan.form, "seed {seed}");
+        match plan.form {
+            LevelForm::Hook => {}
+            LevelForm::Canyon => {
+                assert_eq!(plan.canyon.len(), 3, "seed {seed}");
+                let open = plan
+                    .links
+                    .iter()
+                    .filter(|link| link.span == layout::Span::Open)
+                    .count();
+                assert!(open > 0, "seed {seed}: no canyon opening");
+            }
+            LevelForm::Lake => {
+                assert!(
+                    plan.rooms.iter().any(|room| room.shape == RoomShape::Lake),
+                    "seed {seed}"
+                );
+            }
+            LevelForm::Hub => {
+                let hub = plan.hub.unwrap();
+                let wings = plan.links.iter().any(|link| {
+                    link.from == hub
+                        && plan.room_of(link.to).is_some_and(|room| {
+                            matches!(room.role, mission::Role::Key(_) | mission::Role::Button(_))
+                        })
+                });
+                assert!(wings, "seed {seed}: no wing off the hub");
+            }
+        }
+        if !forms.contains(&plan.form) {
+            forms.push(plan.form);
+        }
+    }
+    assert_eq!(forms.len(), 4, "forms seen: {forms:?}");
+}
+
+// No spec statement: L-74, a weapon due in a room with no free place, as a junction has none,
+// is placed in the next room that has one, so a level still hands out every weapon in order
+#[test]
+fn a_weapon_due_in_a_full_room_waits_for_the_next() {
+    let mut rng = Rng::new(1);
+    let mut armoury = Armoury::default();
+    let at = |rooms| Depth { rooms, deepest: 6 };
+    let weapons = |filled: &populate::Filled| -> Vec<&'static str> {
+        filled
+            .items
+            .iter()
+            .map(|item| item.classname)
+            .filter(|classname| classname.starts_with("weapon_"))
+            .collect()
+    };
+    let spots = [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [128.0, 0.0, 0.0]];
+    let junction = Classes::Any.fill(at(1), &[], Some(&mut armoury), &mut rng);
+    assert!(weapons(&junction).is_empty());
+    let next = Classes::Any.fill(at(2), &spots, Some(&mut armoury), &mut rng);
+    assert_eq!(weapons(&next), ["weapon_supershotgun"]);
+    let again = Classes::Any.fill(at(2), &spots, Some(&mut armoury), &mut rng);
+    assert!(
+        weapons(&again).is_empty(),
+        "the nailgun is not due until 3 rooms in"
+    );
+    let secret = Classes::Any.fill(at(3), &spots, None, &mut rng);
+    assert!(
+        weapons(&secret).is_empty(),
+        "a secret room or the exit hands out none"
+    );
+    let third = Classes::Any.fill(at(3), &spots, Some(&mut armoury), &mut rng);
+    assert_eq!(weapons(&third), ["weapon_nailgun"]);
+}
+
+// No spec statement: L-74, a passage too short for its climb is fitted when the larger of its
+// rooms is down to its least: the other gives way, here a room on two levels whose raised side
+// faces a lake a storey down, a climb of 192 that needs 256
+#[test]
+fn the_smaller_room_gives_way_when_the_larger_cannot() {
+    let room = |middle, shape, floor, half, turned| layout::RoomPlan {
+        middle,
+        shape,
+        floor,
+        half,
+        height: shape.least_height(),
+        turned,
+        depth: 0,
+        role: mission::Role::Way,
+    };
+    let lake_half = RoomShape::Lake.least_half();
+    let mut plan = layout::Plan {
+        rooms: vec![
+            room(
+                [0.0, 0.0],
+                RoomShape::Lake,
+                0.0,
+                [lake_half, lake_half],
+                layout::Side::East,
+            ),
+            room(
+                [768.0, 0.0],
+                RoomShape::Split,
+                layout::STOREY,
+                [352.0, 352.0],
+                layout::Side::West,
+            ),
+        ],
+        cells: Vec::new(),
+        links: vec![layout::Link {
+            from: layout::RoomId(0),
+            to: layout::RoomId(1),
+            side: layout::Side::East,
+            doorway: layout::Doorway::Open,
+            climb: layout::Climb::Stairs,
+            span: layout::Span::Corridor,
+        }],
+        path: 2,
+        hooks: Vec::new(),
+        form: LevelForm::Hook,
+        hub: None,
+        canyon: Vec::new(),
+    };
+    let link = plan.links[0];
+    assert!(plan.shortfall(&link).unwrap() > 0.0);
+    plan.fit_passages();
+    assert!(
+        plan.shortfall(&link).unwrap() <= 0.0,
+        "{:?}",
+        plan.rooms[1].half
+    );
+    assert_eq!(plan.rooms[0].half, [lake_half, lake_half]);
+}
+
+// No spec statement: L-74, once fitted every passage holds the stairs and landings of its
+// climb: when the larger of its rooms is down to its least the other gives way
+#[test]
+fn every_passage_holds_its_stairs_once_fitted() {
+    let textures = id_names();
+    for size in [Size::Small, Size::Medium, Size::Large] {
+        for seed in 0..64 {
+            let request = Request {
+                seed,
+                size,
+                textures: &textures,
+                classes: &Classes::Any,
+                name: "random",
+            };
+            let mut rng = Rng::new(seed);
+            let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+            let has = layout::Has::of(&paints);
+            let (mut plan, _) = request.best(has, &mut rng).unwrap();
+            plan.fit_passages();
+            for link in &plan.links {
+                let short = plan.shortfall(link).unwrap();
+                assert!(
+                    short <= 0.0,
+                    "{size:?} seed {seed}: a passage {short} short"
+                );
+            }
+        }
+    }
+}
+
+// No spec statement: L-74, a courtyard puts no pilaster in a canyon's opening: a wall open as
+// wide as itself has none, and its two torches go with them
+#[test]
+fn a_canyon_opening_has_no_pilasters() {
+    let plan = layout::RoomPlan {
+        middle: [0.0, 0.0],
+        shape: RoomShape::Court,
+        floor: 0.0,
+        half: [320.0, 320.0],
+        height: RoomShape::Court.least_height(),
+        turned: Side::East,
+        depth: 0,
+        role: mission::Role::Way,
+    };
+    let wall = theme::surface("wall");
+    let paints = theme::Paints::named(
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        None,
+        Some(theme::surface("sky1")),
+    );
+    let torches = |open: &[Side]| {
+        let mut mass = mass::Mass::of_blocks(
+            &[mass::Bounds {
+                min: [-384.0, -384.0, -384.0],
+                max: [384.0, 384.0, 704.0],
+            }],
+            &wall,
+        )
+        .unwrap();
+        rooms::Room::new(&plan, rooms::Part::Way)
+            .opened(open)
+            .build(&mut mass, &paints)
+            .unwrap()
+            .torches
+            .len()
+    };
+    assert_eq!(torches(&[]), 8);
+    assert_eq!(torches(&[Side::East]), 6);
 }

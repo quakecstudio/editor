@@ -246,6 +246,7 @@ fn dragging_turns_and_the_wheel_moves_the_view() {
         1.3,
         vec![egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
+            source: egui::MouseWheelSource::Unknown,
             delta: egui::vec2(0.0, 10.0),
             phase: egui::TouchPhase::Move,
             modifiers: egui::Modifiers::NONE,

@@ -27,6 +27,7 @@ use crate::shell::CentreTab;
 use crate::shell::EDITOR_AREA;
 use crate::strings::Truncation;
 use crate::strings::{Text, file_count, match_count};
+use crate::tests::APP_STEPS;
 use crate::theme::{Mode, Theme, Token};
 
 /// The test project: `defs.qc` declares `bounces` and the rest; `src/weapons.qc` uses them.
@@ -46,6 +47,7 @@ fn harness_stepping(project: &Path, file: &str, dt: f32) -> H {
     let mut harness = Harness::builder()
         .with_size([1440.0, 900.0])
         .with_step_dt(dt)
+        .with_max_steps(APP_STEPS)
         .build_ui_state(
             |ui, app: &mut Option<App>| {
                 if let Some(app) = app {
@@ -61,7 +63,7 @@ fn harness_stepping(project: &Path, file: &str, dt: f32) -> H {
         .unwrap();
     *harness.state_mut() = Some(app);
     harness.run();
-    let id = egui::Id::new(EDITOR_AREA);
+    let id = egui::Id::unique(EDITOR_AREA);
     harness.ctx.memory_mut(|m| m.request_focus(id));
     harness.run();
     harness
@@ -535,7 +537,7 @@ fn cmd_f_finds_and_replaces() {
         .click();
     harness.run_steps(3);
     assert_eq!(text(&harness).matches("hops").count(), 4, "nothing matches");
-    let id = egui::Id::new(EDITOR_AREA);
+    let id = egui::Id::unique(EDITOR_AREA);
     harness.ctx.memory_mut(|m| m.request_focus(id));
     harness.run_steps(1);
     harness.key_press(Key::Escape);
@@ -744,7 +746,7 @@ fn switching_files_sends_the_edits_at_once() {
 #[test]
 fn focus_editor_gives_the_editor_the_keyboard() {
     let mut harness = harness("src/world.qc");
-    let id = egui::Id::new(EDITOR_AREA);
+    let id = egui::Id::unique(EDITOR_AREA);
     harness.ctx.memory_mut(|m| m.surrender_focus(id));
     harness.run();
     assert!(!harness.ctx.memory(|m| m.has_focus(id)));
