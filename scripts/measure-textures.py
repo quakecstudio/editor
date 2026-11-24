@@ -9,7 +9,9 @@ texture on the world model's faces, split by the way a face looks: up (a floor),
 ceiling) or neither (a wall), a face looking up or down when its normal is within about 45
 degrees of upright. It prints, for each texture named, its share of its own area on each, in
 percent, as the rows of `MEASURED` in crates/qs-map-gen/src/theme/tests.rs, and a note for a
-texture no level uses. It reads BSP29 (BSP-1) and prints nothing of a level's own data.
+texture no level uses. Names are compared in lower case, as the themes compare them. It reads
+BSP29 (BSP-1), says which levels it skips for another format, and prints nothing of a level's
+own data.
 """
 import collections
 import struct
@@ -79,7 +81,7 @@ def measure(bsp, used):
             vertex = struct.unpack_from("<HH", edges, 4 * abs(edge))[1 if edge < 0 else 0]
             points.append(struct.unpack_from("<fff", vertexes, 12 * vertex))
         kind = "floor" if up > LEVEL else "ceiling" if up < -LEVEL else "wall"
-        used[names[texture]][kind] += face_area(points)
+        used[names[texture].lower()][kind] += face_area(points)
 
 
 def main(args):
@@ -94,9 +96,10 @@ def main(args):
             if not level or name.startswith("maps/b_"):
                 continue
             if struct.unpack_from("<i", data, 0)[0] != BSP_VERSION:
+                print(f"    // {name}: skipped, not BSP29", file=sys.stderr)
                 continue
             measure(data, used)
-    for texture in wanted:
+    for texture in (name.lower() for name in wanted):
         area = sum(used[texture].values())
         if not area:
             print(f"    // {texture}: on no level's faces")

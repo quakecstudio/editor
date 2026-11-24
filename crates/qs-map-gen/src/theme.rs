@@ -263,7 +263,8 @@ pub(crate) struct Paints {
     /// Lamps: the theme's light texture, else its trim.
     pub(crate) fixture: Lamp,
     /// What holds a room up and stands in it: pillars, pilasters, beams, columns, rails.
-    /// A second wall of the theme, plainer than its trim, which id's levels use sparingly.
+    /// A second wall of the theme, plainer than its trim, which id's levels use sparingly; the
+    /// trim when the game has none of the theme's, so it still stands out from the walls.
     pub(crate) support: Surface,
     /// Doors.
     pub(crate) door: Surface,
@@ -412,7 +413,7 @@ impl Paints {
             };
             let trim = names.one_of(theme.trim, rng).unwrap_or(wall);
             let door = names.one_of(theme.door, rng).unwrap_or(trim);
-            let support = names.one_of(theme.support, rng).unwrap_or(wall);
+            let support = names.one_of(theme.support, rng).unwrap_or(trim);
             let lights: Vec<&'static str> = theme.fixture.iter().map(|(name, _)| *name).collect();
             let fixture = names.one_of(&lights, rng).map_or_else(
                 || Lamp::plain(surface(trim)),

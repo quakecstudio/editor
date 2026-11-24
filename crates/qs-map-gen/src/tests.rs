@@ -679,10 +679,7 @@ fn levels_take_every_form() {
                             matches!(room.role, mission::Role::Key(_) | mission::Role::Button(_))
                         })
                 });
-                let held = plan.rooms.iter().any(|room| {
-                    matches!(room.role, mission::Role::Key(_) | mission::Role::Button(_))
-                });
-                assert!(wings || !held, "seed {seed}: no wing off the hub");
+                assert!(wings, "seed {seed}: no wing off the hub");
             }
         }
         if !forms.contains(&plan.form) {
@@ -708,16 +705,21 @@ fn a_weapon_due_in_a_full_room_waits_for_the_next() {
             .collect()
     };
     let spots = [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [128.0, 0.0, 0.0]];
-    let junction = Classes::Any.fill(at(1), &[], &mut armoury, &mut rng);
+    let junction = Classes::Any.fill(at(1), &[], Some(&mut armoury), &mut rng);
     assert!(weapons(&junction).is_empty());
-    let next = Classes::Any.fill(at(2), &spots, &mut armoury, &mut rng);
+    let next = Classes::Any.fill(at(2), &spots, Some(&mut armoury), &mut rng);
     assert_eq!(weapons(&next), ["weapon_supershotgun"]);
-    let again = Classes::Any.fill(at(2), &spots, &mut armoury, &mut rng);
+    let again = Classes::Any.fill(at(2), &spots, Some(&mut armoury), &mut rng);
     assert!(
         weapons(&again).is_empty(),
         "the nailgun is not due until 3 rooms in"
     );
-    let third = Classes::Any.fill(at(3), &spots, &mut armoury, &mut rng);
+    let secret = Classes::Any.fill(at(3), &spots, None, &mut rng);
+    assert!(
+        weapons(&secret).is_empty(),
+        "a secret room or the exit hands out none"
+    );
+    let third = Classes::Any.fill(at(3), &spots, Some(&mut armoury), &mut rng);
     assert_eq!(weapons(&third), ["weapon_nailgun"]);
 }
 

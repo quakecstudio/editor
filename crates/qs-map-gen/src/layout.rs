@@ -391,17 +391,6 @@ pub enum LevelForm {
 }
 
 impl LevelForm {
-    /// Its name, as a summary gives it.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Hook => "hook",
-            Self::Hub => "hub",
-            Self::Lake => "lake",
-            Self::Canyon => "canyon",
-        }
-    }
-
     /// A form drawn by `rng` from those `has` allows: a lake needs water and a sky, a canyon a
     /// sky.
     fn draw(has: Has, rng: &mut Rng) -> Self {

@@ -158,12 +158,11 @@ pub(crate) fn debugger_ui(
         }
         for breakpoint in debugger.breakpoints() {
             breakpoints.horizontal(|ui| {
-                let name = format!(
-                    "{}:{} {}",
-                    breakpoint.file.to_string_lossy(),
-                    breakpoint.line,
-                    breakpoint.function.as_deref().unwrap_or_default()
-                );
+                let mut name = format!("{}:{}", breakpoint.file.to_string_lossy(), breakpoint.line);
+                if let Some(function) = &breakpoint.function {
+                    name.push(' ');
+                    name.push_str(function);
+                }
                 let mut set = true;
                 let check = ui.checkbox(&mut set, "");
                 let check = check.accessible_name(format!("{} {name}", Text::BreakpointAt.get()));

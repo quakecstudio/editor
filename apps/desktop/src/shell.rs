@@ -286,7 +286,7 @@ pub struct Shell {
     /// The zoom factor the last frame drew at.
     zoom_drawn: f32,
     centre_tab: CentreTab,
-    /// Each panel's size as drawn in the last frame, left, right and bottom.
+    /// Each panel's size as last drawn while shown, left, right and bottom.
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,

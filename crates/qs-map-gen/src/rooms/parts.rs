@@ -26,7 +26,7 @@ const BAY_HALF: f64 = 96.0;
 /// the wall: half a pilaster.
 const BAY_MARGIN: f64 = 16.0;
 const BAY_HEIGHT: f64 = 128.0;
-/// The rock a bay leaves in its cell beyond it.
+/// The rock a bay leaves in its room's block beyond it.
 const BAY_ROCK: f64 = 32.0;
 /// The most bays a room grows.
 const MOST_BAYS: usize = 2;
@@ -75,6 +75,9 @@ pub enum RoomPart {
 impl RoomPart {
     /// How far a bay reaches out of its wall, which a room's rock must hold.
     pub const BAY_DEPTH: f64 = BAY_DEPTH;
+    /// The rock a bay leaves behind it, so a wall a bay goes in is at least
+    /// [`Self::BAY_DEPTH`] and this thick.
+    pub const BAY_ROCK: f64 = BAY_ROCK;
 
     /// The parts every room of a level is dressed with: lamps where its lights are and frames
     /// around its doorways, as each of id's rooms has them.

@@ -19,11 +19,6 @@ use eframe::egui::accesskit::{Role, Toggled};
 use eframe::egui::{self, FontId, Pos2, RawInput, Rect, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{By, NodeT as _, Queryable as _};
-
-/// The frames the whole window may take to settle in a test: egui styles a widget from its state
-/// in the frame before, so a popup that appears asks for one frame more, and the map's disk
-/// watch asks for one after its interval.
-pub(crate) const APP_STEPS: u64 = 8;
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
@@ -59,6 +54,11 @@ use crate::strings::{
 };
 use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
+
+/// The frames the whole window may take to settle in a test: egui styles a widget from its state
+/// in the frame before, so a popup that appears asks for one frame more, and the map's disk
+/// watch asks for one after its interval.
+pub(crate) const APP_STEPS: u64 = 8;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -1325,7 +1325,7 @@ fn the_debugger_tab_lists_breakpoints_and_steps_only_when_stopped() {
         harness
             .query_by_role_and_label(
                 Role::CheckBox,
-                &format!("{} src/a.qc:3 ", Text::BreakpointAt.get())
+                &format!("{} src/a.qc:3", Text::BreakpointAt.get())
             )
             .is_some()
     );

@@ -622,10 +622,15 @@ impl Assembly<'_> {
                 rooms: room_plan.depth,
                 deepest,
             };
-            let filled = self
-                .request
-                .classes
-                .fill(depth, &built.spots, &mut armoury, rng);
+            // A weapon is handed out on the way: a secret room is missed and the exit ends the
+            // level, so one that waits for a room with a free place never goes to either.
+            let hands_out = place != exit && room_plan.role != Role::Secret;
+            let filled = self.request.classes.fill(
+                depth,
+                &built.spots,
+                hands_out.then_some(&mut armoury),
+                rng,
+            );
             self.place_all(&filled.items)?;
             level.items = level.items.saturating_add(filled.items.len());
             level.monsters = level.monsters.saturating_add(filled.monsters.len());

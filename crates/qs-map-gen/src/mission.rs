@@ -100,19 +100,6 @@ pub enum LockKind {
     Arena,
 }
 
-impl LockKind {
-    /// Its name, as a summary gives it.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::SilverKey => "silver_key",
-            Self::GoldKey => "gold_key",
-            Self::Button => "button",
-            Self::Arena => "arena",
-        }
-    }
-}
-
 /// What a level's mission came to.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Report {
@@ -242,21 +229,20 @@ impl<'a> Mission<'a> {
         }
     }
 
-    /// Takes the hub form back from a level whose keys and buttons hang off no hub, as when its
-    /// locks all come before the hub or no cell beside it was free: its great room is then one
-    /// more great room, and the level is reported as the form it has.
+    /// Takes the hub form back from a level no key or button room of which hangs off the hub,
+    /// as when its locks all come before the hub, are arenas, or no cell beside it was free: its
+    /// great room is then one more great room, and the level is reported as the form it has.
     fn unhub(&mut self) {
         let Some(hub) = self.plan.hub else {
             return;
         };
         let opens = |role: Option<Role>| matches!(role, Some(Role::Key(_) | Role::Button(_)));
-        let held = (0..self.plan.rooms.len()).any(|place| opens(self.role(RoomId(place))));
         let wing = self
             .plan
             .links
             .iter()
             .any(|link| link.from == hub && opens(self.role(link.to)));
-        if held && !wing {
+        if !wing {
             self.plan.hub = None;
             self.plan.form = LevelForm::Hook;
         }

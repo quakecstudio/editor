@@ -370,7 +370,7 @@ impl RoomKit {
         if !(KIT_MIN_WALL..=KIT_MAX_WALL).contains(&self.wall) {
             return Err(KitError::Wall);
         }
-        let least_wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
+        let least_wall = RoomPart::BAY_DEPTH + RoomPart::BAY_ROCK;
         let bays = self.parts.contains(&RoomPart::Bays) && RoomPart::Bays.fits(self.shape);
         if bays && self.wall < least_wall {
             return Err(KitError::BayWall { least_wall });

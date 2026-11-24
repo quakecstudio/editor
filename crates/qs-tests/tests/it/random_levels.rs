@@ -13,7 +13,7 @@
     reason = "test code: a failed unwrap, panic or index is a failed test, and map units fit"
 )]
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Diagnostic, DiagnosticKind};
@@ -50,7 +50,7 @@ const ID_TEXTURES: &[&str] = &[
     "door02_2",
     "metal4_4",
     "metal5_2",
-    "metal5_1",
+    "metal2_2",
     "rune1_1",
     "door01_2",
     "*lava1",
@@ -74,12 +74,13 @@ const LIBREQUAKE_TEXTURES: &[&str] = &[
     "grk_door3",
     "may_blok1_1",
     "may_flr1_1",
-    "may_flt1_1",
+    "may_blok2_1",
     "may_trm1_1",
     "may_door2_1",
     "t_wall1ba",
     "t_flor1a",
     "t_indent01",
+    "t_metalsheeta",
     "t_trim1aa",
     "edoor01_1",
     "*lava1",
@@ -225,6 +226,29 @@ fn check_all(seeds: std::ops::Range<u64>, textures: &[&str]) {
                 &format!("seed {seed} {size:?}"),
             );
         }
+    }
+}
+
+/// How many seeds' levels are drawn, not compiled, to find each theme a game's textures allow.
+const THEME_SEEDS: u64 = 64;
+
+// No spec statement: L-74, each game's texture list above lets every theme of that game be
+// drawn, so the levels checked can be of any of them: a theme whose wall, floor or ceiling the
+// list lacks would never be
+#[test]
+fn every_theme_is_drawn_from_its_games_textures() {
+    for (textures, themes) in [
+        (ID_TEXTURES, &["base", "city", "runic"][..]),
+        (
+            LIBREQUAKE_TEXTURES,
+            &["castle", "temple", "ruin", "station"][..],
+        ),
+    ] {
+        let drawn: BTreeSet<&str> = (0..THEME_SEEDS)
+            .map(|seed| level(seed, Size::Small, textures).theme)
+            .collect();
+        let wanted: BTreeSet<&str> = themes.iter().copied().collect();
+        assert_eq!(drawn, wanted);
     }
 }
 

@@ -183,12 +183,13 @@ impl Classes {
     }
 
     /// Fills a room at `depth` whose free places are `spots`: an item in each room, the next
-    /// weapon of `armoury` when it is due, and monsters in every room but the first.
+    /// weapon of `armoury` when it is due and the room hands out weapons, and monsters in every
+    /// room but the first.
     pub(crate) fn fill(
         &self,
         depth: Depth,
         spots: &[Point],
-        armoury: &mut Armoury,
+        armoury: Option<&mut Armoury>,
         rng: &mut Rng,
     ) -> Filled {
         let mut spots = spots.to_vec();
@@ -206,7 +207,8 @@ impl Classes {
             });
         }
         let weapons = self.of(WEAPONS);
-        if armoury.due(depth)
+        if let Some(armoury) = armoury
+            && armoury.due(depth)
             && let Some(&classname) = weapons.get(armoury.given)
             && let Some(origin) = spots.pop()
         {
