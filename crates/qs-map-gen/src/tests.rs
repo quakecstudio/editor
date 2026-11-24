@@ -624,3 +624,32 @@ fn a_junction_is_only_a_way_through() {
         }
     }
 }
+
+// No spec statement: L-74, an arena's monsters stand in its places to stand, none where the
+// room is stood in: each of a level's monsters that targets a counter is away from the counter
+#[test]
+fn an_arenas_monsters_stand_apart_from_its_stand() {
+    for seed in 0..32 {
+        for size in [Size::Medium, Size::Large] {
+            let level = level(seed, size);
+            let counters: Vec<[f64; 3]> = level
+                .map
+                .entities
+                .iter()
+                .filter(|entity| entity.classname() == Some(b"trigger_counter".as_slice()))
+                .map(qs_map::Entity::origin)
+                .collect();
+            for entity in &level.map.entities {
+                let guards = entity
+                    .value(b"target")
+                    .is_some_and(|t| t.ends_with(b"_count"));
+                if guards {
+                    assert!(
+                        !counters.contains(&entity.origin()),
+                        "seed {seed} {size:?}: a guard on the arena's stand"
+                    );
+                }
+            }
+        }
+    }
+}

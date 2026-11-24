@@ -538,9 +538,14 @@ impl Assembly<'_> {
             rng.shuffle(&mut dress);
             dress.truncate(rng.below(dress.len()).saturating_add(1));
             dress.extend(RoomPart::EVERY_ROOM);
-            // A button stands in the middle of a whole wall, where a bay would be.
-            if matches!(room_plan.role, Role::Button(_)) {
-                dress.retain(|part| !matches!(part, RoomPart::Bays | RoomPart::Braziers));
+            // A button stands in the middle of a whole wall, where a bay would be; an arena's
+            // monsters stand where columns would take their places.
+            match room_plan.role {
+                Role::Button(_) => {
+                    dress.retain(|part| !matches!(part, RoomPart::Bays | RoomPart::Braziers));
+                }
+                Role::Arena(_) => dress.retain(|part| *part != RoomPart::Columns),
+                Role::Way | Role::Key(_) | Role::Secret | Role::Shortcut => {}
             }
             let unframed = plan.unframed(place);
             let room = Room::new(room_plan, part)
