@@ -167,6 +167,12 @@ const GLOW_LIGHT: f64 = 150.0;
 const LIGHT_DROP: f64 = 40.0;
 const LIGHT_LIFT: f64 = 112.0;
 const LIGHT_INSET: f64 = 72.0;
+/// The half-width from which a room's corners need lights of their own: wider than an
+/// ordinary room's, 256.
+const WIDE_LIT: f64 = 288.0;
+/// How far in from a great room's walls its corner lights hang: past a hall's pillars, 128 in,
+/// and short of its middle.
+const CORNER_LIGHT_INSET: f64 = 200.0;
 /// How far above its liquid a pit's glow is.
 const GLOW_LIFT: f64 = 24.0;
 
@@ -331,8 +337,39 @@ impl<'a> Room<'a> {
     /// The [`BrushError`] of a brush that could not be made.
     pub(crate) fn build(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
         let mut built = self.shape(mass, paints)?;
+        self.light_corners(&mut built);
         self.dress(mass, paints, &mut built)?;
         Ok(built)
+    }
+
+    /// Lights for a room wider and higher than an ordinary one's lights reach, a light reaching
+    /// about as far as it is bright (LIGHT-4.3): one in each corner, but in a cross, whose
+    /// corners are rock, a courtyard, whose lights are in its corners already, and a junction,
+    /// which is small; and one partway down under each lamp, whose main light hangs too high
+    /// over a great room's floor to reach it.
+    fn light_corners(&self, built: &mut Built) {
+        let widest = self.plan.half.iter().copied().fold(0.0, f64::max);
+        if widest < WIDE_LIT {
+            return;
+        }
+        let floor = self.plan.floor;
+        let lit = matches!(
+            self.plan.shape,
+            RoomShape::Cross | RoomShape::Court | RoomShape::Junction
+        );
+        if !lit {
+            let (corners, _) = self.around(CORNER_LIGHT_INSET);
+            for offset in corners {
+                built
+                    .lights
+                    .push((self.at(offset, floor + LIGHT_LIFT), LESSER_LIGHT));
+            }
+        }
+        for &[x, y, _] in &built.lamps.clone() {
+            built
+                .lights
+                .push(([x, y, floor + LIGHT_LIFT + LIGHT_LIFT], LESSER_LIGHT));
+        }
     }
 
     /// Takes the room's shape out of `mass` and builds what stands in it.

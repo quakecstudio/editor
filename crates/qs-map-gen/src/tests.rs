@@ -588,3 +588,39 @@ fn levels_differ_in_scale_and_shape() {
     exits.dedup();
     assert!(exits.len() > 1, "the exit is always a {:?}", exits);
 }
+
+// No spec statement: L-74, a junction, a corridor's turn, is never an arena nor holds the
+// teleporter back to the start: it has no place for monsters or a pad
+#[test]
+fn a_junction_is_only_a_way_through() {
+    for seed in 0..48 {
+        let textures = id_names();
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let mut rng = Rng::new(seed);
+        let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+        let has = layout::Has {
+            liquid: if paints.liquid.is_some() {
+                layout::Liquid::There
+            } else {
+                layout::Liquid::Missing
+            },
+            sky: if paints.sky.is_some() {
+                layout::Sky::There
+            } else {
+                layout::Sky::Missing
+            },
+        };
+        let (plan, _) = request.best(has, &mut rng).unwrap();
+        for room in &plan.rooms {
+            if room.shape == RoomShape::Junction {
+                assert_eq!(room.role, mission::Role::Way, "seed {seed}");
+            }
+        }
+    }
+}

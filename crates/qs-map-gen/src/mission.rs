@@ -284,8 +284,13 @@ impl<'a> Mission<'a> {
             }
             LockKind::Arena => {
                 let room = self.plan.rooms.get(at)?;
+                // Not a pit, whose monsters fall in, an atrium, whose door is its balcony's,
+                // nor a junction, a corridor's turn with no room for monsters.
                 let fit = room.role == Role::Way
-                    && !matches!(room.shape, RoomShape::Pit | RoomShape::Atrium);
+                    && !matches!(
+                        room.shape,
+                        RoomShape::Pit | RoomShape::Atrium | RoomShape::Junction
+                    );
                 if !fit {
                     return None;
                 }
@@ -319,7 +324,8 @@ impl<'a> Mission<'a> {
         let Some(room) = self.plan.rooms.get_mut(before_exit) else {
             return false;
         };
-        if !behind_a_lock || room.role != Role::Way || room.shape == RoomShape::Atrium {
+        let fit = !matches!(room.shape, RoomShape::Atrium | RoomShape::Junction);
+        if !behind_a_lock || room.role != Role::Way || !fit {
             return false;
         }
         room.role = Role::Shortcut;
