@@ -9,7 +9,6 @@ use eframe::egui::{self, RichText, Sense, Ui};
 use qs_map_edit::{EntityIndex, MapRevision, OutlineRow, RowKind};
 
 use crate::icons::{self, Icon};
-use crate::shell::name_field;
 use crate::strings::{Text, brush_count};
 use crate::theme::{Theme, Token};
 
@@ -82,7 +81,7 @@ impl OutlineView {
                 .hint_text(Text::MapFilterOutline.get())
                 .desired_width(FILTER_WIDTH),
         );
-        name_field(ui, &filter, Text::MapFilterOutline);
+        filter.accessible_name(Text::MapFilterOutline.get());
         if selected != self.revealed {
             self.revealed = selected;
             self.revealing = REVEAL_FRAMES;

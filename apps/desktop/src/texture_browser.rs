@@ -16,7 +16,6 @@ use qs_map_edit::{MapDocument, MapRevision};
 use qs_wad::texture::DecodedTexture;
 
 use crate::map_browser::{FILTER_WIDTH, filter_shows};
-use crate::shell::name_field;
 use crate::strings::{Text, replace_with, texture_count, texture_of_level, wad_label};
 use crate::texture_import::{ImportChoice, ImportPreview};
 use crate::theme::{Theme, Token};
@@ -144,10 +143,10 @@ impl TextureBrowser {
                 .hint_text(Text::MapFilterTextures.get())
                 .desired_width(FILTER_WIDTH),
         );
-        name_field(ui, &filter, Text::MapFilterTextures);
+        filter.accessible_name(Text::MapFilterTextures.get());
         if self.listing.wads.len() > 1 {
             let every = Text::MapEveryWad.get();
-            let picked = egui::ComboBox::from_id_salt(ui.id().with(Text::MapWadPicker))
+            let picked = egui::ComboBox::from_id_salt(ui.scope_id().with(Text::MapWadPicker))
                 .selected_text(self.wad.as_deref().unwrap_or(every))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.wad, None, every);
@@ -156,7 +155,7 @@ impl TextureBrowser {
                         ui.selectable_value(&mut self.wad, name, &wad.name);
                     }
                 });
-            name_field(ui, &picked.response, Text::MapWadPicker);
+            picked.response.accessible_name(Text::MapWadPicker.get());
         }
         let wads: Vec<String> = self.listing.wads.iter().map(wad_label).collect();
         let shown = self.shown().len();
@@ -301,9 +300,8 @@ impl TextureBrowser {
         ui.vertical(|ui| {
             ui.set_width(CELL);
             let (rect, response) = ui.allocate_exact_size(Vec2::splat(CELL), Sense::click());
-            response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &texture.name)
-            });
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &texture.name));
             if response.clicked() {
                 self.selected = Some(texture.name.clone());
             }

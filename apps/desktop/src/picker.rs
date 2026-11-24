@@ -16,7 +16,6 @@ use qs_commands::palette::find;
 
 use crate::icons::Icon;
 use crate::palette::highlighted;
-use crate::shell::name_field;
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -92,6 +91,8 @@ impl Picker {
         let kind = self.open?;
         let mut chosen = None;
         egui::Area::new(id)
+            .role(accesskit::Role::Dialog)
+            .accessible_name(kind.text().get())
             .order(Order::Foreground)
             .anchor(Align2::CENTER_TOP, Vec2::new(0.0, TOP))
             .show(ui.ctx(), |ui| {
@@ -101,10 +102,6 @@ impl Picker {
                     .corner_radius(theme.radius.card)
                     .inner_margin(theme.space(2))
                     .show(ui, |ui| {
-                        ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
-                            node.set_role(accesskit::Role::Dialog);
-                            node.set_label(kind.text().get());
-                        });
                         ui.set_width(WIDTH);
                         ui.set_max_width(WIDTH);
                         chosen = self.list_ui(ui, theme, kind);
@@ -158,7 +155,7 @@ impl Picker {
                 .frame(egui::Frame::NONE)
                 .desired_width(WIDTH - QUERY_MARGIN);
             let response = ui.add(field);
-            name_field(ui, &response, kind.text());
+            let response = response.accessible_name(kind.text().get());
             if self.focus {
                 response.request_focus();
                 self.focus = false;

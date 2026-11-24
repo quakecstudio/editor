@@ -16,6 +16,10 @@ use serde::Deserialize;
 /// The spacing step between a panel's sections, and before an indented line.
 pub(crate) const SECTION_GAP: usize = 3;
 
+/// The room around a button's text, in points: egui 0.36's default, which the approved mockups
+/// were drawn with; egui 0.37 doubled its default.
+const BUTTON_PADDING: Vec2 = Vec2::new(4.0, 1.0);
+
 /// The design tokens, built into the app.
 const TOKENS: &str = include_str!("../../../docs/design/tokens.toml");
 
@@ -460,6 +464,15 @@ impl Theme {
         ]
     }
 
+    /// A test harness's builder whose context has the theme, its bundled fonts included, from
+    /// the first frame on: egui_kittest draws a frame as it builds the harness, and a glyph no
+    /// font has stops a test.
+    #[cfg(test)]
+    pub(crate) fn harness<State>(&self) -> egui_kittest::HarnessBuilder<State> {
+        let theme = self.clone();
+        egui_kittest::HarnessBuilder::default().with_context_setup(move |ctx| theme.apply(ctx))
+    }
+
     /// Sets egui's fonts and style to the theme.
     pub fn apply(&self, ctx: &egui::Context) {
         ctx.set_fonts(Self::fonts());
@@ -493,6 +506,7 @@ impl Theme {
             .into();
             style.spacing.item_spacing = spacing;
             style.spacing.interact_size = interact;
+            style.spacing.button_padding = BUTTON_PADDING;
             let visuals = &mut style.visuals;
             visuals.override_text_color = Some(color(Token::Text));
             visuals.panel_fill = color(Token::SurfacePanel);

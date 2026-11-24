@@ -11,7 +11,6 @@ use crate::icons::Icon;
 use crate::keymap::RUN_PROFILE;
 use crate::map_editor::MapAction;
 use crate::map_panes::Projection;
-use crate::shell::name_field;
 use crate::strings::{Text, profile_done, profile_failed};
 use crate::theme::{Theme, Token};
 
@@ -105,7 +104,7 @@ impl ProfileView {
                 })
                 .response
                 .on_hover_text(Text::MapProfilePicker.get());
-            name_field(ui, &picker, Text::MapProfilePicker);
+            picker.accessible_name(Text::MapProfilePicker.get());
             if chosen != self.chosen {
                 actions.push(MapAction::Profile(ProfileAction::Choose(chosen)));
             }

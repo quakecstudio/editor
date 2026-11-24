@@ -13,7 +13,6 @@ use qs_map_edit::FlagInfo;
 
 use crate::icons::Icon;
 use crate::map_scene::{ANGLE, COLOR_SUFFIX, FLOAT_TYPE, SPAWNFLAGS};
-use crate::shell::{name_field, name_widget};
 use crate::strings::Text;
 
 /// The width of a value's text field, in points.
@@ -107,7 +106,7 @@ impl<'a> Field<'a> {
                 [width, ui.spacing().interact_size.y],
                 egui::TextEdit::singleline(typed),
             );
-            name_widget(ui, &edit, key);
+            let edit = edit.accessible_name(key);
             if edit.lost_focus() && typed != value {
                 set = Some(typed.clone());
             }
@@ -132,7 +131,7 @@ impl<'a> Field<'a> {
                     }
                 }
                 Self::Choice(values) => {
-                    let picker = egui::ComboBox::from_id_salt(ui.id().with(value))
+                    let picker = egui::ComboBox::from_id_salt(ui.scope_id().with(value))
                         .selected_text(Text::MapChoices.get())
                         .show_ui(ui, |ui| {
                             for choice in values {
@@ -141,7 +140,7 @@ impl<'a> Field<'a> {
                                 }
                             }
                         });
-                    name_field(ui, &picker.response, Text::MapChoices);
+                    picker.response.accessible_name(Text::MapChoices.get());
                 }
             }
         });

@@ -73,21 +73,24 @@ const fn axis_text(axis: Axis) -> Text {
     }
 }
 
-/// A choice of axis.
-fn axis_choice(ui: &mut Ui, salt: &str, axis: &mut Axis) {
-    egui::ComboBox::from_id_salt(ui.id().with(salt))
+/// A choice of axis, named `name` for a screen reader.
+fn axis_choice(ui: &mut Ui, name: Text, axis: &mut Axis) {
+    let choice = egui::ComboBox::from_id_salt(ui.scope_id().with(name))
         .selected_text(axis_text(*axis).get())
         .show_ui(ui, |ui| {
             for choice in [Axis::X, Axis::Y, Axis::Z] {
                 ui.selectable_value(axis, choice, axis_text(choice).get());
             }
         });
+    choice.response.accessible_name(name.get());
 }
 
-/// Three drag fields for a point or offset.
-fn three(ui: &mut Ui, values: &mut [f64; 3], speed: f64) {
-    for value in values {
-        ui.add(egui::DragValue::new(value).speed(speed));
+/// Three drag fields for a point or offset, the row's `name` and each one's axis naming it for
+/// a screen reader.
+fn three(ui: &mut Ui, name: Text, values: &mut [f64; 3], speed: f64) {
+    for (value, axis) in values.iter_mut().zip([Axis::X, Axis::Y, Axis::Z]) {
+        let field = ui.add(egui::DragValue::new(value).speed(speed));
+        field.accessible_name(format!("{} {}", name.get(), axis_text(axis).get()));
     }
 }
 
@@ -130,7 +133,7 @@ impl BrushTools {
         });
         ui.horizontal_wrapped(|ui| {
             ui.label(Text::MapScaleBy.get());
-            three(ui, &mut fields.scale, FACTOR_STEP);
+            three(ui, Text::MapScaleBy, &mut fields.scale, FACTOR_STEP);
             if ui
                 .add_enabled(one_entity, egui::Button::new(Text::MapScaleBrushes.get()))
                 .clicked()
@@ -145,10 +148,11 @@ impl BrushTools {
         });
         ui.horizontal_wrapped(|ui| {
             ui.label(Text::MapShearAlong.get());
-            axis_choice(ui, "shear along", &mut fields.along);
+            axis_choice(ui, Text::MapShearAlong, &mut fields.along);
             ui.label(Text::MapShearBy.get());
-            axis_choice(ui, "shear by", &mut fields.by);
-            ui.add(egui::DragValue::new(&mut fields.shear).speed(FACTOR_STEP));
+            axis_choice(ui, Text::MapShearBy, &mut fields.by);
+            let shear = ui.add(egui::DragValue::new(&mut fields.shear).speed(FACTOR_STEP));
+            shear.accessible_name(Text::MapShearFactor.get());
             if ui
                 .add_enabled(
                     one_entity && fields.along != fields.by,
@@ -168,7 +172,7 @@ impl BrushTools {
         });
         ui.horizontal_wrapped(|ui| {
             ui.label(Text::MapSweepStep.get());
-            three(ui, &mut fields.step, LENGTH_STEP);
+            three(ui, Text::MapSweepStep, &mut fields.step, LENGTH_STEP);
             if ui.button(Text::MapAddStep.get()).clicked() {
                 let last = fields.path.last().copied().unwrap_or(ORIGIN);
                 fields.path.push([0, 1, 2].map(|i| {
@@ -216,7 +220,8 @@ impl BrushTools {
                     ExtrudeMode::Extrude,
                 ));
             }
-            ui.add(egui::DragValue::new(&mut fields.extrude).speed(LENGTH_STEP));
+            let extrude = ui.add(egui::DragValue::new(&mut fields.extrude).speed(LENGTH_STEP));
+            extrude.accessible_name(Text::MapExtrudeDistance.get());
             if ui.button(Text::MapSplitFace.get()).clicked() {
                 actions.push(BrushAction::SplitFace(face, fields.out));
             }

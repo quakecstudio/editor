@@ -33,9 +33,8 @@ struct Spec {
 /// The page drawn for `spec`, with the last click's action kept.
 fn drawn(spec: Spec) -> Harness<'static, (Spec, Option<WelcomeAction>)> {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let fonts = theme.clone();
     // Room for the whole page: a click on a row scrolled out of sight reaches nothing.
-    let mut harness = Harness::builder().with_size(PAGE).build_ui_state(
+    let mut harness = theme.harness().with_size(PAGE).build_ui_state(
         move |ui, (spec, action): &mut (Spec, Option<WelcomeAction>)| {
             let shown = Page {
                 icon: None,
@@ -51,9 +50,6 @@ fn drawn(spec: Spec) -> Harness<'static, (Spec, Option<WelcomeAction>)> {
         },
         (spec, None),
     );
-    // The bundled fonts: with none every text is no wider than a point, and the links, side
-    // by side, are one place to click.
-    fonts.apply(&harness.ctx);
     harness.run();
     harness
 }

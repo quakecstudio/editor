@@ -6,8 +6,8 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
+use crate::theme::{Mode, Theme};
 use eframe::egui::{Pos2, Rect, Vec2};
-use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use qs_map_edit::uv::{Axis, FaceIndex, FaceRef, JustifyTo, UvChoice};
 use qs_map_edit::{BrushIndex, EntityIndex};
@@ -163,7 +163,7 @@ fn clicked(label: &str, copied: Option<FaceRef>) -> Vec<BrushAction> {
     uv.pick(Some(face(0)), &scene, PickMode::Replace);
     uv.pick(Some(face(1)), &scene, PickMode::Toggle);
     uv.copied = copied.and_then(|at| scene.face(at).map(|face| (at, face.plane)));
-    let mut harness = Harness::new_ui_state(
+    let mut harness = Theme::load(Mode::Dark).unwrap().harness().build_ui_state(
         |ui, (uv, actions): &mut (UvEditor, Vec<BrushAction>)| {
             let size_of = |_: &str| Some([64, 64]);
             actions.extend(uv.properties(ui, &scene, &size_of));

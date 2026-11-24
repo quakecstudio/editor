@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, RichText, Ui};
 
-use crate::shell::name_field;
 use crate::strings::{Text, Truncation, search_count};
 use crate::theme::{Theme, Token};
 
@@ -360,7 +359,7 @@ fn form_ui(ui: &mut Ui, form: &mut SearchForm) -> Option<MultiAction> {
                 .hint_text(Text::SearchProject.get())
                 .desired_width(FIELD_WIDTH),
         );
-        name_field(ui, &typed, Text::SearchProject);
+        let typed = typed.accessible_name(Text::SearchProject.get());
         if form.focus {
             typed.request_focus();
             form.focus = false;
@@ -381,7 +380,7 @@ fn form_ui(ui: &mut Ui, form: &mut SearchForm) -> Option<MultiAction> {
                 .hint_text(Text::Replace.get())
                 .desired_width(FIELD_WIDTH),
         );
-        name_field(ui, &typed, Text::Replace);
+        typed.accessible_name(Text::Replace.get());
         if ui
             .add_enabled(
                 !form.text.is_empty(),
@@ -424,7 +423,13 @@ fn excerpt_ui(
     if let Some(range) = output.cursor_range {
         excerpt.caret = Some(byte_of(&text, range.primary.index.into()));
     }
-    if output.response.changed() && text != excerpt.text {
+    let changed = output.response.changed();
+    output.response.response.accessible_name(format!(
+        "{}:{}",
+        excerpt.path.display(),
+        excerpt.line
+    ));
+    if changed && text != excerpt.text {
         action = Some(MultiAction::Edit(ExcerptIndex::new(index), text));
     }
     action

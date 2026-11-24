@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use eframe::egui::{self, Pos2, RichText, Sense, Ui, WidgetInfo, WidgetType};
+use eframe::egui::{self, Pos2, RichText, Role, Sense, Ui, WidgetInfo};
 use qs_map_edit::Prefab;
 
 use crate::icons::Icon;
@@ -69,9 +69,7 @@ impl PrefabBrowser {
                     let text = galley.size();
                     let size = egui::vec2(text.x + pad.x * 2.0, text.y + pad.y * 2.0);
                     let (rect, response) = ui.allocate_exact_size(size, Sense::drag());
-                    response.widget_info(|| {
-                        WidgetInfo::labeled(WidgetType::Button, true, &prefab.name)
-                    });
+                    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &prefab.name));
                     response.dnd_set_drag_payload(PrefabDrag(prefab.path.clone()));
                     let visuals = ui.style().interact(&response);
                     ui.painter()
@@ -90,7 +88,7 @@ impl PrefabBrowser {
         {
             let painter = ui.ctx().layer_painter(egui::LayerId::new(
                 egui::Order::Tooltip,
-                egui::Id::new(core::any::TypeId::of::<PrefabDrag>()),
+                egui::Id::unique(core::any::TypeId::of::<PrefabDrag>()),
             ));
             let name = path
                 .file_stem()

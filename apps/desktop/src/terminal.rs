@@ -14,7 +14,6 @@ use qs_workbench::{TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 use crate::features::{Commands, ShellRequest};
 use crate::icons::Icon;
 use crate::shell::PREVIEW_POLL;
-use crate::shell::name_field;
 use crate::strings::{Text, exit_status};
 use crate::theme::{Theme, Token};
 use qs_layout::DockPanel;
@@ -111,7 +110,7 @@ pub(crate) fn terminal_ui(
     ui.label(RichText::new(status(tab)).color(colour));
     let shell = matches!(tab.running(), Running::Shell) && tab.exit().is_none();
     if shell {
-        egui::Panel::bottom(egui::Id::new(Text::TerminalCommand.get()))
+        egui::Panel::bottom(egui::Id::unique(Text::TerminalCommand.get()))
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let typed = ui.add(
@@ -120,7 +119,7 @@ pub(crate) fn terminal_ui(
                         .code_editor()
                         .desired_width(f32::INFINITY),
                 );
-                name_field(ui, &typed, Text::TerminalCommand);
+                let typed = typed.accessible_name(Text::TerminalCommand.get());
                 if typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     typed.request_focus();
                     let line = std::mem::take(&mut view.line);

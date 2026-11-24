@@ -12,7 +12,6 @@ use qs_map_edit::{EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams}
 
 use crate::map_browser::FILTER_WIDTH;
 use crate::map_editor::MapAction;
-use crate::shell::name_field;
 use crate::strings::{
     Text, brush_place, entity_place, face_place, fix_label, issue_count, issue_line,
     map_found_count,
@@ -103,7 +102,7 @@ impl IssueBrowser {
         }
         let row = ui.spacing().interact_size.y;
         egui::ScrollArea::vertical()
-            .id_salt(ui.id().with(core::any::TypeId::of::<MapIssue>()))
+            .id_salt(ui.scope_id().with(core::any::TypeId::of::<MapIssue>()))
             .show_rows(ui, row, issues.len(), |ui, shown| {
                 for issue in issues.get(shown).unwrap_or_default() {
                     ui.horizontal(|ui| {
@@ -138,7 +137,7 @@ impl IssueBrowser {
                 .hint_text(Text::MapSearchQuery.get())
                 .desired_width(FILTER_WIDTH),
         );
-        name_field(ui, &field, Text::MapSearchQuery);
+        let field = field.accessible_name(Text::MapSearchQuery.get());
         let field = field.on_hover_text(Text::MapSearchSyntax.get());
         let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if ui.button(Text::Find.get()).clicked() || entered {
@@ -176,7 +175,7 @@ impl IssueBrowser {
             .collect();
         let row = ui.spacing().interact_size.y;
         egui::ScrollArea::vertical()
-            .id_salt(ui.id().with(core::any::TypeId::of::<MapFound>()))
+            .id_salt(ui.scope_id().with(core::any::TypeId::of::<MapFound>()))
             .show_rows(ui, row, rows.len(), |ui, shown| {
                 for (place, text) in rows.get(shown).unwrap_or_default() {
                     if ui.add(egui::Button::new(text).frame(false)).clicked() {

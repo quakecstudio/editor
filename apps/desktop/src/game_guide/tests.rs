@@ -27,7 +27,7 @@ fn files(state: GameState, missing: &[&str]) -> GameFiles {
 /// The guide drawn for `files`, with the last click's action kept.
 fn drawn(files: GameFiles) -> Harness<'static, (GameFiles, Option<GuideAction>)> {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let mut harness = Harness::new_ui_state(
+    let mut harness = theme.harness().build_ui_state(
         move |ui, (files, action): &mut (GameFiles, Option<GuideAction>)| {
             if let Some(clicked) = guide(ui, &theme, files) {
                 *action = Some(clicked);
@@ -124,7 +124,7 @@ fn the_guide_opens_unless_the_game_is_found() {
 #[test]
 fn the_window_has_its_help() {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let mut harness = Harness::new_ui_state(
+    let mut harness = theme.harness().build_ui_state(
         move |ui, files: &mut GameFiles| {
             let _action = super::window(ui.ctx(), &theme, Guide::Shown, files);
         },

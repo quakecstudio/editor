@@ -11,9 +11,7 @@
 use qs_render::Degrees;
 use std::collections::{BTreeSet, HashMap};
 
-use eframe::egui::{
-    self, Color32, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
-};
+use eframe::egui::{self, Color32, Pos2, Rect, RichText, Role, Sense, Stroke, Ui, WidgetInfo};
 use eframe::egui_wgpu::RenderState;
 use qs_layout::{
     Along, CameraSpeed, Direction, KeepViewParams, Layout, MapCamera, MapCameraParams, MapFov,
@@ -50,7 +48,6 @@ use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::pick::{Answer, Pick};
-use crate::shell::name_field;
 use crate::strings::{Text, also_selected, panes_text, select_all_of};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
@@ -849,48 +846,54 @@ impl MapEditor {
             // The pickers keep egui's combo width and cut a long choice short, so a row wraps
             // before one rather than letting it run past the centre (P7-12, large text).
             let combo = ui.spacing().combo_width;
-            let panes =
-                egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapPanes>()))
-                    .width(combo)
-                    .truncate()
-                    .selected_text(panes_text(layout).get())
-                    .show_ui(ui, |ui| {
-                        for choice in MapPanes::ALL {
-                            if ui
-                                .selectable_label(layout == choice, panes_text(choice).get())
-                                .clicked()
-                            {
-                                actions.push(MapAction::View(ViewSetting::Panes(choice)));
-                            }
-                        }
-                    });
-            name_field(ui, &panes.response, Text::MapPanesPicker);
+            let panes = egui::ComboBox::from_id_salt(
+                ui.scope_id().with(core::any::TypeId::of::<MapPanes>()),
+            )
+            .width(combo)
+            .truncate()
+            .selected_text(panes_text(layout).get())
+            .show_ui(ui, |ui| {
+                for choice in MapPanes::ALL {
+                    if ui
+                        .selectable_label(layout == choice, panes_text(choice).get())
+                        .clicked()
+                    {
+                        actions.push(MapAction::View(ViewSetting::Panes(choice)));
+                    }
+                }
+            });
             // A choice cut short is read whole on hover.
-            panes.response.on_hover_text(panes_text(layout).get());
+            panes
+                .response
+                .accessible_name(Text::MapPanesPicker.get())
+                .on_hover_text(panes_text(layout).get());
             ui.separator();
             let label = ui
                 .add(egui::Label::new(Icon::Grid.char().to_string()).sense(egui::Sense::hover()))
                 .on_hover_text(Text::MapGrid.get());
             label.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Label, true, Text::MapGrid.get())
+                egui::WidgetInfo::labeled(egui::Role::Label, true, Text::MapGrid.get())
             });
             let grid = self.tools.grid;
-            let picked =
-                egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapGrid>()))
-                    .width(combo)
-                    .selected_text(grid.to_string())
-                    .show_ui(ui, |ui| {
-                        for choice in MapGrid::all() {
-                            if ui
-                                .selectable_label(grid == choice, choice.to_string())
-                                .clicked()
-                            {
-                                actions.push(MapAction::View(ViewSetting::Grid(choice)));
-                            }
-                        }
-                    });
-            name_field(ui, &picked.response, Text::MapGridPicker);
-            picked.response.on_hover_text(Text::MapGridPicker.get());
+            let picked = egui::ComboBox::from_id_salt(
+                ui.scope_id().with(core::any::TypeId::of::<MapGrid>()),
+            )
+            .width(combo)
+            .selected_text(grid.to_string())
+            .show_ui(ui, |ui| {
+                for choice in MapGrid::all() {
+                    if ui
+                        .selectable_label(grid == choice, choice.to_string())
+                        .clicked()
+                    {
+                        actions.push(MapAction::View(ViewSetting::Grid(choice)));
+                    }
+                }
+            });
+            picked
+                .response
+                .accessible_name(Text::MapGridPicker.get())
+                .on_hover_text(Text::MapGridPicker.get());
             ui.separator();
             let (state, other) = match self.links {
                 LinkView::All => (Toggled::On, LinkView::Selection),
@@ -922,35 +925,37 @@ impl MapEditor {
                 .add(egui::Label::new(Icon::Show.char().to_string()).sense(egui::Sense::hover()))
                 .on_hover_text(Text::MapShow.get());
             label.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Label, true, Text::MapShow.get())
+                egui::WidgetInfo::labeled(egui::Role::Label, true, Text::MapShow.get())
             });
-            let show =
-                egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShowFilter>()))
-                    .width(combo)
-                    .truncate()
-                    .selected_text(self.show.text().get())
-                    .show_ui(ui, |ui| {
-                        for show in ShowFilter::ALL {
-                            if ui
-                                .selectable_label(self.show == show, show.text().get())
-                                .clicked()
-                            {
-                                actions.push(MapAction::Filter(show));
-                            }
-                        }
-                        ui.separator();
-                        // The selected lights' reach is always drawn; this draws every light's.
-                        let mut every = self.lights == LinkView::All;
-                        if ui.checkbox(&mut every, Text::MapLightsAll.get()).changed() {
-                            self.lights = if every {
-                                LinkView::All
-                            } else {
-                                LinkView::Selection
-                            };
-                        }
-                    });
-            name_field(ui, &show.response, Text::MapShowPicker);
-            show.response.on_hover_text(self.show.text().get());
+            let show = egui::ComboBox::from_id_salt(
+                ui.scope_id().with(core::any::TypeId::of::<ShowFilter>()),
+            )
+            .width(combo)
+            .truncate()
+            .selected_text(self.show.text().get())
+            .show_ui(ui, |ui| {
+                for show in ShowFilter::ALL {
+                    if ui
+                        .selectable_label(self.show == show, show.text().get())
+                        .clicked()
+                    {
+                        actions.push(MapAction::Filter(show));
+                    }
+                }
+                ui.separator();
+                // The selected lights' reach is always drawn; this draws every light's.
+                let mut every = self.lights == LinkView::All;
+                if ui.checkbox(&mut every, Text::MapLightsAll.get()).changed() {
+                    self.lights = if every {
+                        LinkView::All
+                    } else {
+                        LinkView::Selection
+                    };
+                }
+            });
+            show.response
+                .accessible_name(Text::MapShowPicker.get())
+                .on_hover_text(self.show.text().get());
         });
         actions
     }
@@ -1091,10 +1096,10 @@ impl MapEditor {
         let link_key = self.link_key();
         let response = ui.interact(
             area,
-            egui::Id::new(core::any::TypeId::of::<Self>()).with(pane),
+            egui::Id::unique(core::any::TypeId::of::<Self>()).with(pane),
             Sense::click_and_drag(),
         );
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, pane.text().get()));
+        response.widget_info(|| WidgetInfo::labeled(Role::Unknown, true, pane.text().get()));
         let asked = std::mem::take(&mut self.keyboard_asked) == Keyboard::Here;
         if response.clicked() || response.secondary_clicked() || asked {
             response.request_focus();
@@ -1646,7 +1651,7 @@ impl MapEditor {
                 ui.label(Text::MapCamera.get());
                 for (axis, name) in camera.origin.iter_mut().zip(CAMERA_AXES) {
                     let field = ui.add(egui::DragValue::new(axis).speed(1.0).max_decimals(1));
-                    name_field(ui, &field, name);
+                    let field = field.accessible_name(name.get());
                     field.on_hover_text(Text::MapCameraHelp.get());
                 }
                 // TrenchBroom's Reset camera zoom is Ctrl+Alt+Z, which is undo here (Cmd+Z with
@@ -1720,7 +1725,7 @@ impl MapEditor {
         if !also.is_empty() {
             ui.label(RichText::new(also_selected(also.len())).color(theme.color(Token::TextMuted)));
         }
-        egui::Grid::new(ui.id().with(entity))
+        egui::Grid::new(ui.scope_id().with(entity))
             .num_columns(KEY_COLUMNS)
             .striped(true)
             .show(ui, |ui| {
@@ -1802,16 +1807,16 @@ impl MapEditor {
                     .hint_text(Text::MapKey.get())
                     .desired_width(NEW_PAIR_WIDTH),
             );
-            name_field(ui, &key, Text::MapKey);
+            key.accessible_name(Text::MapKey.get());
             let value = ui.add(
                 egui::TextEdit::singleline(&mut self.adding.1)
                     .hint_text(Text::MapValue.get())
                     .desired_width(NEW_PAIR_WIDTH),
             );
-            name_field(ui, &value, Text::MapValue);
+            value.accessible_name(Text::MapValue.get());
             let targets = !keys.targetnames.is_empty() && self.targeting.contains(&self.adding.0);
             if targets {
-                let picker = egui::ComboBox::from_id_salt(ui.id().with((entity, 1)))
+                let picker = egui::ComboBox::from_id_salt(ui.scope_id().with((entity, 1)))
                     .selected_text(Text::MapTargets.get())
                     .show_ui(ui, |ui| {
                         for name in &keys.targetnames {
@@ -1820,7 +1825,7 @@ impl MapEditor {
                             }
                         }
                     });
-                name_field(ui, &picker.response, Text::MapTargets);
+                picker.response.accessible_name(Text::MapTargets.get());
             }
             let ready = !self.adding.0.trim().is_empty();
             let add = ui

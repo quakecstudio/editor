@@ -9,7 +9,6 @@ use std::collections::BTreeSet;
 
 use eframe::egui;
 use eframe::egui::accesskit::Role;
-use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
 use super::{GUIDE, Topic, button, take_links};
@@ -59,7 +58,7 @@ fn the_link_list_the_site_checks_is_every_topics_link() {
 #[test]
 fn a_help_button_explains_and_links_to_the_guide() {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let mut harness = Harness::new_ui(|ui| {
+    let mut harness = theme.harness().build_ui(|ui| {
         button(ui, &theme, Topic::Debugger);
     });
     harness.run();
@@ -80,7 +79,7 @@ fn a_help_button_explains_and_links_to_the_guide() {
 #[test]
 fn the_guide_link_is_taken_to_the_browser_and_nothing_else_is() {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let mut harness = Harness::new_ui_state(
+    let mut harness = theme.harness().build_ui_state(
         |ui, taken: &mut Vec<String>| {
             button(ui, &theme, Topic::MapIssues);
             taken.extend(take_links(ui.ctx()));
@@ -98,7 +97,7 @@ fn the_guide_link_is_taken_to_the_browser_and_nothing_else_is() {
     harness.run();
     assert_eq!(*harness.state(), [Topic::MapIssues.url()]);
 
-    let mut other = Harness::new_ui_state(
+    let mut other = theme.harness().build_ui_state(
         |ui, taken: &mut (Vec<String>, usize)| {
             ui.ctx()
                 .open_url(egui::OpenUrl::same_tab("https://example.com/"));

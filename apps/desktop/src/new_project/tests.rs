@@ -20,8 +20,7 @@ const ROOM: eframe::egui::Vec2 = eframe::egui::Vec2::new(800.0, 600.0);
 /// The dialog's body drawn with `chosen` marked, with the last click's action kept.
 fn drawn(chosen: Template) -> Harness<'static, (Template, Option<NewProjectAction>)> {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let fonts = theme.clone();
-    let mut harness = Harness::new_ui_state(
+    let mut harness = theme.harness().build_ui_state(
         move |ui, (chosen, action): &mut (Template, Option<NewProjectAction>)| {
             if let Some(clicked) = body(ui, &theme, chosen) {
                 *action = Some(clicked);
@@ -29,7 +28,6 @@ fn drawn(chosen: Template) -> Harness<'static, (Template, Option<NewProjectActio
         },
         (chosen, None),
     );
-    fonts.apply(&harness.ctx);
     harness.run();
     harness
 }
@@ -122,9 +120,8 @@ fn the_games_found_decide_the_one_marked() {
 #[test]
 fn the_window_hides_when_answered() {
     let theme = Theme::load(Mode::Dark).unwrap();
-    let fonts = theme.clone();
     // Room for the window: a harness sized to its panel's contents, which are none, has none.
-    let mut harness = Harness::builder().with_size(ROOM).build_ui_state(
+    let mut harness = theme.harness().with_size(ROOM).build_ui_state(
         move |ui, (dialog, made): &mut (NewProject, Option<Template>)| {
             if let Some(template) = dialog.show(ui.ctx(), &theme) {
                 *made = Some(template);
@@ -132,8 +129,6 @@ fn the_window_hides_when_answered() {
         },
         (NewProject::Hidden, None),
     );
-    // The dialog is shown once the bundled fonts are there: its heading is in the semibold.
-    fonts.apply(&harness.ctx);
     harness.run();
     harness.state_mut().0.open(Games::Rerelease);
     // Twice: the dialog takes its place a frame after it is first drawn.

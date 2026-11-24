@@ -21,7 +21,6 @@ use qs_settings::ExternalAgent;
 use qs_workbench::{HunkId, StagedHunk};
 
 use crate::markdown::{self, Part};
-use crate::shell::name_field;
 use crate::strings::{Text, queued_count, tokens_used};
 
 mod external;
@@ -903,19 +902,20 @@ impl AgentPanel {
                 .desired_rows(2)
                 .desired_width(f32::INFINITY),
         );
-        name_field(ui, &task, Text::AgentTaskHint);
+        task.accessible_name(Text::AgentTaskHint.get());
         ui.horizontal(|ui| {
             if ui.button(Text::AgentRun.get()).clicked() && !self.task.trim().is_empty() {
                 action = Some(AgentAction::Start(std::mem::take(&mut self.task)));
             }
             let mut profile = self.permissions.profile;
-            egui::ComboBox::from_id_salt(Text::AgentProfile.get())
+            let picker = egui::ComboBox::from_id_salt(Text::AgentProfile.get())
                 .selected_text(profile_text(profile).get())
                 .show_ui(ui, |ui| {
                     for choice in [AgentProfile::Ask, AgentProfile::Write, AgentProfile::Full] {
                         ui.selectable_value(&mut profile, choice, profile_text(choice).get());
                     }
                 });
+            picker.response.accessible_name(Text::AgentProfile.get());
             if profile != self.permissions.profile {
                 action = Some(AgentAction::Profile(profile));
             }
@@ -947,13 +947,14 @@ impl AgentPanel {
             return;
         }
         let mut runs = self.runs;
-        egui::ComboBox::from_id_salt(Text::Agent.get())
+        let picker = egui::ComboBox::from_id_salt(Text::Agent.get())
             .selected_text(name(runs))
             .show_ui(ui, |ui| {
                 for choice in choices {
                     ui.selectable_value(&mut runs, choice, name(choice));
                 }
             });
+        picker.response.accessible_name(Text::Agent.get());
         if runs != self.runs {
             self.runs = runs;
             self.picked = Picked::ByModder;
@@ -1011,7 +1012,7 @@ impl AgentPanel {
                 .hint_text(Text::AgentHistorySearch.get())
                 .desired_width(f32::INFINITY),
         );
-        name_field(ui, &search, Text::AgentHistorySearch);
+        search.accessible_name(Text::AgentHistorySearch.get());
         if view.threads.is_empty() {
             muted(ui, theme, Text::AgentNoHistory.get());
         }
@@ -1105,7 +1106,7 @@ fn field(ui: &mut Ui, label: Text, value: &mut String, kind: FieldKind) {
             .password(kind == FieldKind::Secret)
             .desired_width(f32::INFINITY),
     );
-    name_field(ui, &response, label);
+    response.accessible_name(label.get());
 }
 
 /// A line of muted, wrapped text.
@@ -1255,7 +1256,7 @@ fn queue_box(ui: &mut Ui, theme: &Theme, thread: &mut Thread, text: &mut String)
                 .hint_text(Text::AgentQueueHint.get())
                 .desired_width(QUEUE_BOX_WIDTH),
         );
-        name_field(ui, &typed, Text::AgentQueueHint);
+        typed.accessible_name(Text::AgentQueueHint.get());
         if ui.button(Text::AgentQueue.get()).clicked() && !text.trim().is_empty() {
             thread.queued.push(std::mem::take(text));
         }

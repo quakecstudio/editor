@@ -219,11 +219,6 @@ pub(crate) fn button(ui: &mut Ui, theme: &Theme, topic: Topic) -> Response {
             ui.set_max_width(HELP_WIDTH);
             ui.label(topic.summary().get());
             let link = ui.link(Text::HelpReadMore.get());
-            // A link to a screen reader, named by its text, and opened by Enter or a click.
-            ui.ctx().accesskit_node_builder(link.id, |node| {
-                node.set_role(egui::accesskit::Role::Link);
-                node.set_label(Text::HelpReadMore.get());
-            });
             if link.clicked() {
                 ui.ctx().open_url(egui::OpenUrl::new_tab(topic.url()));
             }
@@ -264,6 +259,7 @@ fn take_links(ctx: &egui::Context) -> Vec<String> {
             }
             egui::OutputCommand::OpenUrl(_)
             | egui::OutputCommand::CopyText(_)
+            | egui::OutputCommand::TextSelectionSettled(_)
             | egui::OutputCommand::CopyImage(_) => true,
         });
         urls

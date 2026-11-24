@@ -464,7 +464,7 @@ struct Drawn {
 pub(crate) fn show(ui: &mut Ui, theme: &Theme, part: Part, text: &str) {
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
-    let id = ui.id().with(part);
+    let id = ui.scope_id().with(part);
     let width = ui.available_width();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     core::hash::Hash::hash(text, &mut hasher);

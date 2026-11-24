@@ -154,7 +154,7 @@ impl EditorsFeature {
                         editor.sync(open, theme);
                         editor
                     }
-                    None => Editor::new(Id::new(EDITOR_AREA), open, theme),
+                    None => Editor::new(Id::unique(EDITOR_AREA), open, theme),
                 };
                 self.editor = Some(editor);
                 self.mark_changes(commands);

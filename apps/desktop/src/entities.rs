@@ -264,6 +264,7 @@ pub(crate) fn properties(
                                     .code_editor()
                                     .desired_width(f32::INFINITY),
                             );
+                            let response = response.accessible_name(&field.name);
                             let entered = response.lost_focus()
                                 && ui.input(|i| i.key_pressed(egui::Key::Enter));
                             if entered && *text != shown {

@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use egui_kittest::Harness;
+use crate::theme::{Mode, Theme};
 use egui_kittest::kittest::Queryable;
 use qs_map_edit::uv::{FaceIndex, FaceRef};
 use qs_map_edit::{Axis, BrushIndex, EntityIndex, Lock};
@@ -34,7 +34,7 @@ const WORLD: EntityIndex = EntityIndex::new(0);
 /// `tools` asks for.
 fn clicked(tools: BrushTools, labels: &[&str]) -> Vec<BrushAction> {
     let scene = scene();
-    let mut harness = Harness::new_ui_state(
+    let mut harness = Theme::load(Mode::Dark).unwrap().harness().build_ui_state(
         |ui, (tools, actions): &mut (BrushTools, Vec<BrushAction>)| {
             actions.extend(tools.properties(ui, &scene, None, &|_| None, &[]));
         },

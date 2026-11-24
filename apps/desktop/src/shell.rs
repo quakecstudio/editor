@@ -14,7 +14,6 @@
 
 use std::path::{Path, PathBuf};
 
-use eframe::egui::containers::panel::PanelState;
 use eframe::egui::{
     self, Align, Button, Id, Layout as EguiLayout, Response, RichText, Sense, Ui, accesskit,
 };
@@ -529,7 +528,7 @@ impl Shell {
 
     /// Gives the editor the keyboard, as a click in it does.
     pub fn focus_editor(&self, ctx: &egui::Context) {
-        ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+        ctx.memory_mut(|m| m.request_focus(Id::unique(EDITOR_AREA)));
     }
 
     /// Reads the user's keymap file `file` over the default bindings, and reads it again
@@ -1223,7 +1222,7 @@ impl Shell {
             Some(second) => second,
             None => match self.session.context().workbench.open() {
                 Some(open) => self.features.editors.second.insert(Editor::new(
-                    Id::new(Area::SecondPane),
+                    Id::unique(Area::SecondPane),
                     open,
                     theme,
                 )),
@@ -1241,9 +1240,9 @@ impl Shell {
         second.view.set_wrap(wrap);
         let style = theme.view_style();
         let panel = match split {
-            Split::Down => egui::Panel::bottom(Id::new(Area::SecondPane))
+            Split::Down => egui::Panel::bottom(Id::unique(Area::SecondPane))
                 .exact_size((ui.available_height() / 2.0).floor()),
-            Split::Right | Split::None => egui::Panel::right(Id::new(Area::SecondPane))
+            Split::Right | Split::None => egui::Panel::right(Id::unique(Area::SecondPane))
                 .exact_size((ui.available_width() / 2.0).floor()),
         };
         panel
@@ -1271,8 +1270,8 @@ impl Shell {
             let path = first.path.clone();
             let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
         }
-        first.view.set_id(Id::new(Area::SecondPane));
-        second.view.set_id(Id::new(EDITOR_AREA));
+        first.view.set_id(Id::unique(Area::SecondPane));
+        second.view.set_id(Id::unique(EDITOR_AREA));
         if first.path == second.path {
             self.features.editors.editor = Some(second);
             self.features.editors.second = Some(first);
@@ -1285,7 +1284,7 @@ impl Shell {
             self.sync_editor();
             self.features.editors.second = self.features.editors.parked.remove(&from);
         }
-        ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+        ctx.memory_mut(|m| m.request_focus(Id::unique(EDITOR_AREA)));
     }
 
     /// The outline panel beside the editor (P4-32): the open file's symbols, the one the caret
@@ -1307,7 +1306,7 @@ impl Shell {
             .iter()
             .rposition(|symbol| symbol.range.span.start <= caret);
         let mut chosen = None;
-        egui::Panel::right(Id::new(Area::Outline))
+        egui::Panel::right(Id::unique(Area::Outline))
             .default_size(OUTLINE_WIDTH)
             .frame(
                 egui::Frame::NONE
@@ -1496,7 +1495,7 @@ impl Shell {
         }
         if let Some((id, params)) = self.palette.show(
             ui,
-            Id::new(Area::Palette),
+            Id::unique(Area::Palette),
             &self.theme,
             self.session.registry(),
             &self.keymap,
@@ -1519,7 +1518,7 @@ impl Shell {
         let open = workbench.open().map(|open| open.path().to_path_buf());
         let chosen = self.finder.show(
             ui,
-            Id::new(Area::Finder),
+            Id::unique(Area::Finder),
             &self.theme,
             (workbench.root(), open.as_deref()),
             &files,
@@ -1541,7 +1540,7 @@ impl Shell {
             None => {}
         }
         let (picker, places) = &mut self.features.editors.picker;
-        if let Some(index) = picker.show(ui, Id::new(Area::Picker), &self.theme)
+        if let Some(index) = picker.show(ui, Id::unique(Area::Picker), &self.theme)
             && let Some(place) = places.get(index).cloned()
         {
             self.jump(place);
@@ -1583,7 +1582,7 @@ impl Shell {
         // The editor takes its keys itself, and so does a field being typed in: there Cmd+Z
         // takes back the typing, not the project's last edit.
         let editing =
-            ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA))) || ui.ctx().text_edit_focused();
+            ui.memory(|m| m.has_focus(Id::unique(EDITOR_AREA))) || ui.ctx().text_edit_focused();
         // P4-37: an edit of the keymap file takes effect on the next frame.
         let registry = self.session.registry();
         let bindable = |id: &str| keymap::bindable(registry, id);
@@ -1708,7 +1707,7 @@ impl Shell {
             Text::PreviewOwnWindow
         };
         let shown = ToolbarStatus::of(state, self.preview_error.as_deref(), preview.status());
-        egui::Panel::top(Id::new(Area::Toolbar))
+        egui::Panel::top(Id::unique(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
             .show(ui, |ui| {
@@ -1768,7 +1767,7 @@ impl Shell {
                             let response = ui.add(button).on_hover_text(text.get());
                             // The icon is the button's text; its name is the tooltip's. The
                             // button said whether it is selected.
-                            name_field(ui, &response, text);
+                            let response = response.accessible_name(text.get());
                             if response.clicked() {
                                 toggled = Some(panel);
                             }
@@ -1796,7 +1795,7 @@ impl Shell {
                         );
                         let shortcut = ui.ctx().format_shortcut(&keymap::OPEN_PALETTE);
                         let response = ui.add(search).on_hover_text(shortcut);
-                        name_field(ui, &response, Text::SearchCommands);
+                        let response = response.accessible_name(Text::SearchCommands.get());
                         if response.clicked() {
                             open_palette = true;
                         }
@@ -2029,7 +2028,7 @@ impl Shell {
         let warn = theme.color(Token::StatusWarn);
         let list = lost.join(", ");
         let mut chosen = None;
-        egui::Panel::top(Id::new(Area::ResetNotice))
+        egui::Panel::top(Id::unique(Area::ResetNotice))
             .frame(
                 egui::Frame::NONE
                     .fill(theme.color(Token::SurfaceToolbar))
@@ -2127,7 +2126,7 @@ impl Shell {
     fn status_bar(&self, ui: &mut Ui) -> Option<StatusAsk> {
         let theme = &self.theme;
         let mut asked = None;
-        egui::Panel::bottom(Id::new(Area::StatusBar))
+        egui::Panel::bottom(Id::unique(Area::StatusBar))
             .exact_size(theme.size.status_bar)
             .frame(
                 egui::Frame::NONE
@@ -2150,13 +2149,11 @@ impl Shell {
                     ] {
                         // A button, as Zed's and VS Code's counts are: it shows the problems.
                         let text = RichText::new(count(icon, value)).small().color(muted);
+                        // Read as its name and number, not the icon's character.
                         let response = ui
                             .add(Button::new(text).frame(false))
-                            .on_hover_text(name.get());
-                        // Read as its name and number, not the icon's character.
-                        ui.ctx().accesskit_node_builder(response.id, |node| {
-                            node.set_label(format!("{} {value}", name.get()));
-                        });
+                            .on_hover_text(name.get())
+                            .accessible_name(format!("{} {value}", name.get()));
                         if response.clicked() {
                             asked = Some(StatusAsk::Problems);
                         }
@@ -2281,9 +2278,14 @@ impl Shell {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
         let builder = match panel {
-            Panel::Left => egui::Panel::left(Id::new(Area::Panel(panel))),
-            Panel::Right => egui::Panel::right(Id::new(Area::Panel(panel))),
-            Panel::Bottom => egui::Panel::bottom(Id::new(Area::Panel(panel))),
+            Panel::Left => egui::Panel::left(Area::Panel(panel)),
+            Panel::Right => egui::Panel::right(Area::Panel(panel)),
+            Panel::Bottom => egui::Panel::bottom(Area::Panel(panel)),
+        };
+        let index = match panel {
+            Panel::Left => 0,
+            Panel::Right => 1,
+            Panel::Bottom => 2,
         };
         let frame = egui::Frame::NONE
             .fill(theme.color(Token::SurfacePanel))
@@ -2301,11 +2303,7 @@ impl Shell {
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
         // drawn: egui keeps the size it last drew and reads `default_size` only the first time.
-        let drawn_size =
-            PanelState::load(ui.ctx(), Id::new(Area::Panel(panel))).map(|stored| match panel {
-                Panel::Left | Panel::Right => stored.size().x,
-                Panel::Bottom => stored.size().y,
-            });
+        let drawn_size = self.drawn.get(index).copied().flatten();
         let held = ui.input(|input| input.pointer.any_down());
         // With the interface zoomed past 100% (P7-12) a panel takes no more than its share of
         // the window, so the centre keeps its room; the layout keeps the size asked for, drawn
@@ -2336,20 +2334,6 @@ impl Shell {
         let shown = builder
             .frame(frame)
             .show_collapsible(ui, &mut expanded, |ui| {
-                // egui 0.36 stores a panel's size as its contents' rect, so the contents take
-                // the whole size the panel was given: it neither shrinks to them nor grows
-                // with them.
-                let given = ui.max_rect().size();
-                match panel {
-                    Panel::Left | Panel::Right => {
-                        ui.set_min_width(given.x);
-                        ui.set_max_width(given.x);
-                    }
-                    Panel::Bottom => {
-                        ui.set_min_height(given.y);
-                        ui.set_max_height(given.y);
-                    }
-                }
                 let name = match panel {
                     Panel::Left => Text::LeftPanel,
                     Panel::Right => Text::RightPanel,
@@ -2397,27 +2381,21 @@ impl Shell {
             tracing::warn!(%error, "panel toggle failed");
         }
         // A size that changes while the pointer is held is a drag of the panel's edge: that
-        // one goes to the layout, not a size that follows the panel's contents.
-        // The panel's size is egui's stored outer size, not its contents' rect.
+        // one goes to the layout, not a size that follows the panel's contents. The size is the
+        // panel's outer rect as drawn this frame, which follows a drag as it happens; a hidden
+        // panel keeps the size it was last drawn at.
         let dragging = ui.input(|input| input.pointer.any_down());
-        let stored = PanelState::load(ui.ctx(), Id::new(Area::Panel(panel)));
-        let size = shown
-            .filter(|_| expanded)
-            .and(stored)
-            .map(|stored| match panel {
-                Panel::Left | Panel::Right => stored.size().x,
-                Panel::Bottom => stored.size().y,
-            });
-        let index = match panel {
-            Panel::Left => 0,
-            Panel::Right => 1,
-            Panel::Bottom => 2,
-        };
-        let previous = self.drawn.get(index).copied().flatten();
-        if let Some(slot) = self.drawn.get_mut(index) {
-            *slot = size;
+        let size = shown.filter(|_| expanded).map(|shown| {
+            let drawn = shown.response.rect.size();
+            match panel {
+                Panel::Left | Panel::Right => drawn.x,
+                Panel::Bottom => drawn.y,
+            }
+        });
+        if let (Some(slot), Some(size)) = (self.drawn.get_mut(index), size) {
+            *slot = Some(size);
         }
-        if let Some(size) = dragged_size(previous, size, dragging)
+        if let Some(size) = dragged_size(drawn_size, size, dragging)
             && let Err(error) = self.resize(panel, size)
         {
             tracing::debug!(%error, "panel resize refused");
@@ -3333,20 +3311,6 @@ pub(crate) fn name_area(ui: &Ui, role: accesskit::Role, name: Text) {
     ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
         node.set_role(role);
         node.set_label(name.get());
-    });
-}
-
-/// Names a widget that egui named by its text, or not at all, for a screen reader (QA-9):
-/// its node's label becomes `name`, and nothing else about it changes, so the widget's own
-/// output events are not sent again.
-pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
-    name_widget(ui, response, name.get());
-}
-
-/// As [`name_field`], for a name that is the user's data, such as a key's.
-pub(crate) fn name_widget(ui: &Ui, response: &Response, name: &str) {
-    ui.ctx().accesskit_node_builder(response.id, |node| {
-        node.set_label(name);
     });
 }
 
