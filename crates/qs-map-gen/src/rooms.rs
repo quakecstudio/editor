@@ -385,7 +385,9 @@ impl<'a> Room<'a> {
                     place(reach - PILASTER_DEPTH - TORCH_OUT, over),
                     foot + TORCH_LIFT,
                 ));
-                if self.takes(RoomPart::Fixtures) {
+                // A base's lights are electric and want a lamp; a castle's and a temple's
+                // are their torches.
+                if self.takes(RoomPart::Fixtures) && paints.world.lit_by_lamps() {
                     // A lamp on the pilaster's face, where the light it gives is, the light
                     // whole on the face the room sees: along the wall is its texture's s, and
                     // down it its t.

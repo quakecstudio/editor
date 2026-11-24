@@ -25,6 +25,15 @@ pub(crate) enum WorldType {
 }
 
 impl WorldType {
+    /// Whether its wall lights are lamps: a base's are electric, where a castle's and a
+    /// temple's are torches (`misc.qc`'s torches are its medieval and runic levels').
+    pub(crate) const fn lit_by_lamps(self) -> bool {
+        match self {
+            Self::Base => true,
+            Self::Medieval | Self::Metal => false,
+        }
+    }
+
     /// The key's value.
     pub(crate) const fn value(self) -> &'static str {
         match self {

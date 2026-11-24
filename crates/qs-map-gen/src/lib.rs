@@ -45,7 +45,7 @@ use rng::Rng;
 pub use rooms::RoomPart;
 use rooms::{Part, Room};
 use score::Score;
-use theme::{Paints, WorldType};
+use theme::Paints;
 
 /// How large a level is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -342,10 +342,7 @@ impl Assembly<'_> {
     /// Adds a torch at `origin` where the game has one and the level is no base, whose light
     /// is electric; a light of a torch's brightness otherwise.
     fn torch(&mut self, origin: Point) -> Result<(), MapError> {
-        let burns = match self.paints.world {
-            WorldType::Medieval | WorldType::Metal => self.request.classes.has(TORCH),
-            WorldType::Base => false,
-        };
+        let burns = !self.paints.world.lit_by_lamps() && self.request.classes.has(TORCH);
         let classname = if burns { TORCH } else { "light" };
         self.place(classname, origin, &[("light", TORCH_LIGHT)])
     }
