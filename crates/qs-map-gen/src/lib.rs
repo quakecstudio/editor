@@ -229,6 +229,14 @@ pub const CLIMB_OUT: f64 = 28.0;
 pub const PLAT: &str = "func_plat";
 /// The door (`doors.qc`).
 pub const DOOR: &str = "func_door";
+/// A light, whose `light` key the light tool reads (`misc.qc`).
+const LIGHT: &str = "light";
+/// Where the player starts (`client.qc`).
+const PLAYER_START: &str = "info_player_start";
+/// The exit, which ends the level (`client.qc`).
+const CHANGE_LEVEL: &str = "trigger_changelevel";
+/// The world (`world.qc`).
+const WORLDSPAWN: &str = "worldspawn";
 /// The torch on a wall (`misc.qc`).
 pub const TORCH: &str = "light_torch_small_walltorch";
 /// How bright a torch on a wall is, as its `light` key.
@@ -336,14 +344,14 @@ impl Assembly<'_> {
 
     /// Adds a light of `brightness` at `origin`.
     fn light(&mut self, (origin, brightness): (Point, f64)) -> Result<(), MapError> {
-        self.place("light", origin, &[("light", &format!("{brightness}"))])
+        self.place(LIGHT, origin, &[("light", &format!("{brightness}"))])
     }
 
     /// Adds a torch at `origin` where the game has one and the level is no base, whose light
     /// is electric; a light of a torch's brightness otherwise.
     fn torch(&mut self, origin: Point) -> Result<(), MapError> {
         let burns = !self.paints.world.lit_by_lamps() && self.request.classes.has(TORCH);
-        let classname = if burns { TORCH } else { "light" };
+        let classname = if burns { TORCH } else { LIGHT };
         self.place(classname, origin, &[("light", TORCH_LIGHT)])
     }
 
@@ -553,7 +561,7 @@ impl Assembly<'_> {
             });
             if place == 0 {
                 let facing = plan.doors_of(place).first().copied().unwrap_or(Side::East);
-                self.place("info_player_start", stand, &[("angle", facing.yaw())])?;
+                self.place(PLAYER_START, stand, &[("angle", facing.yaw())])?;
                 start = Some((stand, facing));
             }
             // A teleporter's pad takes the place things would stand in that is farthest from
@@ -725,11 +733,7 @@ impl Assembly<'_> {
             min: [x - EXIT_HALF, y - EXIT_HALF, floor],
             max: [x + EXIT_HALF, y + EXIT_HALF, floor + EXIT_HEIGHT],
         })?;
-        self.place_brush(
-            "trigger_changelevel",
-            trigger,
-            &[("map", self.request.name)],
-        )?;
+        self.place_brush(CHANGE_LEVEL, trigger, &[("map", self.request.name)])?;
         self.light(([x, y, floor + EXIT_LIGHT_LIFT], EXIT_LIGHT))?;
         Ok(())
     }
@@ -816,7 +820,7 @@ impl Request<'_> {
         // NET spec); id's music is tracks 2 to 11, track 1 being the data.
         let track = FIRST_TRACK.saturating_add(rng.below(TRACKS));
         let mut world = entity(
-            "worldspawn",
+            WORLDSPAWN,
             &[
                 ("message", &format!("Random level {}", self.seed)),
                 ("worldtype", assembly.paints.world.value()),
