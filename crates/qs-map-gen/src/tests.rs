@@ -425,7 +425,7 @@ fn bays_need_a_wall_only_where_they_fit() {
 
 // No spec statement: L-74, every monster faces a way set by the level, not the default east;
 // the world names a music track of id's, 2 to 11, which the server sends as the CD track; and
-// no light is brighter than the brightest a room has
+// no light is brighter than a room's main light
 #[test]
 fn monsters_face_in_and_the_level_has_music() {
     for seed in 0..8 {
@@ -449,7 +449,7 @@ fn monsters_face_in_and_the_level_has_music() {
                     .unwrap()
                     .parse()
                     .unwrap();
-                assert!(light <= 300.0, "seed {seed}: light {light}");
+                assert!(light <= 450.0, "seed {seed}: light {light}");
             }
         }
         faced.sort();

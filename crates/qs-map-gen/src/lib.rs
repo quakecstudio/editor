@@ -273,7 +273,7 @@ const AMBUSH: &str = "1";
 const FIRST_TRACK: usize = 2;
 const TRACKS: usize = 10;
 /// How bright a room is lit, as a share of its lights' brightness: rooms differ.
-const MOODS: &[f64] = &[0.6, 0.8, 1.0];
+const MOODS: &[f64] = &[0.8, 0.9, 1.0];
 /// Half the width of a teleporter's pad, and its height.
 const PAD_HALF: f64 = 32.0;
 const PAD_HEIGHT: f64 = 8.0;

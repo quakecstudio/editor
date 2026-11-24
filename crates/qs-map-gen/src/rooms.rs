@@ -148,9 +148,11 @@ pub(crate) struct Built {
 }
 
 /// How bright a room's main light and its lesser lights are (`light`'s default is 300,
-/// `DEFAULTLIGHTLEVEL`).
-const MAIN_LIGHT: f64 = 300.0;
-const LESSER_LIGHT: f64 = 200.0;
+/// `DEFAULTLIGHTLEVEL`). A light reaches about as far as it is bright (LIGHT-4.3's falloff),
+/// so the main light, under a ceiling up to 300 above the floor, is the one that lights the
+/// floor; the lesser are kept low, pools of light and not floods.
+const MAIN_LIGHT: f64 = 450.0;
+const LESSER_LIGHT: f64 = 250.0;
 const GLOW_LIGHT: f64 = 150.0;
 /// How far under the ceiling the main light hangs, how far above the floor the lesser ones,
 /// and how far from the walls those are.
