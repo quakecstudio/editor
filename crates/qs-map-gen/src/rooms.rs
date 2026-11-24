@@ -63,6 +63,15 @@ const _: () = assert!(
     PIT_DEPTH > LIQUID_DEPTH && PIT_DEPTH - LIQUID_DEPTH <= crate::CLIMB_OUT,
     "a pit's liquid is under its rim, near enough to climb out"
 );
+/// How wide a lake's walk is, how deep its water's bed, and how far under the walk its water
+/// comes, which a swimmer climbs out over.
+const LAKE_RIM: f64 = 96.0;
+const LAKE_DEPTH: f64 = 96.0;
+const LAKE_RIM_DROP: f64 = 24.0;
+const _: () = assert!(
+    LAKE_RIM_DROP <= crate::CLIMB_OUT,
+    "a lake's water near enough its walk to climb out"
+);
 /// A rail along the edge of a pit of lava and along its bridges: higher than a walking
 /// player climbs (`STEPSIZE`, PHYS-8.3), so no one falls in who does not jump; and how thick.
 const RAIL_HEIGHT: f64 = 32.0;
@@ -224,6 +233,7 @@ impl<'a> Room<'a> {
             RoomShape::Hall => [0.0, COFFER_RISE],
             RoomShape::Chamber => [0.0, DOME_RISE + DOME_RISE],
             RoomShape::Pit => [PIT_DEPTH, 0.0],
+            RoomShape::Lake => [LAKE_DEPTH, 0.0],
             RoomShape::Cross => [0.0, LANTERN_RISE],
             RoomShape::Split
             | RoomShape::Court
@@ -327,6 +337,8 @@ impl<'a> Room<'a> {
             }
             (RoomShape::Split, _) => self.standing(self.turned_offset(-SPLIT_STAND, 0.0), floor),
             (RoomShape::Court, _) => self.standing([hx / 2.0, hy / 2.0], floor),
+            // On the walk around the water.
+            (RoomShape::Lake, _) => self.standing([0.0, hy - LAKE_RIM / 2.0], floor),
         }
     }
 
@@ -355,7 +367,7 @@ impl<'a> Room<'a> {
         let floor = self.plan.floor;
         let lit = matches!(
             self.plan.shape,
-            RoomShape::Cross | RoomShape::Court | RoomShape::Junction
+            RoomShape::Cross | RoomShape::Court | RoomShape::Junction | RoomShape::Lake
         );
         if !lit {
             let (corners, _) = self.around(CORNER_LIGHT_INSET);
@@ -384,6 +396,7 @@ impl<'a> Room<'a> {
             RoomShape::Vault => self.vault(mass, paints),
             RoomShape::Atrium => self.atrium(mass, paints),
             RoomShape::Junction => self.junction(mass, paints),
+            RoomShape::Lake => self.lake(mass, paints),
         }
     }
 
@@ -804,6 +817,52 @@ impl<'a> Room<'a> {
             ));
         }
         Ok(built)
+    }
+
+    /// A lake: a courtyard under the sky, a lake of water in its middle and a walk around it.
+    /// The water comes to within [`LAKE_RIM_DROP`] of the walk, which a swimmer climbs out over
+    /// ([`crate::CLIMB_OUT`]); a level is given a lake only where its liquid is water, and with
+    /// any other the room is a courtyard with no water.
+    fn lake(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let floor = self.plan.floor;
+        let top = floor + self.plan.height;
+        let sky = paints.sky.as_ref().unwrap_or(&paints.ceiling);
+        let space = Coat::space(&paints.floor, sky, &paints.wall);
+        mass.carve(&space.boxed(self.centred(self.plan.half, [floor, top]))?)?;
+        let [hx, hy] = self.plan.half;
+        let water = paints
+            .liquid
+            .as_ref()
+            .filter(|liquid| Hazard::of(liquid) == Hazard::Harmless);
+        if let Some(water) = water {
+            let pool = [hx - LAKE_RIM, hy - LAKE_RIM];
+            let bed = Coat::space(&paints.floor, &paints.ceiling, &paints.wall);
+            mass.carve(&bed.boxed(self.centred(pool, [floor - LAKE_DEPTH, floor]))?)?;
+            let mut built = Built::default();
+            built.solids.push(
+                Coat::all(water)
+                    .boxed(self.centred(pool, [floor - LAKE_DEPTH, floor - LAKE_RIM_DROP]))?,
+            );
+            self.lake_rest(floor, &mut built);
+            return Ok(built);
+        }
+        let mut built = Built::default();
+        self.lake_rest(floor, &mut built);
+        Ok(built)
+    }
+
+    /// A lake's places to stand, on its walk, and its lights, over its corners.
+    fn lake_rest(&self, floor: f64, built: &mut Built) {
+        let (corners, sides) = self.around(SPOT_INSET);
+        for offset in corners.into_iter().chain(sides) {
+            built.spots.push(self.standing(offset, floor));
+        }
+        let (lit, _) = self.around(LIGHT_INSET + LIGHT_INSET);
+        for offset in lit {
+            built
+                .lights
+                .push((self.at(offset, floor + LIGHT_LIFT + LIGHT_LIFT), MAIN_LIGHT));
+        }
     }
 
     /// A junction: a small plain room where a corridor turns, lit by one lamp under its

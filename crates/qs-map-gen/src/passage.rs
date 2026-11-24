@@ -6,7 +6,7 @@
 
 use qs_map::{Brush, BrushError};
 
-use crate::layout::{Climb, Doorway, Link, Plan, Side};
+use crate::layout::{Climb, Doorway, Link, Plan, Side, Span};
 use crate::mass::{Bounds, Coat, Mass, Point};
 use crate::theme::Paints;
 
@@ -25,6 +25,8 @@ const LANDING: f64 = 32.0;
 /// Where a door stands from the end of its passage, and how thick it is.
 const DOOR_FROM_END: f64 = 8.0;
 const DOOR_THICK: f64 = 16.0;
+/// How far a canyon's opening keeps from its courtyards' corners.
+const OPEN_MARGIN: f64 = 32.0;
 /// How thick a lift is.
 const LIFT_THICK: f64 = 16.0;
 /// How bright a passage's light is, and how far under its ceiling it hangs.
@@ -55,6 +57,12 @@ pub(crate) struct Passage {
     doorway: Doorway,
     /// How it climbs.
     climb: Climb,
+    /// Half its width.
+    half_width: f64,
+    /// Its height above its higher floor.
+    height: f64,
+    /// How wide it is: a corridor, or a canyon's opening under the sky.
+    span: Span,
 }
 
 /// What a passage adds to the level besides its space.
@@ -80,16 +88,31 @@ impl Passage {
         let [bx, by] = to.middle;
         let between = (bx - ax) * fx + (by - ay) * fy;
         let reach = from.reach(link.side);
+        let floors = [
+            from.door_floor(link.side),
+            to.door_floor(link.side.opposite()),
+        ];
+        // A canyon's opening is as wide as the narrower courtyard, less its corner's wall, and
+        // as high as the lower one's sky.
+        let (half_width, height) = match link.span {
+            Span::Corridor => (HALF_WIDTH, HEIGHT),
+            Span::Open => {
+                let across = link.side.across()[0];
+                let narrower = from.reach(across).min(to.reach(across)) - OPEN_MARGIN;
+                let lower = (from.floor + from.height).min(to.floor + to.height);
+                (narrower, lower - floors[0].max(floors[1]))
+            }
+        };
         Some(Self {
             start: [ax + fx * reach, ay + fy * reach],
             side: link.side,
             length: between - reach - to.reach(link.side.opposite()),
-            floors: [
-                from.door_floor(link.side),
-                to.door_floor(link.side.opposite()),
-            ],
+            floors,
             doorway: link.doorway,
             climb: link.climb,
+            half_width,
+            height,
+            span: link.span,
         })
     }
 
@@ -109,6 +132,9 @@ impl Passage {
             floors,
             doorway,
             climb: Climb::Stairs,
+            half_width: HALF_WIDTH,
+            height: HEIGHT,
+            span: Span::Corridor,
         }
     }
 
@@ -123,8 +149,8 @@ impl Passage {
         let [low, high] = self.low_high();
         self.bounds(
             [0.0, self.length],
-            [-HALF_WIDTH - wall, HALF_WIDTH + wall],
-            [low - wall, high + HEIGHT + wall],
+            [-self.half_width - wall, self.half_width + wall],
+            [low - wall, high + self.height + wall],
         )
     }
 
@@ -190,18 +216,22 @@ impl Passage {
         along: [f64; 2],
         [floor, top]: [f64; 2],
     ) -> Result<Brush, BrushError> {
-        let space = Coat::space(&paints.floor, &paints.ceiling, &paints.wall);
+        let ceiling = match self.span {
+            Span::Corridor => &paints.ceiling,
+            Span::Open => paints.sky.as_ref().unwrap_or(&paints.ceiling),
+        };
+        let space = Coat::space(&paints.floor, ceiling, &paints.wall);
         match self.doorway {
             Doorway::Arch => {
                 let mut corners = Vec::new();
                 for at in along {
                     for (over, z) in [
-                        (-HALF_WIDTH, floor),
-                        (HALF_WIDTH, floor),
-                        (HALF_WIDTH, top - ARCH_CUT),
-                        (HALF_WIDTH - ARCH_CUT, top),
-                        (-HALF_WIDTH + ARCH_CUT, top),
-                        (-HALF_WIDTH, top - ARCH_CUT),
+                        (-self.half_width, floor),
+                        (self.half_width, floor),
+                        (self.half_width, top - ARCH_CUT),
+                        (self.half_width - ARCH_CUT, top),
+                        (-self.half_width + ARCH_CUT, top),
+                        (-self.half_width, top - ARCH_CUT),
                     ] {
                         corners.push(self.point(at, over, z));
                     }
@@ -213,7 +243,7 @@ impl Passage {
             | Doorway::Locked(_)
             | Doorway::Remote(_)
             | Doorway::Secret => {
-                space.boxed(self.bounds(along, [-HALF_WIDTH, HALF_WIDTH], [floor, top]))
+                space.boxed(self.bounds(along, [-self.half_width, self.half_width], [floor, top]))
             }
         }
     }
@@ -228,8 +258,8 @@ impl Passage {
     /// The [`BrushError`] of a brush that could not be made.
     pub(crate) fn build(&self, mass: &mut Mass, paints: &Paints) -> Result<Passed, BrushError> {
         let [low, high] = self.low_high();
-        let top = high + HEIGHT;
-        let across = [-HALF_WIDTH, HALF_WIDTH];
+        let top = high + self.height;
+        let across = [-self.half_width, self.half_width];
         let lifted = self.climb == Climb::Lift && high > low;
         match self.flight() {
             None => mass.carve(&self.section(paints, [0.0, self.length], [low, top])?)?,
@@ -248,12 +278,18 @@ impl Passage {
                     let from = self.length - flight.edge;
                     ([from, self.length], [0.0, from])
                 };
-                mass.carve(&self.section(paints, landing, [low, low + HEIGHT])?)?;
+                mass.carve(&self.section(paints, landing, [low, low + self.height])?)?;
                 mass.carve(&self.section(paints, rest, [low, top])?)?;
             }
         }
         let mut passed = Passed {
-            light: Some((self.point(self.length / 2.0, 0.0, top - LIGHT_DROP), LIGHT)),
+            // A canyon's opening is lit by its courtyards and the sky; a corridor has a light.
+            light: match self.span {
+                Span::Corridor => {
+                    Some((self.point(self.length / 2.0, 0.0, top - LIGHT_DROP), LIGHT))
+                }
+                Span::Open => None,
+            },
             ..Passed::default()
         };
         if lifted {
@@ -286,7 +322,7 @@ impl Passage {
                 let door = Coat::all(&paints.wall).boxed(self.bounds(
                     door_at,
                     across,
-                    [first, first + HEIGHT],
+                    [first, first + self.height],
                 ))?;
                 passed.door = Some((door, self.doorway));
             }
@@ -299,7 +335,7 @@ impl Passage {
     /// position", `plats.qc`) and moving down by the climb, and a solid upper landing.
     fn lift(&self, paints: &Paints, passed: &mut Passed) -> Result<(), BrushError> {
         let [low, high] = self.low_high();
-        let across = [-HALF_WIDTH, HALF_WIDTH];
+        let across = [-self.half_width, self.half_width];
         let (shaft, upper) = if self.rises_along() {
             (
                 [LANDING, self.length - LANDING],
@@ -335,7 +371,7 @@ impl Passage {
             };
             solids.push(step.boxed(self.bounds(
                 along,
-                [-HALF_WIDTH, HALF_WIDTH],
+                [-self.half_width, self.half_width],
                 [foot, foot + STEP_RISE],
             ))?);
             edge += flight.depth;

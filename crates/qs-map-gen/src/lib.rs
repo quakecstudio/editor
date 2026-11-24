@@ -34,8 +34,8 @@ pub use kit::{
     KIT_MAX_HEIGHT, KIT_MAX_LENGTH, KIT_MAX_WALL, KIT_MIN_WALL, KIT_WALL, KitError, Opening,
     PassageKit, PassageParts, RoomKit, RoomParts, Textures, WallLights,
 };
-pub use layout::Side;
-use layout::{Doorway, Has, Liquid, Plan, RoomPlan, Sky};
+use layout::{Doorway, Has, Plan, RoomPlan};
+pub use layout::{LevelForm, Side};
 use mass::{Coat, Mass, Point};
 pub use mission::{LockKind, Report};
 use mission::{Mission, Role, Signal};
@@ -80,6 +80,8 @@ pub enum RoomShape {
     Atrium,
     /// A small room where a corridor turns.
     Junction,
+    /// A great courtyard with a lake of water in its middle and a walk around it.
+    Lake,
 }
 
 impl RoomShape {
@@ -96,6 +98,7 @@ impl RoomShape {
             Self::Vault => "vault",
             Self::Atrium => "atrium",
             Self::Junction => "junction",
+            Self::Lake => "lake",
         }
     }
 }
@@ -777,20 +780,10 @@ impl Request<'_> {
     pub fn generate(&self) -> Result<Level, GenError> {
         let mut rng = Rng::new(self.seed);
         let paints = Paints::choose(self.textures, &mut rng)?;
-        let has = Has {
-            liquid: if paints.liquid.is_some() {
-                Liquid::There
-            } else {
-                Liquid::Missing
-            },
-            sky: if paints.sky.is_some() {
-                Sky::There
-            } else {
-                Sky::Missing
-            },
-        };
+        let has = Has::of(&paints);
         let (mut plan, report) = self.best(has, &mut rng)?;
         plan.fit_passages();
+        plan.open_canyon();
         if self.classes.has(PLAT) {
             plan.lifts(&mut rng);
         }

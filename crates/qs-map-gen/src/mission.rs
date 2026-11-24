@@ -10,7 +10,7 @@
 //! door opens when its monsters are dead (`monster_death_use` firing a `trigger_counter`). A
 //! secret room behind a door that opens when shot (`func_door_secret`) holds a reward.
 
-use crate::layout::{Doorway, Plan, RoomId};
+use crate::layout::{Doorway, LevelForm, Plan, RoomId};
 use crate::rng::Rng;
 use crate::{Classes, RoomShape, Size};
 
@@ -128,6 +128,8 @@ pub struct Report {
     pub secrets: usize,
     /// How many teleporters take the player back to the start, one way.
     pub shortcuts: usize,
+    /// The form the level takes besides its hook.
+    pub form: LevelForm,
 }
 
 impl Size {
@@ -234,6 +236,7 @@ impl<'a> Mission<'a> {
             teasers: mission.plan.hooks.len(),
             secrets,
             shortcuts: usize::from(classes.shortcuts() && mission.shortcut(&gates)),
+            form: mission.plan.form,
         }
     }
 
@@ -256,6 +259,18 @@ impl<'a> Mission<'a> {
         rooms
     }
 
+    /// Adds a room of `role` off one of `parents`, as [`Plan::sprout`] does, off the hub first
+    /// when it is one of them: a hub's wings hold its keys and buttons.
+    fn sprout(&mut self, parents: &[RoomId], role: Role, rng: &mut Rng) -> Option<RoomId> {
+        if let Some(hub) = self.plan.hub.filter(|hub| parents.contains(hub))
+            && let Some(room) = self.plan.sprout(&[hub], OFF_PATH, role, Doorway::Arch, rng)
+        {
+            return Some(room);
+        }
+        self.plan
+            .sprout(parents, OFF_PATH, role, Doorway::Arch, rng)
+    }
+
     /// Locks the path's passage `at` with a lock of `kind`, what opens it put before it;
     /// the kind it came to, or `None` when it could not be put there.
     fn lock(&mut self, at: usize, kind: LockKind, rng: &mut Rng) -> Option<LockKind> {
@@ -272,24 +287,22 @@ impl<'a> Mission<'a> {
                 } else {
                     KeyColour::Gold
                 };
-                self.plan
-                    .sprout(&parents, OFF_PATH, Role::Key(colour), Doorway::Arch, rng)?;
+                self.sprout(&parents, Role::Key(colour), rng)?;
                 Doorway::Locked(colour)
             }
             LockKind::Button => {
                 let signal = self.signal();
-                self.plan
-                    .sprout(&parents, OFF_PATH, Role::Button(signal), Doorway::Arch, rng)?;
+                self.sprout(&parents, Role::Button(signal), rng)?;
                 Doorway::Remote(signal)
             }
             LockKind::Arena => {
                 let room = self.plan.rooms.get(at)?;
-                // Not a pit, whose monsters fall in, an atrium, whose door is its balcony's,
-                // nor a junction, a corridor's turn with no room for monsters.
+                // Not a pit nor a lake, whose monsters fall in, an atrium, whose door is its
+                // balcony's, nor a junction, a corridor's turn with no room for monsters.
                 let fit = room.role == Role::Way
                     && !matches!(
                         room.shape,
-                        RoomShape::Pit | RoomShape::Atrium | RoomShape::Junction
+                        RoomShape::Pit | RoomShape::Atrium | RoomShape::Junction | RoomShape::Lake
                     );
                 if !fit {
                     return None;

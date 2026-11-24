@@ -4441,6 +4441,11 @@ Parameters:
           "const": "junction",
           "description": "A small room where a corridor turns: a doorway on any side, a lamp. At least 96 in each\nhalf-width and 192 high.",
           "type": "string"
+        },
+        {
+          "const": "lake",
+          "description": "A courtyard under the sky with a lake of water in its middle and a walk around it; needs\na sky and a water texture. At least 288 in each half-width and 256 high.",
+          "type": "string"
         }
       ]
     },

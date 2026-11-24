@@ -33,7 +33,8 @@ fn textures() -> Textures {
         ceiling: "ceiling".to_owned(),
         trim: "trim".to_owned(),
         door: "door".to_owned(),
-        liquid: Some("*lava1".to_owned()),
+        // Water: a lake holds only water, and a pit any liquid (lava's rails are in qs-map-gen).
+        liquid: Some("*water1".to_owned()),
         sky: Some("sky1".to_owned()),
         wall_lights: WallLights::Torches,
     }
@@ -52,7 +53,8 @@ fn kit(shape: RoomShape, middle: [f64; 2], floor: f64, turned: Side, doors: &[Si
         | RoomShape::Cross
         | RoomShape::Vault
         | RoomShape::Atrium
-        | RoomShape::Junction => [least + 32.0, least],
+        | RoomShape::Junction
+        | RoomShape::Lake => [least + 32.0, least],
     };
     RoomKit {
         shape,

@@ -65,7 +65,8 @@ pub struct GenerateParams {
 /// One room of a generated level.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RoomMade {
-    /// Its shape: `hall`, `chamber`, `pit`, `split`, `court`, `cross`, `vault` or `atrium`.
+    /// Its shape: `hall`, `chamber`, `pit`, `split`, `court`, `cross`, `vault`, `atrium`,
+    /// `junction` or `lake`.
     pub shape: String,
     /// Where a player's box stands in it, on its floor: a place to look at it from.
     pub stand: [f64; 3],
@@ -98,6 +99,10 @@ pub struct MapGenerated {
     pub teasers: usize,
     /// How many secret rooms it has, each behind a wall that opens when shot.
     pub secrets: usize,
+    /// The form it takes besides its hook: `hook` alone, `hub` (a great room early on, its
+    /// keys' rooms off it), `lake` (a courtyard with a lake) or `canyon` (courtyards open into
+    /// each other under the sky).
+    pub form: String,
     /// Its monsters.
     pub monsters: usize,
     /// Its items.
@@ -194,6 +199,7 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
                 .collect(),
             teasers: level.report.teasers,
             secrets: level.report.secrets,
+            form: level.report.form.name().to_owned(),
             monsters: level.monsters,
             items: level.items,
             brushes: level.brushes,

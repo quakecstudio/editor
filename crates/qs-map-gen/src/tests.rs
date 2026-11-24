@@ -330,7 +330,7 @@ fn the_best_plan_is_kept() {
             name: "random",
         };
         let has = layout::Has {
-            liquid: layout::Liquid::There,
+            liquid: layout::Liquid::Water,
             sky: layout::Sky::There,
         };
         let mut rng = Rng::new(seed);
@@ -562,18 +562,7 @@ fn levels_differ_in_scale_and_shape() {
         };
         let mut rng = Rng::new(seed);
         let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
-        let has = layout::Has {
-            liquid: if paints.liquid.is_some() {
-                layout::Liquid::There
-            } else {
-                layout::Liquid::Missing
-            },
-            sky: if paints.sky.is_some() {
-                layout::Sky::There
-            } else {
-                layout::Sky::Missing
-            },
-        };
+        let has = layout::Has::of(&paints);
         let (plan, _) = request.best(has, &mut rng).unwrap();
         for room in &plan.rooms {
             halves.extend(room.half);
@@ -604,18 +593,7 @@ fn a_junction_is_only_a_way_through() {
         };
         let mut rng = Rng::new(seed);
         let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
-        let has = layout::Has {
-            liquid: if paints.liquid.is_some() {
-                layout::Liquid::There
-            } else {
-                layout::Liquid::Missing
-            },
-            sky: if paints.sky.is_some() {
-                layout::Sky::There
-            } else {
-                layout::Sky::Missing
-            },
-        };
+        let has = layout::Has::of(&paints);
         let (plan, _) = request.best(has, &mut rng).unwrap();
         for room in &plan.rooms {
             if room.shape == RoomShape::Junction {
@@ -652,4 +630,64 @@ fn an_arenas_monsters_stand_apart_from_its_stand() {
             }
         }
     }
+}
+
+// No spec statement: L-74, levels take each form, and each is what it says: a canyon's
+// courtyards open into each other as wide as they are, a lake level has its lake, a hub has the
+// rooms of its keys and buttons off it
+#[test]
+fn levels_take_every_form() {
+    let textures = id_names();
+    let mut forms = Vec::new();
+    for seed in 0..48 {
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let mut rng = Rng::new(seed);
+        let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+        let has = layout::Has::of(&paints);
+        let (mut plan, report) = request.best(has, &mut rng).unwrap();
+        plan.fit_passages();
+        plan.open_canyon();
+        assert_eq!(report.form, plan.form, "seed {seed}");
+        match plan.form {
+            LevelForm::Hook => {}
+            LevelForm::Canyon => {
+                assert_eq!(plan.canyon.len(), 3, "seed {seed}");
+                let open = plan
+                    .links
+                    .iter()
+                    .filter(|link| link.span == layout::Span::Open)
+                    .count();
+                assert!(open > 0, "seed {seed}: no canyon opening");
+            }
+            LevelForm::Lake => {
+                assert!(
+                    plan.rooms.iter().any(|room| room.shape == RoomShape::Lake),
+                    "seed {seed}"
+                );
+            }
+            LevelForm::Hub => {
+                let hub = plan.hub.unwrap();
+                let wings = plan.links.iter().any(|link| {
+                    link.from == hub
+                        && plan.room_of(link.to).is_some_and(|room| {
+                            matches!(room.role, mission::Role::Key(_) | mission::Role::Button(_))
+                        })
+                });
+                let held = plan.rooms.iter().any(|room| {
+                    matches!(room.role, mission::Role::Key(_) | mission::Role::Button(_))
+                });
+                assert!(wings || !held, "seed {seed}: no wing off the hub");
+            }
+        }
+        if !forms.contains(&plan.form) {
+            forms.push(plan.form);
+        }
+    }
+    assert_eq!(forms.len(), 4, "forms seen: {forms:?}");
 }

@@ -174,8 +174,14 @@ Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48, L-74).
   teleporter in the room before the exit takes the player back to the start; monsters just
   past a lock lie in ambush. Rooms the same locks have opened are joined into loops, and a
   passage that climbs a storey may have a lift.
+- Rooms differ in scale: great rooms as wide as their cell (up to 704 across), often
+  courtyards, beside ordinary rooms and `junction`s where a corridor turns; two great rooms
+  side by side open into each other through an arch. Each level takes a `form` besides its
+  hook: a `hub`, a great room early on with its keys' and buttons' rooms off it; a `lake`, a
+  courtyard with a lake of water and a walk around it; or a `canyon`, three courtyards open
+  into each other under the sky.
 - It answers each room's `shape` and a place to `stand` in it, and what the mission came to:
-  `floors`, `loops`, `locks`, `teasers`, `secrets`. Look at a room with `map.play_from_here`,
+  `floors`, `loops`, `locks`, `teasers`, `secrets`, `form`. Look at a room with `map.play_from_here`,
   the eye 22 units above that place, and `engine.screenshot`.
 - Rooms are dressed with parts on top of their shapes (`map.build_room` takes them as
   `parts`): `bays` out of walls with no doorway, needing a wall of 112, `braziers` in them,

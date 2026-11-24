@@ -136,7 +136,7 @@ impl RoomPart {
             // Pits and rooms on two levels have beams of their own.
             Self::Beams => matches!(
                 shape,
-                RoomShape::Hall | RoomShape::Court | RoomShape::Atrium
+                RoomShape::Hall | RoomShape::Court | RoomShape::Atrium | RoomShape::Lake
             ),
         }
     }

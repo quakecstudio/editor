@@ -56,6 +56,9 @@ pub enum RoomKind {
     /// A small room where a corridor turns: a doorway on any side, a lamp. At least 96 in each
     /// half-width and 192 high.
     Junction,
+    /// A courtyard under the sky with a lake of water in its middle and a walk around it; needs
+    /// a sky and a water texture. At least 288 in each half-width and 256 high.
+    Lake,
 }
 
 /// A part to dress a room with on top of its shape.
@@ -110,6 +113,7 @@ impl From<RoomKind> for RoomShape {
             RoomKind::Vault => Self::Vault,
             RoomKind::Atrium => Self::Atrium,
             RoomKind::Junction => Self::Junction,
+            RoomKind::Lake => Self::Lake,
         }
     }
 }

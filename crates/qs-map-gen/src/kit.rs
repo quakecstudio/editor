@@ -14,6 +14,7 @@ use crate::passage::Passage;
 use crate::rng::Rng;
 use crate::rooms::RoomPart;
 use crate::rooms::{Part, Room};
+use crate::theme::{Hazard, surface};
 use crate::theme::{Paints, WorldType};
 use crate::{GenError, RoomShape};
 
@@ -48,12 +49,14 @@ const HIGH_HEIGHT: f64 = 256.0;
 /// A junction holds a doorway and its frame on each side: half a passage's width, 56, and a
 /// frame's 16, with room to spare.
 pub(crate) const JUNCTION_HALF: f64 = 96.0;
+/// A lake's walk around its water, and the water: its least half-width.
+const LAKE_HALF: f64 = 288.0;
 /// An atrium's balcony is a storey up, and a doorway's height above it.
 const ATRIUM_HEIGHT: f64 = STOREY + LOW_HEIGHT;
 
 impl RoomShape {
     /// Every shape.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Hall,
         Self::Chamber,
         Self::Pit,
@@ -63,6 +66,7 @@ impl RoomShape {
         Self::Vault,
         Self::Atrium,
         Self::Junction,
+        Self::Lake,
     ];
 
     /// The least half-width a room of the shape has, in x and in y.
@@ -72,6 +76,7 @@ impl RoomShape {
             Self::Hall | Self::Court | Self::Vault => SMALL_HALF,
             Self::Chamber | Self::Pit | Self::Split | Self::Cross | Self::Atrium => WIDE_HALF,
             Self::Junction => JUNCTION_HALF,
+            Self::Lake => LAKE_HALF,
         }
     }
 
@@ -81,7 +86,7 @@ impl RoomShape {
         match self {
             Self::Hall | Self::Chamber | Self::Pit | Self::Cross | Self::Junction => LOW_HEIGHT,
             Self::Vault => VAULT_HEIGHT,
-            Self::Split | Self::Court => HIGH_HEIGHT,
+            Self::Split | Self::Court | Self::Lake => HIGH_HEIGHT,
             Self::Atrium => ATRIUM_HEIGHT,
         }
     }
@@ -302,6 +307,7 @@ impl core::fmt::Display for KitError {
                 shape.name(),
                 match shape {
                     RoomShape::Court => "sky",
+                    RoomShape::Lake => "sky and a water",
                     RoomShape::Hall
                     | RoomShape::Chamber
                     | RoomShape::Pit
@@ -386,6 +392,15 @@ impl RoomKit {
             RoomShape::Court if textures.sky.is_none() => {
                 Err(KitError::NeedsTexture(RoomShape::Court))
             }
+            RoomShape::Lake
+                if textures.sky.is_none()
+                    || textures
+                        .liquid
+                        .as_deref()
+                        .is_none_or(|name| Hazard::of(&surface(name)) != Hazard::Harmless) =>
+            {
+                Err(KitError::NeedsTexture(RoomShape::Lake))
+            }
             RoomShape::Hall
             | RoomShape::Chamber
             | RoomShape::Pit
@@ -394,7 +409,8 @@ impl RoomKit {
             | RoomShape::Cross
             | RoomShape::Vault
             | RoomShape::Atrium
-            | RoomShape::Junction => Ok(()),
+            | RoomShape::Junction
+            | RoomShape::Lake => Ok(()),
         }
     }
 

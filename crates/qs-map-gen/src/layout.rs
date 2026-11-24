@@ -12,6 +12,7 @@ use crate::kit::JUNCTION_HALF;
 use crate::mission::{KeyColour, Role, Signal};
 use crate::passage::Passage;
 use crate::rng::Rng;
+use crate::theme::{Hazard, Paints};
 use crate::{GenError, RoomShape, Size};
 
 /// The distance between the middles of two rooms side by side.
@@ -40,6 +41,9 @@ const JUNCTION_CHANCE: usize = 2;
 /// What a room gives way by when a passage is too short for its stairs, and the most times.
 const FIT_STEP: f64 = 32.0;
 const FIT_TRIES: usize = 16;
+/// The latest place on the path a hub may be, and how many courtyards a canyon runs through.
+const HUB_LATEST: usize = 3;
+const CANYON_RUN: usize = 3;
 /// The shapes the exit's room may be.
 const EXIT_SHAPES: &[RoomShape] = &[RoomShape::Chamber, RoomShape::Hall, RoomShape::Vault];
 /// The half a room has should a list above be empty.
@@ -252,7 +256,8 @@ impl RoomPlan {
             | RoomShape::Court
             | RoomShape::Cross
             | RoomShape::Vault
-            | RoomShape::Junction => self.floor,
+            | RoomShape::Junction
+            | RoomShape::Lake => self.floor,
         }
     }
 }
@@ -287,6 +292,8 @@ pub(crate) struct Link {
     pub(crate) doorway: Doorway,
     /// How it climbs between its floors.
     pub(crate) climb: Climb,
+    /// How wide it is.
+    pub(crate) span: Span,
 }
 
 /// How a passage climbs from one floor to another.
@@ -311,6 +318,12 @@ pub(crate) struct Plan {
     pub(crate) path: usize,
     /// Each hook: the atrium, and the room of the path whose passage reaches its balcony.
     pub(crate) hooks: Vec<(RoomId, RoomId)>,
+    /// The level's form.
+    pub(crate) form: LevelForm,
+    /// The hub, in a level of that form.
+    pub(crate) hub: Option<RoomId>,
+    /// The canyon's courtyards, in a level of that form.
+    pub(crate) canyon: Vec<RoomId>,
 }
 
 /// What the plan can paint: a pit needs a liquid and a courtyard a sky.
@@ -322,11 +335,13 @@ pub(crate) struct Has {
     pub(crate) sky: Sky,
 }
 
-/// Whether the game has a liquid texture.
+/// Whether the game has a liquid texture, and whether a player who falls in it lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Liquid {
-    /// It has.
-    There,
+    /// Water, which a lake may hold.
+    Water,
+    /// Slime or lava, which a pit may hold, railed when it kills.
+    Harmful,
     /// It has none.
     Missing,
 }
@@ -338,6 +353,85 @@ pub(crate) enum Sky {
     There,
     /// It has none.
     Missing,
+}
+
+impl Has {
+    /// What `paints` can paint.
+    pub(crate) fn of(paints: &Paints) -> Self {
+        Self {
+            liquid: match paints.liquid.as_ref().map(Hazard::of) {
+                Some(Hazard::Harmless) => Liquid::Water,
+                Some(Hazard::Survivable | Hazard::Deadly) => Liquid::Harmful,
+                None => Liquid::Missing,
+            },
+            sky: if paints.sky.is_some() {
+                Sky::There
+            } else {
+                Sky::Missing
+            },
+        }
+    }
+}
+
+/// The form a level takes besides its hook, as Unexplored's cycle types give its dungeons
+/// theirs (Boris the Brave, "Dungeon Generation in Unexplored", 2021).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LevelForm {
+    /// The hook alone.
+    #[default]
+    Hook,
+    /// A great room early on the path, the rooms that hold its keys and buttons off it.
+    Hub,
+    /// A great courtyard on the path open to the sky, a lake of water in its middle and a walk
+    /// around it.
+    Lake,
+    /// A run of great courtyards on one floor, joined by openings as wide as they are and open
+    /// to the sky: an outdoor canyon across several cells.
+    Canyon,
+}
+
+impl LevelForm {
+    /// Its name, as a summary gives it.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Hook => "hook",
+            Self::Hub => "hub",
+            Self::Lake => "lake",
+            Self::Canyon => "canyon",
+        }
+    }
+
+    /// A form drawn by `rng` from those `has` allows: a lake needs water and a sky, a canyon a
+    /// sky.
+    fn draw(has: Has, rng: &mut Rng) -> Self {
+        let mut forms = vec![Self::Hook, Self::Hub];
+        if has.sky == Sky::There {
+            forms.push(Self::Canyon);
+            if has.liquid == Liquid::Water {
+                forms.push(Self::Lake);
+            }
+        }
+        rng.pick(&forms).copied().unwrap_or(Self::Hook)
+    }
+}
+
+/// How wide a passage is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Span {
+    /// A doorway's width and height: a corridor.
+    Corridor,
+    /// As wide as the narrower of its rooms and open to the sky: a canyon's.
+    Open,
+}
+
+/// How large a room is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Scale {
+    /// As the room's draw has it: now and then great.
+    Drawn,
+    /// Great: as wide as its cell holds.
+    Great,
 }
 
 impl Size {
@@ -463,6 +557,70 @@ impl Walk {
     }
 }
 
+/// Where a level's form is on its path, by place.
+struct Placed {
+    /// The form it came to: a canyon with no run of places for it is a hook alone.
+    form: LevelForm,
+    lake: Option<usize>,
+    hub: Option<usize>,
+    canyon: Vec<usize>,
+}
+
+impl Placed {
+    /// Where `form` goes on `walk`, a path of `path` places: never at the start, the exit or a
+    /// hook's places.
+    fn of(form: LevelForm, walk: &Walk, path: usize, rng: &mut Rng) -> Self {
+        let hooked: Vec<usize> = walk
+            .hooks
+            .iter()
+            .flat_map(|&(atrium, upper)| atrium..=upper)
+            .collect();
+        let free =
+            |place: usize| place > 0 && place.saturating_add(1) < path && !hooked.contains(&place);
+        let mut placed = Self {
+            form,
+            lake: None,
+            hub: None,
+            canyon: Vec::new(),
+        };
+        match form {
+            LevelForm::Hook => {}
+            LevelForm::Hub => {
+                let early: Vec<usize> = (1..=HUB_LATEST).filter(|&place| free(place)).collect();
+                placed.hub = rng.pick(&early).copied();
+            }
+            LevelForm::Lake => {
+                let places: Vec<usize> = (0..path).filter(|&place| free(place)).collect();
+                placed.lake = rng.pick(&places).copied();
+            }
+            LevelForm::Canyon => {
+                let runs: Vec<usize> = (0..path)
+                    .filter(|&first| {
+                        let mut run = first..first.saturating_add(CANYON_RUN);
+                        let storey = walk.steps.get(first).map(|step| step.storey);
+                        run.all(|place| {
+                            free(place) && walk.steps.get(place).map(|step| step.storey) == storey
+                        })
+                    })
+                    .collect();
+                if let Some(&first) = rng.pick(&runs) {
+                    placed.canyon = (first..first.saturating_add(CANYON_RUN)).collect();
+                }
+            }
+        }
+        let missing = match form {
+            LevelForm::Hook => false,
+            LevelForm::Hub => placed.hub.is_none(),
+            LevelForm::Lake => placed.lake.is_none(),
+            LevelForm::Canyon => placed.canyon.is_empty(),
+        };
+        if missing {
+            placed.form = LevelForm::Hook;
+        }
+        placed
+    }
+}
+
 /// The floor of `storey`.
 fn floor_of(storey: i32) -> f64 {
     f64::from(storey) * STOREY
@@ -483,19 +641,25 @@ impl Plan {
             .filter_map(|_| Walk::of(path, rng))
             .find(|walk| !wants_hook || !walk.hooks.is_empty())
             .ok_or(GenError::Layout)?;
+        let form = LevelForm::draw(has, rng);
+        let placed = Placed::of(form, &walk, path, rng);
         let mut plan = Self {
             rooms: Vec::new(),
             cells: walk.steps.iter().map(|step| step.cell).collect(),
             links: Vec::new(),
             path,
             hooks: Vec::new(),
+            form: placed.form,
+            hub: placed.hub.map(RoomId),
+            canyon: placed.canyon.iter().copied().map(RoomId).collect(),
         };
         for (place, step) in walk.steps.iter().enumerate() {
             let atrium = walk.hooks.iter().find(|(at, _)| *at == place);
-            let (shape, turned) = if place.saturating_add(1) == path {
+            let (shape, turned, scale) = if place.saturating_add(1) == path {
                 (
                     rng.pick(EXIT_SHAPES).copied().unwrap_or(RoomShape::Chamber),
                     None,
+                    Scale::Drawn,
                 )
             } else if let Some(&(_, upper)) = atrium {
                 let balcony = walk.steps.get(upper).and_then(|up| {
@@ -503,13 +667,24 @@ impl Plan {
                         .into_iter()
                         .find(|&s| step.cell.beside(s) == up.cell)
                 });
-                (RoomShape::Atrium, balcony)
+                (RoomShape::Atrium, balcony, Scale::Drawn)
+            } else if placed.lake == Some(place) {
+                (RoomShape::Lake, None, Scale::Great)
+            } else if placed.canyon.contains(&place) {
+                (RoomShape::Court, None, Scale::Great)
+            } else if placed.hub == Some(place) {
+                let shape = if has.sky == Sky::There && rng.chance(1, 2) {
+                    RoomShape::Court
+                } else {
+                    RoomShape::Hall
+                };
+                (shape, None, Scale::Great)
             } else if place > 0 && rng.chance(JUNCTION_CHANCE, CHANCES) {
-                (RoomShape::Junction, None)
+                (RoomShape::Junction, None, Scale::Drawn)
             } else {
-                (Self::shape(has, rng), None)
+                (Self::shape(has, rng), None, Scale::Drawn)
             };
-            let mut room = Self::room(step.cell, shape, floor_of(step.storey), place, rng);
+            let mut room = Self::room(step.cell, shape, floor_of(step.storey), place, scale, rng);
             if let Some(side) = turned {
                 room.turned = side;
             }
@@ -529,6 +704,7 @@ impl Plan {
                 side,
                 doorway: Self::doorway(rng),
                 climb: Climb::Stairs,
+                span: Span::Corridor,
             });
         }
         for &(atrium, upper) in &walk.hooks {
@@ -541,6 +717,7 @@ impl Plan {
                 side: room.turned.opposite(),
                 doorway: Doorway::Arch,
                 climb: Climb::Stairs,
+                span: Span::Corridor,
             });
             plan.hooks.push((RoomId(atrium), RoomId(upper)));
         }
@@ -557,7 +734,7 @@ impl Plan {
             RoomShape::Vault,
         ];
         match has.liquid {
-            Liquid::There => shapes.push(RoomShape::Pit),
+            Liquid::Water | Liquid::Harmful => shapes.push(RoomShape::Pit),
             Liquid::Missing => {}
         }
         match has.sky {
@@ -571,7 +748,14 @@ impl Plan {
     /// wide as its cell holds, more often for a courtyard, which is then an open place, so
     /// that great rooms stand beside ordinary ones, open beside cramped (Romero's contrast);
     /// a junction is small.
-    fn room(cell: Cell, shape: RoomShape, floor: f64, depth: usize, rng: &mut Rng) -> RoomPlan {
+    fn room(
+        cell: Cell,
+        shape: RoomShape,
+        floor: f64,
+        depth: usize,
+        scale: Scale,
+        rng: &mut Rng,
+    ) -> RoomPlan {
         let great_chance = match shape {
             RoomShape::Court => GREAT_COURT_CHANCE,
             RoomShape::Hall
@@ -582,8 +766,9 @@ impl Plan {
             | RoomShape::Vault
             | RoomShape::Atrium => GREAT_CHANCE,
             RoomShape::Junction => 0,
+            RoomShape::Lake => CHANCES,
         };
-        let great = rng.chance(great_chance, CHANCES);
+        let great = scale == Scale::Great || rng.chance(great_chance, CHANCES);
         let halves = match shape {
             RoomShape::Junction => JUNCTION_HALVES,
             _ if great => GREAT_HALVES,
@@ -592,7 +777,8 @@ impl Plan {
             | RoomShape::Pit
             | RoomShape::Split
             | RoomShape::Cross
-            | RoomShape::Atrium => WIDE_HALVES,
+            | RoomShape::Atrium
+            | RoomShape::Lake => WIDE_HALVES,
         };
         let mut half = || rng.pick(halves).copied().unwrap_or(SPARE_HALF);
         let half = match shape {
@@ -607,13 +793,14 @@ impl Plan {
             | RoomShape::Court
             | RoomShape::Cross
             | RoomShape::Vault
-            | RoomShape::Atrium => [half(), half()],
+            | RoomShape::Atrium
+            | RoomShape::Lake => [half(), half()],
         };
         let raised = if great { GREAT_RISE } else { 0.0 };
         let height = raised
             + match shape {
                 RoomShape::Split => SPLIT_HEIGHT,
-                RoomShape::Court => COURT_HEIGHT,
+                RoomShape::Court | RoomShape::Lake => COURT_HEIGHT,
                 RoomShape::Vault => VAULT_HEIGHT,
                 RoomShape::Atrium => STOREY + ATRIUM_UPPER,
                 RoomShape::Junction => JUNCTION_HEIGHT,
@@ -678,7 +865,7 @@ impl Plan {
         let depth = from.depth.saturating_add(1);
         let shape = rng.pick(shapes).copied().unwrap_or(RoomShape::Hall);
         let id = RoomId(self.rooms.len());
-        let mut room = Self::room(cell, shape, floor, depth, rng);
+        let mut room = Self::room(cell, shape, floor, depth, Scale::Drawn, rng);
         room.role = role;
         self.cells.push(cell);
         self.rooms.push(room);
@@ -688,6 +875,7 @@ impl Plan {
             side,
             doorway,
             climb: Climb::Stairs,
+            span: Span::Corridor,
         });
         Some(id)
     }
@@ -748,6 +936,7 @@ impl Plan {
                     side,
                     doorway: Doorway::Arch,
                     climb: Climb::Stairs,
+                    span: Span::Corridor,
                 });
                 added = added.saturating_add(1);
             }
@@ -830,13 +1019,34 @@ impl Plan {
             | RoomShape::Court
             | RoomShape::Cross
             | RoomShape::Vault
-            | RoomShape::Atrium => {
+            | RoomShape::Atrium
+            | RoomShape::Lake => {
                 if let Some(h) = room.half.get_mut(axis) {
                     *h -= FIT_STEP;
                 }
             }
         }
         true
+    }
+
+    /// Opens the passages between the canyon's courtyards: as wide as the narrower and up to
+    /// its sky, so the run reads as one place outdoors. A passage that holds a door or a lock
+    /// is left a corridor.
+    pub(crate) fn open_canyon(&mut self) {
+        let canyon = self.canyon.clone();
+        let rooms = &self.rooms;
+        for link in &mut self.links {
+            let both = canyon.contains(&link.from) && canyon.contains(&link.to);
+            let plain = matches!(link.doorway, Doorway::Open | Doorway::Arch);
+            let level = match (rooms.get(link.from.0), rooms.get(link.to.0)) {
+                (Some(a), Some(b)) => (a.floor - b.floor).abs() < f64::EPSILON,
+                _ => false,
+            };
+            if both && plain && level {
+                link.span = Span::Open;
+                link.doorway = Doorway::Open;
+            }
+        }
     }
 
     /// The room `id` names.
@@ -864,7 +1074,8 @@ impl Plan {
     }
 
     /// The sides of the room at `place` whose doorways take no frame: a secret door's, which
-    /// a frame would show, and a lift passage's, which is open to its full height.
+    /// a frame would show, a lift passage's, which is open to its full height, and a canyon's
+    /// opening, which is as wide as its courtyards.
     pub(crate) fn unframed(&self, place: usize) -> Vec<Side> {
         self.links
             .iter()
@@ -876,7 +1087,9 @@ impl Plan {
                 } else {
                     return None;
                 };
-                let open = link.doorway == Doorway::Secret || link.climb == Climb::Lift;
+                let open = link.doorway == Doorway::Secret
+                    || link.climb == Climb::Lift
+                    || link.span == Span::Open;
                 open.then_some(side)
             })
             .collect()
