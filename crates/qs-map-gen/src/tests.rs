@@ -83,7 +83,7 @@ fn every_brush_is_valid_and_on_the_grid() {
 }
 
 // No spec statement: L-48 and L-74, a level has its size's rooms on its path and more off it,
-// one start, one exit in a chamber, and each key its locks need
+// one start, one exit in a chamber, hall or vault, and each key its locks need
 #[test]
 fn a_level_has_a_start_an_exit_and_its_rooms() {
     for (size, rooms) in [(Size::Small, 5), (Size::Medium, 8), (Size::Large, 12)] {
@@ -118,7 +118,10 @@ fn a_level_has_a_start_an_exit_and_its_rooms() {
             usize::from(locks.contains(&LockKind::Arena))
         );
         assert!(level.monsters > 0);
-        assert_eq!(level.rooms[level.exit].shape, RoomShape::Chamber);
+        assert!(matches!(
+            level.rooms[level.exit].shape,
+            RoomShape::Chamber | RoomShape::Hall | RoomShape::Vault
+        ));
     }
 }
 
@@ -531,4 +534,57 @@ fn a_lamp_shows_its_light_whole() {
     // A lamp of no light of the theme's is painted as it comes.
     let plain = theme::Lamp::plain(theme::surface("trim"));
     assert_eq!(plain.on([5.0, 7.0]), theme::surface("trim"));
+}
+
+// No spec statement: L-74, levels differ in their make: great rooms beside ordinary ones and
+// junctions where corridors turn, the exit in rooms of more than one shape, and the hook at
+// more than one place along the path
+#[test]
+fn levels_differ_in_scale_and_shape() {
+    let mut halves = Vec::new();
+    let mut exits = Vec::new();
+    let mut junctions = 0;
+    for seed in 0..32 {
+        let level = level(seed, Size::Large);
+        for room in &level.rooms {
+            if room.shape == RoomShape::Junction {
+                junctions += 1;
+            }
+        }
+        exits.push(level.rooms[level.exit].shape);
+        let textures = id_names();
+        let request = Request {
+            seed,
+            size: Size::Large,
+            textures: &textures,
+            classes: &Classes::Any,
+            name: "random",
+        };
+        let mut rng = Rng::new(seed);
+        let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+        let has = layout::Has {
+            liquid: if paints.liquid.is_some() {
+                layout::Liquid::There
+            } else {
+                layout::Liquid::Missing
+            },
+            sky: if paints.sky.is_some() {
+                layout::Sky::There
+            } else {
+                layout::Sky::Missing
+            },
+        };
+        let (plan, _) = request.best(has, &mut rng).unwrap();
+        for room in &plan.rooms {
+            halves.extend(room.half);
+        }
+    }
+    let widest = halves.iter().copied().fold(0.0, f64::max);
+    let narrowest = halves.iter().copied().fold(f64::INFINITY, f64::min);
+    assert!(widest >= 288.0, "no great room: {widest}");
+    assert!(narrowest <= kit::JUNCTION_HALF, "no junction: {narrowest}");
+    assert!(junctions > 0);
+    exits.sort_by_key(|shape| shape.name());
+    exits.dedup();
+    assert!(exits.len() > 1, "the exit is always a {:?}", exits);
 }

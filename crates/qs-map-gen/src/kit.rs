@@ -45,12 +45,15 @@ const WIDE_HALF: f64 = 224.0;
 const LOW_HEIGHT: f64 = 192.0;
 const VAULT_HEIGHT: f64 = 224.0;
 const HIGH_HEIGHT: f64 = 256.0;
+/// A junction holds a doorway and its frame on each side: half a passage's width, 56, and a
+/// frame's 16, with room to spare.
+pub(crate) const JUNCTION_HALF: f64 = 96.0;
 /// An atrium's balcony is a storey up, and a doorway's height above it.
 const ATRIUM_HEIGHT: f64 = STOREY + LOW_HEIGHT;
 
 impl RoomShape {
     /// Every shape.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Hall,
         Self::Chamber,
         Self::Pit,
@@ -59,6 +62,7 @@ impl RoomShape {
         Self::Cross,
         Self::Vault,
         Self::Atrium,
+        Self::Junction,
     ];
 
     /// The least half-width a room of the shape has, in x and in y.
@@ -67,6 +71,7 @@ impl RoomShape {
         match self {
             Self::Hall | Self::Court | Self::Vault => SMALL_HALF,
             Self::Chamber | Self::Pit | Self::Split | Self::Cross | Self::Atrium => WIDE_HALF,
+            Self::Junction => JUNCTION_HALF,
         }
     }
 
@@ -74,7 +79,7 @@ impl RoomShape {
     #[must_use]
     pub const fn least_height(self) -> f64 {
         match self {
-            Self::Hall | Self::Chamber | Self::Pit | Self::Cross => LOW_HEIGHT,
+            Self::Hall | Self::Chamber | Self::Pit | Self::Cross | Self::Junction => LOW_HEIGHT,
             Self::Vault => VAULT_HEIGHT,
             Self::Split | Self::Court => HIGH_HEIGHT,
             Self::Atrium => ATRIUM_HEIGHT,
@@ -303,7 +308,8 @@ impl core::fmt::Display for KitError {
                     | RoomShape::Split
                     | RoomShape::Cross
                     | RoomShape::Vault
-                    | RoomShape::Atrium => "liquid",
+                    | RoomShape::Atrium
+                    | RoomShape::Junction => "liquid",
                 }
             ),
             Self::Askew => {
@@ -387,7 +393,8 @@ impl RoomKit {
             | RoomShape::Court
             | RoomShape::Cross
             | RoomShape::Vault
-            | RoomShape::Atrium => Ok(()),
+            | RoomShape::Atrium
+            | RoomShape::Junction => Ok(()),
         }
     }
 

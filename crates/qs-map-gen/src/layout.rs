@@ -8,7 +8,9 @@
 //! generator for Quake needs (Doomworld topic 114383, 2020). What locks the way and where its
 //! keys are is the mission's (`mission`).
 
+use crate::kit::JUNCTION_HALF;
 use crate::mission::{KeyColour, Role, Signal};
+use crate::passage::Passage;
 use crate::rng::Rng;
 use crate::{GenError, RoomShape, Size};
 
@@ -21,6 +23,25 @@ pub(crate) const HALF_CELL: f64 = CELL / 2.0;
 const HALVES: &[f64] = &[192.0, 224.0, 256.0];
 /// The halves of a room that needs space: the chamber, the pit and the room on two levels.
 const WIDE_HALVES: &[f64] = &[224.0, 256.0];
+/// The halves of a great room, as wide as its cell holds with a wall of 32 to spare; two side
+/// by side are 64 apart, so the passage between them is an arch in a thick wall.
+const GREAT_HALVES: &[f64] = &[288.0, 320.0, 352.0];
+/// A great room's height above an ordinary one's.
+const GREAT_RISE: f64 = 64.0;
+/// The chances in [`CHANCES`] that a room, and a courtyard, is a great one.
+const GREAT_CHANCE: usize = 2;
+const GREAT_COURT_CHANCE: usize = 6;
+/// A junction's half, a corridor's turn, and its height.
+const JUNCTION_HALVES: &[f64] = &[JUNCTION_HALF];
+const JUNCTION_HEIGHT: f64 = 192.0;
+/// The chances in [`CHANCES`] that a room of the path, not the start's nor the exit's, is a
+/// junction where the corridor turns.
+const JUNCTION_CHANCE: usize = 2;
+/// What a room gives way by when a passage is too short for its stairs, and the most times.
+const FIT_STEP: f64 = 32.0;
+const FIT_TRIES: usize = 16;
+/// The shapes the exit's room may be.
+const EXIT_SHAPES: &[RoomShape] = &[RoomShape::Chamber, RoomShape::Hall, RoomShape::Vault];
 /// The half a room has should a list above be empty.
 const SPARE_HALF: f64 = 224.0;
 /// The heights a room may have, floor to ceiling.
@@ -50,9 +71,7 @@ const LARGE_ROOMS: usize = 12;
 /// The times a path is drawn again when it walks into a corner or, in a level of more than
 /// [`SMALL_ROOMS`], has no hook.
 const PATH_TRIES: usize = 256;
-/// The chances in [`CHANCES`] that a step of the path that may hook does, and that a step
-/// climbs or falls a storey.
-const HOOK_CHANCE: usize = 5;
+/// The chances in [`CHANCES`] that a step of the path climbs or falls a storey.
 const STOREY_CHANCE: usize = 3;
 /// The most loops a level is given besides its hook.
 const MOST_LOOPS: usize = 2;
@@ -232,7 +251,8 @@ impl RoomPlan {
             | RoomShape::Pit
             | RoomShape::Court
             | RoomShape::Cross
-            | RoomShape::Vault => self.floor,
+            | RoomShape::Vault
+            | RoomShape::Junction => self.floor,
         }
     }
 }
@@ -419,11 +439,14 @@ impl Walk {
             }],
             hooks: Vec::new(),
         };
+        // Where along the path the hook is: anywhere it fits, the first place it can be from
+        // there on; the start is no atrium, and the exit comes after the hook.
+        let last_hook = length.saturating_sub(HOOK_PLACES);
+        let hook_at = rng.below(last_hook.max(1)).max(1);
         while walk.steps.len() < length {
             let place = walk.steps.len().saturating_sub(1);
-            // The start is no atrium, and the exit comes after the hook.
-            let room_for_hook = place > 0 && place.saturating_add(HOOK_PLACES) < length;
-            if room_for_hook && rng.chance(HOOK_CHANCE, CHANCES) && walk.hook(rng) {
+            let room_for_hook = place >= hook_at && place.saturating_add(HOOK_PLACES) < length;
+            if room_for_hook && walk.hooks.is_empty() && walk.hook(rng) {
                 continue;
             }
             let last = *walk.steps.last()?;
@@ -470,8 +493,10 @@ impl Plan {
         for (place, step) in walk.steps.iter().enumerate() {
             let atrium = walk.hooks.iter().find(|(at, _)| *at == place);
             let (shape, turned) = if place.saturating_add(1) == path {
-                // The exit is in the chamber, under its dome.
-                (RoomShape::Chamber, None)
+                (
+                    rng.pick(EXIT_SHAPES).copied().unwrap_or(RoomShape::Chamber),
+                    None,
+                )
             } else if let Some(&(_, upper)) = atrium {
                 let balcony = walk.steps.get(upper).and_then(|up| {
                     Side::ALL
@@ -479,6 +504,8 @@ impl Plan {
                         .find(|&s| step.cell.beside(s) == up.cell)
                 });
                 (RoomShape::Atrium, balcony)
+            } else if place > 0 && rng.chance(JUNCTION_CHANCE, CHANCES) {
+                (RoomShape::Junction, None)
             } else {
                 (Self::shape(has, rng), None)
             };
@@ -540,9 +567,26 @@ impl Plan {
         rng.pick(&shapes).copied().unwrap_or(RoomShape::Hall)
     }
 
-    /// A room of `shape` at `cell`, its size drawn by `rng`.
+    /// A room of `shape` at `cell`, its size drawn by `rng`: now and then a great room, as
+    /// wide as its cell holds, more often for a courtyard, which is then an open place, so
+    /// that great rooms stand beside ordinary ones, open beside cramped (Romero's contrast);
+    /// a junction is small.
     fn room(cell: Cell, shape: RoomShape, floor: f64, depth: usize, rng: &mut Rng) -> RoomPlan {
+        let great_chance = match shape {
+            RoomShape::Court => GREAT_COURT_CHANCE,
+            RoomShape::Hall
+            | RoomShape::Chamber
+            | RoomShape::Pit
+            | RoomShape::Split
+            | RoomShape::Cross
+            | RoomShape::Vault
+            | RoomShape::Atrium => GREAT_CHANCE,
+            RoomShape::Junction => 0,
+        };
+        let great = rng.chance(great_chance, CHANCES);
         let halves = match shape {
+            RoomShape::Junction => JUNCTION_HALVES,
+            _ if great => GREAT_HALVES,
             RoomShape::Hall | RoomShape::Court | RoomShape::Vault => HALVES,
             RoomShape::Chamber
             | RoomShape::Pit
@@ -553,7 +597,7 @@ impl Plan {
         let mut half = || rng.pick(halves).copied().unwrap_or(SPARE_HALF);
         let half = match shape {
             // A chamber is as wide as it is long, so its eight sides are even.
-            RoomShape::Chamber => {
+            RoomShape::Chamber | RoomShape::Junction => {
                 let both = half();
                 [both, both]
             }
@@ -565,15 +609,18 @@ impl Plan {
             | RoomShape::Vault
             | RoomShape::Atrium => [half(), half()],
         };
-        let height = match shape {
-            RoomShape::Split => SPLIT_HEIGHT,
-            RoomShape::Court => COURT_HEIGHT,
-            RoomShape::Vault => VAULT_HEIGHT,
-            RoomShape::Atrium => STOREY + ATRIUM_UPPER,
-            RoomShape::Hall | RoomShape::Chamber | RoomShape::Pit | RoomShape::Cross => {
-                rng.pick(HEIGHTS).copied().unwrap_or(SPLIT_HEIGHT)
-            }
-        };
+        let raised = if great { GREAT_RISE } else { 0.0 };
+        let height = raised
+            + match shape {
+                RoomShape::Split => SPLIT_HEIGHT,
+                RoomShape::Court => COURT_HEIGHT,
+                RoomShape::Vault => VAULT_HEIGHT,
+                RoomShape::Atrium => STOREY + ATRIUM_UPPER,
+                RoomShape::Junction => JUNCTION_HEIGHT,
+                RoomShape::Hall | RoomShape::Chamber | RoomShape::Pit | RoomShape::Cross => {
+                    rng.pick(HEIGHTS).copied().unwrap_or(SPLIT_HEIGHT)
+                }
+            };
         let turned = rng.pick(&Side::ALL).copied().unwrap_or(Side::East);
         RoomPlan {
             middle: cell.middle(),
@@ -720,6 +767,76 @@ impl Plan {
                 link.climb = Climb::Lift;
             }
         }
+    }
+
+    /// Shrinks rooms until every passage holds what it climbs, stairs and their landings
+    /// (`Passage::least_length`): two great rooms side by side are close, which a passage on
+    /// one floor takes as an arch in a thick wall and one between floors cannot. The larger of
+    /// the two rooms gives way, a step of [`FIT_STEP`] at a time, down to its shape's least.
+    pub(crate) fn fit_passages(&mut self) {
+        for index in 0..self.links.len() {
+            for _ in 0..FIT_TRIES {
+                let Some(&link) = self.links.get(index) else {
+                    break;
+                };
+                let (Some(from), Some(to)) =
+                    (self.rooms.get(link.from.0), self.rooms.get(link.to.0))
+                else {
+                    break;
+                };
+                let [fx, fy] = link.side.facing();
+                let [ax, ay] = from.middle;
+                let [bx, by] = to.middle;
+                let between = (bx - ax) * fx + (by - ay) * fy;
+                let length = between - from.reach(link.side) - to.reach(link.side.opposite());
+                let climb =
+                    (from.door_floor(link.side) - to.door_floor(link.side.opposite())).abs();
+                if length >= Passage::least_length(climb) {
+                    break;
+                }
+                let larger = if from.reach(link.side) >= to.reach(link.side.opposite()) {
+                    link.from
+                } else {
+                    link.to
+                };
+                if !self.shrink(larger, link.side) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Shrinks the room `id` by [`FIT_STEP`] along `side`'s axis, and across it too for a
+    /// shape that is square; whether it was larger than its shape's least.
+    fn shrink(&mut self, id: RoomId, side: Side) -> bool {
+        let Some(room) = self.rooms.get_mut(id.0) else {
+            return false;
+        };
+        let least = room.shape.least_half();
+        let axis = usize::from(!side.along_x());
+        let Some(&half) = room.half.get(axis) else {
+            return false;
+        };
+        if half - FIT_STEP < least {
+            return false;
+        }
+        match room.shape {
+            RoomShape::Chamber | RoomShape::Junction => {
+                room.half = room.half.map(|h| (h - FIT_STEP).max(least));
+            }
+            RoomShape::Hall
+            | RoomShape::Pit
+            | RoomShape::Split
+            | RoomShape::Court
+            | RoomShape::Cross
+            | RoomShape::Vault
+            | RoomShape::Atrium => {
+                if let Some(h) = room.half.get_mut(axis) {
+                    *h -= FIT_STEP;
+                }
+            }
+        }
+        true
     }
 
     /// The room `id` names.

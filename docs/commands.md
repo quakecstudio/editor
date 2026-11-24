@@ -4436,6 +4436,11 @@ Parameters:
           "const": "atrium",
           "description": "Two storeys high, a balcony 128 up along the side it is turned to, whose doorway is at\nthe balcony and which a player drops from to the floor and does not climb back to. At\nleast 224 in each half-width and 320 high.",
           "type": "string"
+        },
+        {
+          "const": "junction",
+          "description": "A small room where a corridor turns: a doorway on any side, a lamp. At least 96 in each\nhalf-width and 192 high.",
+          "type": "string"
         }
       ]
     },

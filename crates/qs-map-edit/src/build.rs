@@ -53,6 +53,9 @@ pub enum RoomKind {
     /// the balcony and which a player drops from to the floor and does not climb back to. At
     /// least 224 in each half-width and 320 high.
     Atrium,
+    /// A small room where a corridor turns: a doorway on any side, a lamp. At least 96 in each
+    /// half-width and 192 high.
+    Junction,
 }
 
 /// A part to dress a room with on top of its shape.
@@ -106,6 +109,7 @@ impl From<RoomKind> for RoomShape {
             RoomKind::Cross => Self::Cross,
             RoomKind::Vault => Self::Vault,
             RoomKind::Atrium => Self::Atrium,
+            RoomKind::Junction => Self::Junction,
         }
     }
 }

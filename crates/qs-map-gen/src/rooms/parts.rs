@@ -12,7 +12,7 @@ use qs_map::BrushError;
 
 use super::{Built, Room, SPOT_INSET};
 use crate::RoomShape;
-use crate::layout::Side;
+use crate::layout::{HALF_CELL, Side};
 use crate::mass::{Bounds, Coat, Mass};
 use crate::passage::{HALF_WIDTH as PASSAGE_HALF_WIDTH, HEIGHT as PASSAGE_HEIGHT};
 use crate::theme::{LAMP_SIZE, Paints};
@@ -26,6 +26,8 @@ const BAY_HALF: f64 = 96.0;
 /// the wall: half a pilaster.
 const BAY_MARGIN: f64 = 16.0;
 const BAY_HEIGHT: f64 = 128.0;
+/// The rock a bay leaves in its cell beyond it.
+const BAY_ROCK: f64 = 32.0;
 /// The most bays a room grows.
 const MOST_BAYS: usize = 2;
 /// A brazier: half its foot, its height, and how bright its flame.
@@ -122,7 +124,10 @@ impl RoomPart {
                 shape,
                 RoomShape::Hall | RoomShape::Pit | RoomShape::Split | RoomShape::Atrium
             ),
-            Self::Skirting => !matches!(shape, RoomShape::Chamber | RoomShape::Cross),
+            Self::Skirting => !matches!(
+                shape,
+                RoomShape::Chamber | RoomShape::Cross | RoomShape::Junction
+            ),
             Self::Columns => matches!(
                 shape,
                 RoomShape::Court | RoomShape::Vault | RoomShape::Split
@@ -144,6 +149,15 @@ impl Room<'_> {
             .into_iter()
             .filter(|side| !self.doors.contains(side))
             .filter(|&side| !(self.plan.shape == RoomShape::Atrium && side == self.plan.turned))
+            .collect()
+    }
+
+    /// The bare walls a bay fits behind: one whose bay leaves [`BAY_ROCK`] of its cell's rock
+    /// past it, so it opens into no room beside it and out of no level.
+    fn bay_walls(&self) -> Vec<Side> {
+        self.bare_walls()
+            .into_iter()
+            .filter(|&side| self.plan.reach(side) + BAY_DEPTH + BAY_ROCK <= HALF_CELL)
             .collect()
     }
 
@@ -187,7 +201,7 @@ impl Room<'_> {
         let support = Coat::all(&paints.support);
         let mut bays = Vec::new();
         if self.takes(RoomPart::Bays) {
-            for side in self.bare_walls().into_iter().take(MOST_BAYS) {
+            for side in self.bay_walls().into_iter().take(MOST_BAYS) {
                 let reach = self.plan.reach(side);
                 let half = (self.wall_half(side) / 2.0 - BAY_MARGIN).min(BAY_HALF);
                 let space = Coat::space(&paints.floor, &paints.ceiling, &paints.wall);

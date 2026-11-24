@@ -78,6 +78,8 @@ pub enum RoomShape {
     Vault,
     /// A room two storeys high with a balcony along one side, dropped from to its floor.
     Atrium,
+    /// A small room where a corridor turns.
+    Junction,
 }
 
 impl RoomShape {
@@ -93,6 +95,7 @@ impl RoomShape {
             Self::Cross => "cross",
             Self::Vault => "vault",
             Self::Atrium => "atrium",
+            Self::Junction => "junction",
         }
     }
 }
@@ -782,6 +785,7 @@ impl Request<'_> {
             },
         };
         let (mut plan, report) = self.best(has, &mut rng)?;
+        plan.fit_passages();
         if self.classes.has(PLAT) {
             plan.lifts(&mut rng);
         }

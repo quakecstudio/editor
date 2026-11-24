@@ -219,9 +219,11 @@ impl<'a> Room<'a> {
             RoomShape::Chamber => [0.0, DOME_RISE + DOME_RISE],
             RoomShape::Pit => [PIT_DEPTH, 0.0],
             RoomShape::Cross => [0.0, LANTERN_RISE],
-            RoomShape::Split | RoomShape::Court | RoomShape::Vault | RoomShape::Atrium => {
-                [0.0, 0.0]
-            }
+            RoomShape::Split
+            | RoomShape::Court
+            | RoomShape::Vault
+            | RoomShape::Atrium
+            | RoomShape::Junction => [0.0, 0.0],
         }
     }
 
@@ -309,7 +311,8 @@ impl<'a> Room<'a> {
                 | RoomShape::Pit
                 | RoomShape::Cross
                 | RoomShape::Vault
-                | RoomShape::Atrium,
+                | RoomShape::Atrium
+                | RoomShape::Junction,
                 _,
             )
             | (RoomShape::Chamber, Part::Exit) => self.standing([0.0, 0.0], floor),
@@ -343,6 +346,7 @@ impl<'a> Room<'a> {
             RoomShape::Cross => self.cross(mass, paints),
             RoomShape::Vault => self.vault(mass, paints),
             RoomShape::Atrium => self.atrium(mass, paints),
+            RoomShape::Junction => self.junction(mass, paints),
         }
     }
 
@@ -762,6 +766,19 @@ impl<'a> Room<'a> {
                 LESSER_LIGHT,
             ));
         }
+        Ok(built)
+    }
+
+    /// A junction: a small plain room where a corridor turns, lit by one lamp under its
+    /// ceiling, with nowhere for anything to stand but its middle, which the way through needs.
+    fn junction(&self, mass: &mut Mass, paints: &Paints) -> Result<Built, BrushError> {
+        let top = self.plan.floor + self.plan.height;
+        mass.carve(&self.space(paints)?)?;
+        let mut built = Built::default();
+        built
+            .lights
+            .push((self.at([0.0, 0.0], top - LIGHT_DROP), LESSER_LIGHT));
+        built.lamps.push(self.at([0.0, 0.0], top));
         Ok(built)
     }
 

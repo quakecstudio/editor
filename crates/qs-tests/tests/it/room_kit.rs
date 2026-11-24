@@ -51,7 +51,8 @@ fn kit(shape: RoomShape, middle: [f64; 2], floor: f64, turned: Side, doors: &[Si
         | RoomShape::Court
         | RoomShape::Cross
         | RoomShape::Vault
-        | RoomShape::Atrium => [least + 32.0, least],
+        | RoomShape::Atrium
+        | RoomShape::Junction => [least + 32.0, least],
     };
     RoomKit {
         shape,
