@@ -457,3 +457,50 @@ fn monsters_face_in_and_the_level_has_music() {
         assert!(faced.len() > 1, "seed {seed}: every monster faces one way");
     }
 }
+
+// No spec statement: L-74, a level's lamps are of its theme's light texture, as id's levels
+// mount their lights: a base's tlight, a city's light1
+#[test]
+fn lamps_are_of_the_themes_light_texture() {
+    let lamps = |names: &[&str], prefix: &[u8]| {
+        let textures = self::names(names);
+        (0..8).any(|seed| {
+            let level = Request {
+                seed,
+                size: Size::Medium,
+                textures: &textures,
+                classes: &Classes::Any,
+                name: "random",
+            }
+            .generate()
+            .unwrap();
+            level.map.entities[0].brushes().any(|brush| {
+                brush
+                    .faces
+                    .iter()
+                    .any(|face| face.texture().starts_with(prefix))
+            })
+        })
+    };
+    // Only a base's names: tech walls, and its lamps.
+    let base = &[
+        "tech01_1",
+        "tech04_1",
+        "sfloor4_1",
+        "ceiling4",
+        "tech03_1",
+        "adoor01_2",
+        "tlight01",
+    ];
+    assert!(lamps(base, b"tlight"));
+    let city = &[
+        "city4_7",
+        "city4_6",
+        "ground1_6",
+        "wood1_5",
+        "wmet2_1",
+        "door02_2",
+        "light1_4",
+    ];
+    assert!(lamps(city, b"light1"));
+}

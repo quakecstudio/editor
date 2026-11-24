@@ -4466,6 +4466,21 @@ Parameters:
           "const": "columns",
           "description": "A column out from each corner. A court, vault or split.",
           "type": "string"
+        },
+        {
+          "const": "fixtures",
+          "description": "Lamps: a panel of the light texture, the trim when not given, on the ceiling over each\nmain light and on each pilaster where its light is. Any shape.",
+          "type": "string"
+        },
+        {
+          "const": "beams",
+          "description": "Beams across the ceiling, or across a court's sky. A hall, court or atrium.",
+          "type": "string"
+        },
+        {
+          "const": "frames",
+          "description": "A frame of trim around each doorway. Any shape.",
+          "type": "string"
         }
       ]
     },

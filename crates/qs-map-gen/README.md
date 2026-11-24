@@ -26,8 +26,9 @@ monsters and weapons, and no trap a player cannot leave. One seed gives one leve
   a room on two levels joined by stairs, a courtyard under the sky, two aisles crossing under
   a lantern, a long room under a pitched vault, and an atrium with a balcony. **Their parts**
   (`rooms/parts`) build on a preset by a grammar: bays grow its footprint, braziers sprout in
-  them, cornices, skirtings and columns decorate it, chosen by the theme within a brush
-  budget. **Passages** (`passage`) are square or arched, with stairs or a lift where the
+  them, cornices, skirtings, columns and beams decorate it, chosen by the theme within a brush
+  budget, and every room has lamps of the theme's light texture where its lights are and
+  frames around its doorways, as id's rooms do. **Passages** (`passage`) are square or arched, with stairs or a lift where the
   floors differ and a door at the higher end.
 - **No traps.** A pit's liquid is within `CLIMB_OUT` (28) of its rim, the most a swimmer
   climbs out over (`client.qc`, `CheckWaterJump`), and a pit of lava, which kills before a

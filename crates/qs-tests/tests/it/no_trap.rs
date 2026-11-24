@@ -196,8 +196,9 @@ struct Explored {
 pub(crate) enum Trap {
     /// The exit is reached from nowhere the start reaches.
     NoExit,
-    /// A place the start reaches, with the keys held there, from which the exit is not.
-    Stuck([i32; 3]),
+    /// A place the start reaches, with what is held there (a bit for each key and each
+    /// door opened from elsewhere), from which the exit is not.
+    Stuck([i32; 3], u32),
     /// Walking reaches lava.
     Lava([i32; 3]),
 }
@@ -543,13 +544,15 @@ impl<'a> Ground<'a> {
                 }
             }
         }
-        let mut stuck: Vec<[i32; 3]> = places
+        let mut stuck: Vec<([i32; 3], u32)> = places
             .keys()
             .filter(|node| !leads.contains(node))
-            .map(|(at, _)| *at)
+            .map(|(at, held)| (*at, held.0))
             .collect();
         stuck.sort_unstable();
-        stuck.first().map_or(Ok(()), |&at| Err(Trap::Stuck(at)))
+        stuck
+            .first()
+            .map_or(Ok(()), |&(at, held)| Err(Trap::Stuck(at, held)))
     }
 }
 
@@ -602,7 +605,7 @@ mod tests {
         assert_eq!(checked(&pool("*water1", rim), in_the_pool()), Ok(()));
         let found = checked(&pool("*water1", rim + 4.0), in_the_pool());
         assert!(
-            matches!(found, Err(Trap::Stuck(_) | Trap::NoExit)),
+            matches!(found, Err(Trap::Stuck(..) | Trap::NoExit)),
             "{found:?}"
         );
     }
@@ -615,7 +618,7 @@ mod tests {
         // The liquid is the world's last brush.
         file.entities[0].items.pop();
         let found = checked(&file.to_bytes(), BESIDE);
-        assert!(matches!(found, Err(Trap::Stuck(_))), "{found:?}");
+        assert!(matches!(found, Err(Trap::Stuck(..))), "{found:?}");
     }
 
     /// [`pool`] of lava, with a rail around its edge when `railed`.

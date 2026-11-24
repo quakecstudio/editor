@@ -11,9 +11,9 @@ use crate::mass::{Bounds, Coat, Mass, Point};
 use crate::theme::Paints;
 
 /// Half a passage's width: a large monster's box is 64 wide.
-const HALF_WIDTH: f64 = 56.0;
+pub(crate) const HALF_WIDTH: f64 = 56.0;
 /// A passage's height above its higher floor.
-const HEIGHT: f64 = 128.0;
+pub(crate) const HEIGHT: f64 = 128.0;
 /// How much of an arch's upper corners is cut.
 const ARCH_CUT: f64 = 32.0;
 /// A step's height, which a walking player climbs (PHYS-8.3), and the depths a step may

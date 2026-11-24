@@ -44,6 +44,8 @@ struct Theme {
     ceiling: &'static [&'static str],
     trim: &'static [&'static str],
     door: &'static [&'static str],
+    /// The light textures its lamps are, from id's and LibreQuake's levels.
+    fixture: &'static [&'static str],
 }
 
 /// The themes, of id's levels and then of LibreQuake's.
@@ -56,6 +58,7 @@ const THEMES: &[Theme] = &[
         ceiling: &["ceiling4", "ceiling5", "ceil1_1"],
         trim: &["tech03_1", "comp1_3", "metal1_3"],
         door: &["adoor01_2", "adoor03_2", "edoor01_1"],
+        fixture: &["tlight01", "tlight02", "tlight07", "tlight08"],
     },
     Theme {
         name: "city",
@@ -65,6 +68,7 @@ const THEMES: &[Theme] = &[
         ceiling: &["wood1_5", "wizwood1_5", "wceiling5"],
         trim: &["wmet2_1", "wizmet1_2", "cop1_1"],
         door: &["door02_2", "door05_2", "dr05_2"],
+        fixture: &["light1_4", "light1_2", "light1_3"],
     },
     Theme {
         name: "runic",
@@ -74,6 +78,7 @@ const THEMES: &[Theme] = &[
         ceiling: &["metal5_1", "metal2_2", "mmetal1_2"],
         trim: &["rune1_1", "metal6_1", "cop2_3"],
         door: &["door01_2", "dr01_1", "door03_2"],
+        fixture: &["light3_6", "light3_7", "light3_8"],
     },
     Theme {
         name: "castle",
@@ -93,6 +98,7 @@ const THEMES: &[Theme] = &[
         ceiling: &["med_wood2", "med_wood7", "med_roof3"],
         trim: &["med_csl_trm1", "med_etrim1", "med_cmet4"],
         door: &["med_door3b", "med_door4", "med_dr2a"],
+        fixture: &[],
     },
     Theme {
         name: "temple",
@@ -102,6 +108,7 @@ const THEMES: &[Theme] = &[
         ceiling: &["grk_bl_flt1", "grk_brk15_f", "grk_brk16_f"],
         trim: &["grk_trim1", "grk_trim2", "grk_bl_trim1"],
         door: &["grk_door3"],
+        fixture: &[],
     },
     Theme {
         name: "ruin",
@@ -111,6 +118,7 @@ const THEMES: &[Theme] = &[
         ceiling: &["may_flt1_1", "may_drt1_2"],
         trim: &["may_trm1_1", "may_trm1_2", "may_bnd1_2"],
         door: &["may_door2_1"],
+        fixture: &[],
     },
     Theme {
         name: "station",
@@ -120,6 +128,7 @@ const THEMES: &[Theme] = &[
         ceiling: &["t_metalsheeta", "t_blok05", "t_flat02"],
         trim: &["t_trim1aa", "t_trim2aa", "t_trim1d"],
         door: &["edoor01_1", "fddoor01"],
+        fixture: &["tlight13", "tlightblfb"],
     },
 ];
 
@@ -181,6 +190,8 @@ pub(crate) struct Paints {
     pub(crate) ceiling: Surface,
     /// Bands and edges: cornices, skirtings, coffers, a dome's rings, plinths.
     pub(crate) trim: Surface,
+    /// Lamps: the theme's light texture, else its trim.
+    pub(crate) fixture: Surface,
     /// What holds a room up and stands in it: pillars, pilasters, beams, columns, rails.
     /// A second wall of the theme, plainer than its trim, which id's levels use sparingly.
     pub(crate) support: Surface,
@@ -245,22 +256,30 @@ impl Names {
 }
 
 impl WorldType {
-    /// The parts its rooms are dressed with: a base's walls are trimmed and its halls
-    /// columned; a castle's and a runic temple's rooms grow bays with braziers in them.
+    /// The parts its rooms may be dressed with besides those every room takes
+    /// ([`RoomPart::EVERY_ROOM`]): a base's walls are trimmed and its halls columned; a
+    /// castle's and a runic temple's rooms grow bays with braziers in them.
     pub(crate) const fn parts(self) -> &'static [RoomPart] {
         match self {
-            Self::Base => &[RoomPart::Cornice, RoomPart::Skirting, RoomPart::Columns],
+            Self::Base => &[
+                RoomPart::Cornice,
+                RoomPart::Skirting,
+                RoomPart::Columns,
+                RoomPart::Beams,
+            ],
             Self::Medieval => &[
                 RoomPart::Bays,
                 RoomPart::Braziers,
                 RoomPart::Skirting,
                 RoomPart::Columns,
+                RoomPart::Beams,
             ],
             Self::Metal => &[
                 RoomPart::Bays,
                 RoomPart::Braziers,
                 RoomPart::Cornice,
                 RoomPart::Columns,
+                RoomPart::Beams,
             ],
         }
     }
@@ -288,6 +307,7 @@ impl Paints {
             name: PLAIN_THEME,
             world: WorldType::Medieval,
             support: wall.clone(),
+            fixture: trim.clone(),
             wall,
             floor,
             ceiling,
@@ -329,9 +349,11 @@ impl Paints {
                 .filter(|name| *name != wall)
                 .collect();
             let support = names.one_of(&others, rng).unwrap_or(wall);
+            let fixture = names.one_of(theme.fixture, rng).unwrap_or(trim);
             return Ok(Self {
                 name: theme.name,
                 world: theme.world,
+                fixture: surface(fixture),
                 support: surface(support),
                 wall: surface(wall),
                 floor: surface(floor),
@@ -354,6 +376,7 @@ impl Paints {
             world: WorldType::Medieval,
             door: trim.clone(),
             support: wall.clone(),
+            fixture: trim.clone(),
             wall,
             floor,
             ceiling,

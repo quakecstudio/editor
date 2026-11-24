@@ -106,6 +106,10 @@ const PILASTER_DEPTH: f64 = 16.0;
 /// A beam under a ceiling: half its width and its depth.
 const BEAM_HALF: f64 = 16.0;
 const BEAM_DEPTH: f64 = 24.0;
+/// A lamp on a pilaster: half its width, half its height, and how far it stands out.
+const LAMP_HALF: f64 = 8.0;
+const LAMP_TALL: f64 = 12.0;
+const LAMP_DEPTH: f64 = 4.0;
 /// How far above the floor a torch burns, and how far out of its pilaster.
 const TORCH_LIFT: f64 = 96.0;
 const TORCH_OUT: f64 = 12.0;
@@ -132,6 +136,10 @@ pub(crate) struct Room<'a> {
     dress: &'a [RoomPart],
     /// The sides its doorways are on, which no part blocks.
     doors: &'a [Side],
+    /// The sides of those no frame goes around: a secret door's, which a frame would show,
+    /// and a lift passage's, open to the passage's full height, whose way down a frame's
+    /// lintel at a doorway's height would close.
+    unframed: &'a [Side],
 }
 
 /// What a room adds to the level besides the space it takes out.
@@ -145,6 +153,8 @@ pub(crate) struct Built {
     pub(crate) lights: Vec<(Point, f64)>,
     /// Where torches burn on its walls.
     pub(crate) torches: Vec<Point>,
+    /// Where on a ceiling a main light hangs below, for a lamp's panel there.
+    pub(crate) lamps: Vec<Point>,
 }
 
 /// How bright a room's main light and its lesser lights are (`light`'s default is 300,
@@ -185,6 +195,7 @@ impl<'a> Room<'a> {
             part,
             dress: &[],
             doors: &[],
+            unframed: &[],
         }
     }
 
@@ -195,6 +206,11 @@ impl<'a> Room<'a> {
             doors,
             ..self
         }
+    }
+
+    /// The room with no frame around its doorways on `unframed`.
+    pub(crate) const fn unframed(self, unframed: &'a [Side]) -> Self {
+        Self { unframed, ..self }
     }
 
     /// How far below its floor and above its ceiling the room's space reaches: a pit, a
@@ -371,6 +387,18 @@ impl<'a> Room<'a> {
                     place(reach - PILASTER_DEPTH - TORCH_OUT, over),
                     foot + TORCH_LIFT,
                 ));
+                if self.takes(RoomPart::Fixtures) {
+                    // A lamp on the pilaster's face, where the light it gives is.
+                    let [lx, ly] = place(reach - PILASTER_DEPTH - LAMP_DEPTH, over - LAMP_HALF);
+                    let [mx, my] = place(reach - PILASTER_DEPTH, over + LAMP_HALF);
+                    built
+                        .solids
+                        .push(Coat::all(&paints.fixture).boxed(self.bounds(
+                            [lx.min(mx), lx.max(mx)],
+                            [ly.min(my), ly.max(my)],
+                            [foot + TORCH_LIFT - LAMP_TALL, foot + TORCH_LIFT + LAMP_TALL],
+                        ))?);
+                }
             }
         }
         Ok(())
@@ -432,6 +460,7 @@ impl<'a> Room<'a> {
             self.at([0.0, 0.0], top + COFFER_RISE - LIGHT_DROP),
             MAIN_LIGHT,
         ));
+        built.lamps.push(self.at([0.0, 0.0], top + COFFER_RISE));
         Ok(built)
     }
 
@@ -484,6 +513,7 @@ impl<'a> Room<'a> {
         built
             .lights
             .push((self.at([0.0, 0.0], low - LIGHT_DROP), MAIN_LIGHT));
+        built.lamps.push(self.at([0.0, 0.0], low));
         let (_, lesser) = self.around(LIGHT_INSET);
         for offset in lesser {
             built
@@ -712,6 +742,7 @@ impl<'a> Room<'a> {
             self.at([0.0, 0.0], top + LANTERN_RISE - LIGHT_DROP),
             MAIN_LIGHT,
         ));
+        built.lamps.push(self.at([0.0, 0.0], top + LANTERN_RISE));
         for (a, o) in [
             (reach - LIGHT_INSET, 0.0),
             (-(reach - LIGHT_INSET), 0.0),
@@ -756,6 +787,7 @@ impl<'a> Room<'a> {
         built
             .lights
             .push((self.at([0.0, 0.0], top - LIGHT_DROP), MAIN_LIGHT));
+        built.lamps.push(self.at([0.0, 0.0], top));
         for (a, z) in [(-reach / 2.0, floor), (up, balcony)] {
             built.lights.push((
                 self.at(self.turned_offset(a, 0.0), z + LIGHT_LIFT),
@@ -799,6 +831,9 @@ impl<'a> Room<'a> {
                 self.at(self.turned_offset(along, 0.0), top - LIGHT_DROP),
                 MAIN_LIGHT,
             ));
+            built
+                .lamps
+                .push(self.at(self.turned_offset(along, 0.0), top));
         }
         Ok(built)
     }

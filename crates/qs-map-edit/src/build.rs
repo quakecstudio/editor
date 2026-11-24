@@ -71,6 +71,13 @@ pub enum RoomPartKind {
     Skirting,
     /// A column out from each corner. A court, vault or split.
     Columns,
+    /// Lamps: a panel of the light texture, the trim when not given, on the ceiling over each
+    /// main light and on each pilaster where its light is. Any shape.
+    Fixtures,
+    /// Beams across the ceiling, or across a court's sky. A hall, court or atrium.
+    Beams,
+    /// A frame of trim around each doorway. Any shape.
+    Frames,
 }
 
 impl From<RoomPartKind> for RoomPart {
@@ -81,6 +88,9 @@ impl From<RoomPartKind> for RoomPart {
             RoomPartKind::Cornice => Self::Cornice,
             RoomPartKind::Skirting => Self::Skirting,
             RoomPartKind::Columns => Self::Columns,
+            RoomPartKind::Fixtures => Self::Fixtures,
+            RoomPartKind::Beams => Self::Beams,
+            RoomPartKind::Frames => Self::Frames,
         }
     }
 }

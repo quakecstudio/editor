@@ -179,8 +179,12 @@ Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48, L-74).
   the eye 22 units above that place, and `engine.screenshot`.
 - Rooms are dressed with parts on top of their shapes (`map.build_room` takes them as
   `parts`): `bays` out of walls with no doorway, needing a wall of 112, `braziers` in them,
-  a `cornice`, a `skirting` and `columns`. A base takes cornices, skirtings and columns; a
-  castle or a temple bays with braziers.
+  a `cornice`, a `skirting`, `columns`, `beams` across a ceiling or a court's sky, `fixtures`
+  (a lamp panel of the theme's light texture over each main light and on each pilaster where
+  its light is: id's `tlight` in a base, `light1` in a city, `light3` in a runic level) and
+  `frames` of trim around the doorways. Every room has fixtures and frames; the rest are
+  chosen by the theme. A frame goes around neither a secret door, which it would show, nor a
+  lift passage's end, which is open to the passage's full height.
 - No level holds a trap: every pit's liquid comes to within 28 of its rim, and lava is
   railed. The check of every generated level in `crates/qs-tests` (`no_trap.rs`) requires the
   exit reachable from every place and set of keys and switches the start reaches, by

@@ -14,6 +14,7 @@ use super::{Built, Room, SPOT_INSET};
 use crate::RoomShape;
 use crate::layout::Side;
 use crate::mass::{Bounds, Coat, Mass};
+use crate::passage::{HALF_WIDTH as PASSAGE_HALF_WIDTH, HEIGHT as PASSAGE_HEIGHT};
 use crate::theme::Paints;
 
 /// The most brushes a room's parts add.
@@ -39,6 +40,12 @@ const SKIRTING_HEIGHT: f64 = 8.0;
 /// A column's half-width and how far in from the walls it stands.
 const COLUMN_HALF: f64 = 16.0;
 const COLUMN_INSET: f64 = 96.0;
+/// A lamp's panel on a ceiling: half its width and its thickness.
+const PANEL_HALF: f64 = 16.0;
+const PANEL_THICK: f64 = 4.0;
+/// A doorway's frame: how far it stands out of its wall and how wide its jambs and lintel are.
+const FRAME_DEPTH: f64 = 8.0;
+const FRAME_WIDTH: f64 = 16.0;
 /// How near to a column a place to stand is given up.
 const COLUMN_CLEAR: f64 = 64.0;
 
@@ -55,19 +62,33 @@ pub enum RoomPart {
     Skirting,
     /// Decorate: a column out from each corner.
     Columns,
+    /// Decorate: lamps, a panel of the theme's light texture on the ceiling over each main
+    /// light, and on each pilaster where its light is, as id's bases mount their lights.
+    Fixtures,
+    /// Decorate: beams across the ceiling, or across the sky of a courtyard.
+    Beams,
+    /// Decorate: a frame of trim around each doorway, its jambs and its lintel.
+    Frames,
 }
 
 impl RoomPart {
     /// How far a bay reaches out of its wall, which a room's rock must hold.
     pub const BAY_DEPTH: f64 = BAY_DEPTH;
 
+    /// The parts every room of a level is dressed with: lamps where its lights are and frames
+    /// around its doorways, as each of id's rooms has them.
+    pub const EVERY_ROOM: [Self; 2] = [Self::Fixtures, Self::Frames];
+
     /// Every part.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 8] = [
         Self::Bays,
         Self::Braziers,
         Self::Cornice,
         Self::Skirting,
         Self::Columns,
+        Self::Fixtures,
+        Self::Beams,
+        Self::Frames,
     ];
 
     /// Its name, as a summary gives it.
@@ -79,6 +100,9 @@ impl RoomPart {
             Self::Cornice => "cornice",
             Self::Skirting => "skirting",
             Self::Columns => "columns",
+            Self::Fixtures => "fixtures",
+            Self::Beams => "beams",
+            Self::Frames => "frames",
         }
     }
 
@@ -103,6 +127,12 @@ impl RoomPart {
             Self::Columns => matches!(
                 shape,
                 RoomShape::Court | RoomShape::Vault | RoomShape::Split
+            ),
+            Self::Fixtures | Self::Frames => true,
+            // Pits and rooms on two levels have beams of their own.
+            Self::Beams => matches!(
+                shape,
+                RoomShape::Hall | RoomShape::Court | RoomShape::Atrium
             ),
         }
     }
@@ -245,6 +275,24 @@ impl Room<'_> {
                 });
             }
         }
+        if self.takes(RoomPart::Fixtures) {
+            let lamp = Coat::all(&paints.fixture);
+            for &[x, y, z] in &built.lamps.clone() {
+                if !room_left(built) {
+                    break;
+                }
+                built.solids.push(lamp.boxed(Bounds {
+                    min: [x - PANEL_HALF, y - PANEL_HALF, z - PANEL_THICK],
+                    max: [x + PANEL_HALF, y + PANEL_HALF, z],
+                })?);
+            }
+        }
+        if self.takes(RoomPart::Beams) && room_left(built) {
+            self.beams(paints, top, built)?;
+        }
+        if self.takes(RoomPart::Frames) {
+            self.frames(&trim, built, start)?;
+        }
         for &side in &bays {
             let out = self.plan.reach(side) + BAY_DEPTH / 2.0;
             let [fx, fy] = side.facing();
@@ -261,8 +309,43 @@ impl Room<'_> {
         Ok(())
     }
 
+    /// Frames of `trim` around the room's doorways but those it leaves unframed, while the
+    /// room's parts, from `start` in `built`, are within [`ROOM_BUDGET`].
+    ///
+    /// # Errors
+    ///
+    /// The [`BrushError`] of a brush that could not be made.
+    fn frames(&self, trim: &Coat<'_>, built: &mut Built, start: usize) -> Result<(), BrushError> {
+        for &side in self.doors {
+            if built.solids.len().saturating_sub(start) >= ROOM_BUDGET {
+                break;
+            }
+            if self.unframed.contains(&side) {
+                continue;
+            }
+            let reach = self.plan.reach(side);
+            let door = self.plan.door_floor(side);
+            let out = [reach - FRAME_DEPTH, reach];
+            let inner = PASSAGE_HALF_WIDTH;
+            let outer = PASSAGE_HALF_WIDTH + FRAME_WIDTH;
+            let lintel = door + PASSAGE_HEIGHT;
+            for across in [[-outer, -inner], [inner, outer]] {
+                built
+                    .solids
+                    .push(trim.boxed(self.wall_box(side, out, across, [door, lintel]))?);
+            }
+            built.solids.push(trim.boxed(self.wall_box(
+                side,
+                out,
+                [-outer, outer],
+                [lintel, lintel + FRAME_WIDTH],
+            ))?);
+        }
+        Ok(())
+    }
+
     /// Whether the room is dressed with `part`.
-    fn takes(&self, part: RoomPart) -> bool {
+    pub(super) fn takes(&self, part: RoomPart) -> bool {
         self.dress.contains(&part) && part.fits(self.plan.shape)
     }
 }

@@ -727,6 +727,44 @@ impl Plan {
         self.rooms.get(id.0)
     }
 
+    /// The middle of the doorway a player comes into the room at `place` by: the passage that
+    /// reaches it, or for the start the first it leaves by.
+    pub(crate) fn entry(&self, place: usize) -> [f64; 2] {
+        let side = self
+            .links
+            .iter()
+            .find(|link| link.to.place() == place)
+            .map(|link| link.side.opposite())
+            .or_else(|| self.doors_of(place).first().copied())
+            .unwrap_or(Side::East);
+        let Some(room) = self.rooms.get(place) else {
+            return [0.0, 0.0];
+        };
+        let [fx, fy] = side.facing();
+        let [mx, my] = room.middle;
+        let reach = room.reach(side);
+        [mx + fx * reach, my + fy * reach]
+    }
+
+    /// The sides of the room at `place` whose doorways take no frame: a secret door's, which
+    /// a frame would show, and a lift passage's, which is open to its full height.
+    pub(crate) fn unframed(&self, place: usize) -> Vec<Side> {
+        self.links
+            .iter()
+            .filter_map(|link| {
+                let side = if link.from.place() == place {
+                    link.side
+                } else if link.to.place() == place {
+                    link.side.opposite()
+                } else {
+                    return None;
+                };
+                let open = link.doorway == Doorway::Secret || link.climb == Climb::Lift;
+                open.then_some(side)
+            })
+            .collect()
+    }
+
     /// The sides of the room at `place` that a passage leaves by.
     pub(crate) fn doors_of(&self, place: usize) -> Vec<Side> {
         self.links

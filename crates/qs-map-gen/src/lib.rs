@@ -529,11 +529,15 @@ impl Assembly<'_> {
             let mut dress = self.paints.world.parts().to_vec();
             rng.shuffle(&mut dress);
             dress.truncate(rng.below(dress.len()).saturating_add(1));
+            dress.extend(RoomPart::EVERY_ROOM);
             // A button stands in the middle of a whole wall, where a bay would be.
             if matches!(room_plan.role, Role::Button(_)) {
                 dress.retain(|part| !matches!(part, RoomPart::Bays | RoomPart::Braziers));
             }
-            let room = Room::new(room_plan, part).dressed(&dress, &doors);
+            let unframed = plan.unframed(place);
+            let room = Room::new(room_plan, part)
+                .dressed(&dress, &doors)
+                .unframed(&unframed);
             let mut built = room.build(&mut self.mass, &self.paints)?;
             self.solids.extend(built.solids);
             // Rooms are lit unevenly, dim beside bright, as Romero's contrast has it.
@@ -541,19 +545,7 @@ impl Assembly<'_> {
             for (at, brightness) in built.lights {
                 self.light((at, (brightness * mood).round()))?;
             }
-            // The doorway the player comes in by: the passage that reaches the room, or for
-            // the start the first it leaves by.
-            let entry_side = plan
-                .links
-                .iter()
-                .find(|link| link.to.place() == place)
-                .map(|link| link.side.opposite())
-                .or_else(|| doors.first().copied())
-                .unwrap_or(Side::East);
-            let [fx, fy] = entry_side.facing();
-            let [mx, my] = room_plan.middle;
-            let reach = room_plan.reach(entry_side);
-            let entry = [mx + fx * reach, my + fy * reach];
+            let entry = plan.entry(place);
             for torch in built.torches {
                 self.torch(torch)?;
             }
