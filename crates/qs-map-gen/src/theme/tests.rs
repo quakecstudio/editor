@@ -5,9 +5,10 @@
 use super::THEMES;
 
 /// How a texture is used in the game's own levels: the share of its area, in percent, on faces
-/// that look up, stand upright and look down. Measured from the world faces of every level in
-/// id's `pak0.pak` and `pak1.pak` (the id themes) and in LibreQuake's lite release (the others),
-/// a face looking up or down when its normal is within about 45 degrees of upright.
+/// that look up, stand upright and look down. The rows are what `scripts/measure-textures.py`
+/// prints for id's `pak0.pak` and `pak1.pak` (the id themes) and LibreQuake's lite release's
+/// (the others), from the world faces of every level, a face looking up or down when its normal
+/// is within about 45 degrees of upright.
 #[derive(Debug)]
 struct Use {
     floor: u8,
@@ -17,6 +18,8 @@ struct Use {
 
 /// The share past which a texture is mostly on one kind of face.
 const HALF: u8 = 50;
+/// The least share of a ceiling's area its levels put on ceilings.
+const THIRD: u8 = 33;
 
 /// The kind of face a theme paints with a texture.
 #[derive(Clone, Copy, Debug)]
@@ -36,14 +39,15 @@ impl Use {
         }
     }
 
-    /// Whether the game puts the texture on such faces: a floor mostly on floors, a ceiling
-    /// mostly flat (levels roof rooms with floor textures too), and an upright face's mostly
-    /// on walls.
+    /// Whether the game puts the texture on such faces: a floor's mostly on floors, an upright
+    /// face's mostly on walls, and a ceiling's on ceilings at least a third of the time and no
+    /// less than on floors, since levels roof outdoor rooms with sky and few textures are
+    /// mostly ceilings.
     fn fits(&self, face: Face) -> bool {
         match face {
-            Face::Floor => self.floor >= HALF,
-            Face::Ceiling => self.floor.saturating_add(self.ceiling) > self.wall,
-            Face::Upright => self.wall >= HALF,
+            Face::Floor => self.floor > HALF,
+            Face::Ceiling => self.ceiling >= THIRD && self.ceiling >= self.floor,
+            Face::Upright => self.wall > HALF,
         }
     }
 }
@@ -83,7 +87,6 @@ const MEASURED: &[(&str, Use)] = &[
     ("may_drt1_2", Use::of(100, 0, 0)),
     ("may_flr1_1", Use::of(88, 1, 11)),
     ("may_flr1_2", Use::of(67, 0, 33)),
-    ("may_flt1_1", Use::of(26, 47, 27)),
     ("may_trm1_1", Use::of(3, 95, 2)),
     ("may_trm1_2", Use::of(1, 98, 0)),
     ("may_wall1_2", Use::of(0, 99, 0)),
@@ -108,7 +111,6 @@ const MEASURED: &[(&str, Use)] = &[
     ("metal4_2", Use::of(0, 99, 0)),
     ("metal4_3", Use::of(0, 97, 2)),
     ("metal4_4", Use::of(4, 92, 5)),
-    ("metal5_1", Use::of(78, 8, 15)),
     ("metal5_2", Use::of(75, 7, 18)),
     ("metal5_4", Use::of(95, 1, 4)),
     ("metal5_6", Use::of(2, 94, 4)),
@@ -119,7 +121,6 @@ const MEASURED: &[(&str, Use)] = &[
     ("sfloor4_1", Use::of(60, 26, 14)),
     ("sfloor4_6", Use::of(66, 34, 1)),
     ("stone1_7", Use::of(4, 10, 86)),
-    ("t_flat02", Use::of(38, 26, 36)),
     ("t_flor1a", Use::of(100, 0, 0)),
     ("t_indent01", Use::of(0, 0, 100)),
     ("t_metalsheeta", Use::of(10, 79, 11)),
@@ -138,6 +139,7 @@ const MEASURED: &[(&str, Use)] = &[
     ("tech04_1", Use::of(10, 62, 28)),
     ("tech04_3", Use::of(6, 75, 20)),
     ("tech06_1", Use::of(0, 99, 1)),
+    ("tech08_1", Use::of(0, 100, 0)),
     ("tech08_2", Use::of(0, 100, 0)),
     ("tek_flr3", Use::of(92, 0, 8)),
     ("twall2_3", Use::of(0, 100, 0)),
@@ -173,4 +175,19 @@ fn every_theme_paints_each_face_as_its_game_does() {
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+// No spec statement: L-74, a theme's supports are no wall or trim of it, so a pillar or a beam
+// stands out from the wall behind it and the bands around it
+#[test]
+fn a_themes_supports_are_none_of_its_walls_or_trims() {
+    for theme in THEMES {
+        for support in theme.support {
+            assert!(
+                !theme.wall.contains(support) && !theme.trim.contains(support),
+                "{}: {support}",
+                theme.name
+            );
+        }
+    }
 }

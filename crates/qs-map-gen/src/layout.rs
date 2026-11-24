@@ -1039,10 +1039,12 @@ impl Plan {
 
     /// Opens the passages between the canyon's courtyards: as wide as the narrower and up to
     /// its sky, so the run reads as one place outdoors. A passage that holds a door or a lock
-    /// is left a corridor.
+    /// is a corridor, and a canyon none of whose passages opens, all of them locked, is no
+    /// canyon: the level takes the hook form, its courtyards great courtyards still.
     pub(crate) fn open_canyon(&mut self) {
         let canyon = self.canyon.clone();
         let rooms = &self.rooms;
+        let mut opened = false;
         for link in &mut self.links {
             let both = canyon.contains(&link.from) && canyon.contains(&link.to);
             let plain = matches!(link.doorway, Doorway::Open | Doorway::Arch);
@@ -1053,7 +1055,12 @@ impl Plan {
             if both && plain && level {
                 link.span = Span::Open;
                 link.doorway = Doorway::Open;
+                opened = true;
             }
+        }
+        if self.form == LevelForm::Canyon && !opened {
+            self.form = LevelForm::Hook;
+            self.canyon.clear();
         }
     }
 

@@ -37,9 +37,10 @@ monsters and weapons, and no trap a player cannot leave. One seed gives one leve
   reached (`no_trap.rs`), and measures the climb out of water in `qs-sim`
   (`water_escape.rs`).
 - **The textures** (`theme`) are a theme's, chosen from the names the game has: themes for
-  id's levels and for LibreQuake's, else any plain textures. Each theme paints a floor, a
-  ceiling or a wall only with a texture the game's own levels mostly put on such faces, by
-  area measured from their BSPs (`theme/tests.rs`). **The entities** (`populate`) are
+  id's levels and for LibreQuake's, else any plain textures. Each theme paints a floor or a
+  wall only with a texture the game's own levels mostly put on such faces, and a ceiling with
+  one they put on ceilings a third of the time or more, by area measured from their BSPs
+  (`scripts/measure-textures.py`, `theme/tests.rs`). **The entities** (`populate`) are
   id's classnames (`qcc/v101qc`), and only those the game defines are placed.
 
 - **The kit** (`kit`, L-49) builds one room or one passage on its own, for a map built by

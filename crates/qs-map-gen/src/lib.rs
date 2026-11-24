@@ -793,7 +793,6 @@ impl Request<'_> {
         let has = Has::of(&paints);
         let (mut plan, report) = self.best(has, &mut rng)?;
         plan.fit_passages();
-        plan.open_canyon();
         if self.classes.has(PLAT) {
             plan.lifts(&mut rng);
         }

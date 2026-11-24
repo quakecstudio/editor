@@ -229,6 +229,8 @@ impl<'a> Mission<'a> {
             },
             rng,
         );
+        mission.unhub();
+        mission.plan.open_canyon();
         Report {
             floors: mission.plan.floors(),
             loops: mission.plan.loops(),
@@ -237,6 +239,26 @@ impl<'a> Mission<'a> {
             secrets,
             shortcuts: usize::from(classes.shortcuts() && mission.shortcut(&gates)),
             form: mission.plan.form,
+        }
+    }
+
+    /// Takes the hub form back from a level whose keys and buttons hang off no hub, as when its
+    /// locks all come before the hub or no cell beside it was free: its great room is then one
+    /// more great room, and the level is reported as the form it has.
+    fn unhub(&mut self) {
+        let Some(hub) = self.plan.hub else {
+            return;
+        };
+        let opens = |role: Option<Role>| matches!(role, Some(Role::Key(_) | Role::Button(_)));
+        let held = (0..self.plan.rooms.len()).any(|place| opens(self.role(RoomId(place))));
+        let wing = self
+            .plan
+            .links
+            .iter()
+            .any(|link| link.from == hub && opens(self.role(link.to)));
+        if held && !wing {
+            self.plan.hub = None;
+            self.plan.form = LevelForm::Hook;
         }
     }
 

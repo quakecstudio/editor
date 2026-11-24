@@ -15,6 +15,7 @@ fn names(list: &[&str]) -> Vec<String> {
 
 fn id_names() -> Vec<String> {
     names(&[
+        "tech04_1",
         "tech01_1",
         "sfloor4_1",
         "ceiling4",
@@ -652,7 +653,6 @@ fn levels_take_every_form() {
         let has = layout::Has::of(&paints);
         let (mut plan, report) = request.best(has, &mut rng).unwrap();
         plan.fit_passages();
-        plan.open_canyon();
         assert_eq!(report.form, plan.form, "seed {seed}");
         match plan.form {
             LevelForm::Hook => {}
