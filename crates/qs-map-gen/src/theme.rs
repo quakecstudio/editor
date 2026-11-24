@@ -44,8 +44,11 @@ struct Theme {
     ceiling: &'static [&'static str],
     trim: &'static [&'static str],
     door: &'static [&'static str],
-    /// The light textures its lamps are, from id's and LibreQuake's levels.
-    fixture: &'static [&'static str],
+    /// The light textures its lamps are, from id's and LibreQuake's levels, each with its
+    /// width and height: every one is square.
+    fixture: &'static [(&'static str, f64)],
+    /// What holds its rooms up: id's and LibreQuake's structural metals, 64 square.
+    support: &'static [&'static str],
 }
 
 /// The themes, of id's levels and then of LibreQuake's.
@@ -55,10 +58,12 @@ const THEMES: &[Theme] = &[
         world: WorldType::Base,
         wall: &["tech01_1", "tech04_1", "tech06_1", "tech08_2", "twall2_3"],
         floor: &["sfloor4_1", "sfloor4_6", "afloor1_4", "metflor2_1"],
-        ceiling: &["ceiling4", "ceiling5", "ceil1_1"],
+        // Not ceiling4: 192 square, one tile is a whole circle, too busy over a room.
+        ceiling: &["ceiling5", "ceil1_1"],
         trim: &["tech03_1", "comp1_3", "metal1_3"],
         door: &["adoor01_2", "adoor03_2", "edoor01_1"],
-        fixture: &["tlight01", "tlight02", "tlight07", "tlight08"],
+        fixture: &[("tlight01", 32.0), ("tlight02", 64.0)],
+        support: &["metal1_3", "metal1_4", "metal2_2"],
     },
     Theme {
         name: "city",
@@ -68,7 +73,8 @@ const THEMES: &[Theme] = &[
         ceiling: &["wood1_5", "wizwood1_5", "wceiling5"],
         trim: &["wmet2_1", "wizmet1_2", "cop1_1"],
         door: &["door02_2", "door05_2", "dr05_2"],
-        fixture: &["light1_4", "light1_2", "light1_3"],
+        fixture: &[("light1_4", 64.0), ("light1_2", 64.0), ("light1_3", 64.0)],
+        support: &["wmet1_1", "wmet3_1", "wizmet1_2"],
     },
     Theme {
         name: "runic",
@@ -78,7 +84,8 @@ const THEMES: &[Theme] = &[
         ceiling: &["metal5_1", "metal2_2", "mmetal1_2"],
         trim: &["rune1_1", "metal6_1", "cop2_3"],
         door: &["door01_2", "dr01_1", "door03_2"],
-        fixture: &["light3_6", "light3_7", "light3_8"],
+        fixture: &[("light3_7", 32.0), ("light3_8", 32.0)],
+        support: &["metal5_4", "metal5_6", "metal2_6"],
     },
     Theme {
         name: "castle",
@@ -99,6 +106,7 @@ const THEMES: &[Theme] = &[
         trim: &["med_csl_trm1", "med_etrim1", "med_cmet4"],
         door: &["med_door3b", "med_door4", "med_dr2a"],
         fixture: &[],
+        support: &["med_cmet4", "med_cmet3a"],
     },
     Theme {
         name: "temple",
@@ -109,6 +117,7 @@ const THEMES: &[Theme] = &[
         trim: &["grk_trim1", "grk_trim2", "grk_bl_trim1"],
         door: &["grk_door3"],
         fixture: &[],
+        support: &["grk_bl_trim1"],
     },
     Theme {
         name: "ruin",
@@ -119,6 +128,7 @@ const THEMES: &[Theme] = &[
         trim: &["may_trm1_1", "may_trm1_2", "may_bnd1_2"],
         door: &["may_door2_1"],
         fixture: &[],
+        support: &[],
     },
     Theme {
         name: "station",
@@ -128,7 +138,8 @@ const THEMES: &[Theme] = &[
         ceiling: &["t_metalsheeta", "t_blok05", "t_flat02"],
         trim: &["t_trim1aa", "t_trim2aa", "t_trim1d"],
         door: &["edoor01_1", "fddoor01"],
-        fixture: &["tlight13", "tlightblfb"],
+        fixture: &[("tlight13", 64.0), ("tlightblfb", 32.0)],
+        support: &["t_metalsheeta"],
     },
 ];
 
@@ -175,6 +186,56 @@ impl Hazard {
     }
 }
 
+/// The texture a lamp is painted with, and the width of its square when it is a light of
+/// the theme's, which a lamp shows whole.
+#[derive(Clone, Debug)]
+pub(crate) struct Lamp {
+    surface: Surface,
+    size: Option<f64>,
+}
+
+/// How wide a lamp is: its light texture is scaled to fit it.
+pub(crate) const LAMP_SIZE: f64 = 32.0;
+
+impl Lamp {
+    /// A lamp of `surface`, with no light texture of a known size: it is painted as it comes.
+    pub(crate) const fn plain(surface: Surface) -> Self {
+        Self {
+            surface,
+            size: None,
+        }
+    }
+
+    /// A lamp of `surface`, a light texture `size` square.
+    #[cfg(test)]
+    pub(crate) const fn sized(surface: Surface, size: f64) -> Self {
+        Self {
+            surface,
+            size: Some(size),
+        }
+    }
+
+    /// The surface of a lamp [`LAMP_SIZE`] wide whose face, on its texture's axes, starts at
+    /// `s` along them and at `t` down them: the light scaled to the lamp and shifted to start
+    /// at its corner, whole on it. A face's texture runs `s = p . s_axis / scale + shift`, and
+    /// down a face, as on a floor's `-y` and a wall's `-z`, its `t` runs from the far edge, so
+    /// the corner `t` starts at is the face's lowest.
+    pub(crate) fn on(&self, [s, t]: [f64; 2]) -> Surface {
+        let Some(size) = self.size else {
+            return self.surface.clone();
+        };
+        let scale = LAMP_SIZE / size;
+        Surface {
+            texture: self.surface.texture.clone(),
+            texdef: TexDef::Standard {
+                shift: [(-s / scale).rem_euclid(size), (t / scale).rem_euclid(size)],
+                rotate: 0.0,
+                scale: [scale, scale],
+            },
+        }
+    }
+}
+
 /// The names a level is painted with.
 #[derive(Clone, Debug)]
 pub(crate) struct Paints {
@@ -191,7 +252,7 @@ pub(crate) struct Paints {
     /// Bands and edges: cornices, skirtings, coffers, a dome's rings, plinths.
     pub(crate) trim: Surface,
     /// Lamps: the theme's light texture, else its trim.
-    pub(crate) fixture: Surface,
+    pub(crate) fixture: Lamp,
     /// What holds a room up and stands in it: pillars, pilasters, beams, columns, rails.
     /// A second wall of the theme, plainer than its trim, which id's levels use sparingly.
     pub(crate) support: Surface,
@@ -307,7 +368,7 @@ impl Paints {
             name: PLAIN_THEME,
             world: WorldType::Medieval,
             support: wall.clone(),
-            fixture: trim.clone(),
+            fixture: Lamp::plain(trim.clone()),
             wall,
             floor,
             ceiling,
@@ -342,18 +403,23 @@ impl Paints {
             };
             let trim = names.one_of(theme.trim, rng).unwrap_or(wall);
             let door = names.one_of(theme.door, rng).unwrap_or(trim);
-            let others: Vec<&'static str> = theme
-                .wall
-                .iter()
-                .copied()
-                .filter(|name| *name != wall)
-                .collect();
-            let support = names.one_of(&others, rng).unwrap_or(wall);
-            let fixture = names.one_of(theme.fixture, rng).unwrap_or(trim);
+            let support = names.one_of(theme.support, rng).unwrap_or(wall);
+            let lights: Vec<&'static str> = theme.fixture.iter().map(|(name, _)| *name).collect();
+            let fixture = names.one_of(&lights, rng).map_or_else(
+                || Lamp::plain(surface(trim)),
+                |name| Lamp {
+                    surface: surface(name),
+                    size: theme
+                        .fixture
+                        .iter()
+                        .find(|(light, _)| *light == name)
+                        .map(|(_, size)| *size),
+                },
+            );
             return Ok(Self {
                 name: theme.name,
                 world: theme.world,
-                fixture: surface(fixture),
+                fixture,
                 support: surface(support),
                 wall: surface(wall),
                 floor: surface(floor),
@@ -376,7 +442,7 @@ impl Paints {
             world: WorldType::Medieval,
             door: trim.clone(),
             support: wall.clone(),
-            fixture: trim.clone(),
+            fixture: Lamp::plain(trim.clone()),
             wall,
             floor,
             ceiling,

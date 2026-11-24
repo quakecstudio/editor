@@ -15,7 +15,7 @@ pub use parts::RoomPart;
 use crate::RoomShape;
 use crate::layout::{RAISE, RoomPlan, STOREY, Side};
 use crate::mass::{Bounds, Coat, Mass, Point};
-use crate::theme::{Hazard, Paints};
+use crate::theme::{Hazard, LAMP_SIZE, Paints};
 
 /// How far from a wall something stands: room for a large monster's box, 64 wide, and to
 /// spare (`docs/agent-reference/maps.md`, Units and the player).
@@ -106,9 +106,7 @@ const PILASTER_DEPTH: f64 = 16.0;
 /// A beam under a ceiling: half its width and its depth.
 const BEAM_HALF: f64 = 16.0;
 const BEAM_DEPTH: f64 = 24.0;
-/// A lamp on a pilaster: half its width, half its height, and how far it stands out.
-const LAMP_HALF: f64 = 8.0;
-const LAMP_TALL: f64 = 12.0;
+/// How far a lamp on a pilaster stands out of it.
 const LAMP_DEPTH: f64 = 4.0;
 /// How far above the floor a torch burns, and how far out of its pilaster.
 const TORCH_LIFT: f64 = 96.0;
@@ -388,16 +386,24 @@ impl<'a> Room<'a> {
                     foot + TORCH_LIFT,
                 ));
                 if self.takes(RoomPart::Fixtures) {
-                    // A lamp on the pilaster's face, where the light it gives is.
-                    let [lx, ly] = place(reach - PILASTER_DEPTH - LAMP_DEPTH, over - LAMP_HALF);
-                    let [mx, my] = place(reach - PILASTER_DEPTH, over + LAMP_HALF);
-                    built
-                        .solids
-                        .push(Coat::all(&paints.fixture).boxed(self.bounds(
-                            [lx.min(mx), lx.max(mx)],
-                            [ly.min(my), ly.max(my)],
-                            [foot + TORCH_LIFT - LAMP_TALL, foot + TORCH_LIFT + LAMP_TALL],
-                        ))?);
+                    // A lamp on the pilaster's face, where the light it gives is, the light
+                    // whole on the face the room sees: along the wall is its texture's s, and
+                    // down it its t.
+                    let half = LAMP_SIZE / 2.0;
+                    let [lx, ly] = place(reach - PILASTER_DEPTH - LAMP_DEPTH, over - half);
+                    let [mx, my] = place(reach - PILASTER_DEPTH, over + half);
+                    let lamp = self.bounds(
+                        [lx.min(mx), lx.max(mx)],
+                        [ly.min(my), ly.max(my)],
+                        [foot + TORCH_LIFT - half, foot + TORCH_LIFT + half],
+                    );
+                    let along = if fx.abs() > fy.abs() {
+                        lamp.min[1]
+                    } else {
+                        lamp.min[0]
+                    };
+                    let surface = paints.fixture.on([along, lamp.min[2]]);
+                    built.solids.push(Coat::all(&surface).boxed(lamp)?);
                 }
             }
         }

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #![expect(
+    clippy::panic,
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is the test's failure"
+    reason = "test code: a failed unwrap, index or panic is the test's failure"
 )]
 
 use super::*;
@@ -503,4 +504,31 @@ fn lamps_are_of_the_themes_light_texture() {
         "light1_4",
     ];
     assert!(lamps(city, b"light1"));
+}
+
+// No spec statement: L-74, a lamp's light texture is scaled to the lamp and shifted so the
+// lamp's corner is a corner of the texture, wherever the lamp is: s from its start, and t from
+// its far edge (a face's t runs down it)
+#[test]
+fn a_lamp_shows_its_light_whole() {
+    let lamp = theme::Lamp::sized(theme::surface("tlight02"), 64.0);
+    for [s, t] in [
+        [-784.0, 100.0],
+        [0.0, 0.0],
+        [1040.0, -2312.0],
+        [-16.0, 48.0],
+    ] {
+        let surface = lamp.on([s, t]);
+        let qs_map::TexDef::Standard { shift, scale, .. } = surface.texdef else {
+            panic!("a standard texture")
+        };
+        assert_eq!(scale, [0.5, 0.5]);
+        let [ss, st] = shift;
+        assert_eq!((s / scale[0] + ss).rem_euclid(64.0), 0.0, "s at {s}");
+        let far = t + theme::LAMP_SIZE;
+        assert_eq!((-far / scale[1] + st).rem_euclid(64.0), 0.0, "t at {t}");
+    }
+    // A lamp of no light of the theme's is painted as it comes.
+    let plain = theme::Lamp::plain(theme::surface("trim"));
+    assert_eq!(plain.on([5.0, 7.0]), theme::surface("trim"));
 }

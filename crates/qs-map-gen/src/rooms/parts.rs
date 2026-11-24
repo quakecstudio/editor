@@ -15,7 +15,7 @@ use crate::RoomShape;
 use crate::layout::Side;
 use crate::mass::{Bounds, Coat, Mass};
 use crate::passage::{HALF_WIDTH as PASSAGE_HALF_WIDTH, HEIGHT as PASSAGE_HEIGHT};
-use crate::theme::Paints;
+use crate::theme::{LAMP_SIZE, Paints};
 
 /// The most brushes a room's parts add.
 const ROOM_BUDGET: usize = 48;
@@ -40,8 +40,7 @@ const SKIRTING_HEIGHT: f64 = 8.0;
 /// A column's half-width and how far in from the walls it stands.
 const COLUMN_HALF: f64 = 16.0;
 const COLUMN_INSET: f64 = 96.0;
-/// A lamp's panel on a ceiling: half its width and its thickness.
-const PANEL_HALF: f64 = 16.0;
+/// How thick a lamp's panel on a ceiling is.
 const PANEL_THICK: f64 = 4.0;
 /// A doorway's frame: how far it stands out of its wall and how wide its jambs and lintel are.
 const FRAME_DEPTH: f64 = 8.0;
@@ -276,15 +275,18 @@ impl Room<'_> {
             }
         }
         if self.takes(RoomPart::Fixtures) {
-            let lamp = Coat::all(&paints.fixture);
             for &[x, y, z] in &built.lamps.clone() {
                 if !room_left(built) {
                     break;
                 }
-                built.solids.push(lamp.boxed(Bounds {
-                    min: [x - PANEL_HALF, y - PANEL_HALF, z - PANEL_THICK],
-                    max: [x + PANEL_HALF, y + PANEL_HALF, z],
-                })?);
+                let half = LAMP_SIZE / 2.0;
+                let panel = Bounds {
+                    min: [x - half, y - half, z - PANEL_THICK],
+                    max: [x + half, y + half, z],
+                };
+                // Its face looks down: x is its texture's s, and -y its t.
+                let surface = paints.fixture.on([panel.min[0], panel.min[1]]);
+                built.solids.push(Coat::all(&surface).boxed(panel)?);
             }
         }
         if self.takes(RoomPart::Beams) && room_left(built) {
