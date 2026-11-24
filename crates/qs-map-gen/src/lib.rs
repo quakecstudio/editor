@@ -40,7 +40,7 @@ use mass::{Coat, Mass, Point};
 pub use mission::{LockKind, Report};
 use mission::{Mission, Role, Signal};
 use passage::Passage;
-use populate::{Depth, Placed};
+use populate::{Armoury, Depth, Placed};
 use rng::Rng;
 pub use rooms::RoomPart;
 use rooms::{Part, Room};
@@ -516,6 +516,10 @@ impl Assembly<'_> {
     /// Builds and fills `plan`'s rooms, each as its role has it, counting what is placed in
     /// `level`. Returns the signals of arenas that had no monster, whose doors must open by
     /// touch.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one room's build, light, fill and role in order, which read as one pass"
+    )]
     fn rooms(
         &mut self,
         plan: &Plan,
@@ -534,6 +538,7 @@ impl Assembly<'_> {
             .map(|link| link.to.place())
             .collect();
         let mut start = None;
+        let mut armoury = Armoury::default();
         for (place, room_plan) in plan.rooms.iter().enumerate() {
             let part = if place == exit { Part::Exit } else { Part::Way };
             let doors = plan.doors_of(place);
@@ -551,9 +556,11 @@ impl Assembly<'_> {
                 Role::Way | Role::Key(_) | Role::Secret | Role::Shortcut => {}
             }
             let unframed = plan.unframed(place);
+            let open = plan.open_sides(place);
             let room = Room::new(room_plan, part)
                 .dressed(&dress, &doors)
-                .unframed(&unframed);
+                .unframed(&unframed)
+                .opened(&open);
             let mut built = room.build(&mut self.mass, &self.paints)?;
             self.solids.extend(built.solids);
             // Rooms are lit unevenly, dim beside bright, as Romero's contrast has it.
@@ -615,7 +622,10 @@ impl Assembly<'_> {
                 rooms: room_plan.depth,
                 deepest,
             };
-            let filled = self.request.classes.fill(depth, &built.spots, rng);
+            let filled = self
+                .request
+                .classes
+                .fill(depth, &built.spots, &mut armoury, rng);
             self.place_all(&filled.items)?;
             level.items = level.items.saturating_add(filled.items.len());
             level.monsters = level.monsters.saturating_add(filled.monsters.len());

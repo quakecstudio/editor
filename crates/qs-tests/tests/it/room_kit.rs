@@ -338,3 +338,16 @@ fn a_passage_out_of_bounds_is_refused() {
     .unwrap();
     assert_eq!(most.steps, 32);
 }
+
+// No spec statement: L-74, a room built on its own takes the bays asked of it wherever its wall
+// is thick enough for them, however large it is: its block is its walls, not a level's cell
+#[test]
+fn a_large_room_on_its_own_takes_its_bays() {
+    let mut asked = kit(RoomShape::Hall, [0.0, 0.0], 0.0, Side::North, &[]);
+    asked.half = [320.0, 320.0];
+    asked.wall = RoomPart::BAY_DEPTH + KIT_MIN_WALL;
+    let plain = asked.build(&textures()).unwrap();
+    asked.parts = vec![RoomPart::Bays];
+    let bayed = asked.build(&textures()).unwrap();
+    assert!(bayed.brushes.len() > plain.brushes.len());
+}

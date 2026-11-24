@@ -134,11 +134,22 @@ pub(crate) enum Part {
     Exit,
 }
 
+/// The rock a room is taken out of, which a bay must leave some of behind it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Block {
+    /// Its cell of the level's grid, [`crate::layout::HALF_CELL`] each way from its middle.
+    Cell,
+    /// Walls this thick around it, as the kit builds a room on its own.
+    Walls(f64),
+}
+
 /// A room being built.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Room<'a> {
     plan: &'a RoomPlan,
     part: Part,
+    /// The rock it is taken out of.
+    block: Block,
     /// The parts it is dressed with on top of its shape.
     dress: &'a [RoomPart],
     /// The sides its doorways are on, which no part blocks.
@@ -147,6 +158,9 @@ pub(crate) struct Room<'a> {
     /// and a lift passage's, open to the passage's full height, whose way down a frame's
     /// lintel at a doorway's height would close.
     unframed: &'a [Side],
+    /// The sides open to the room beside as wide as the wall, a canyon's, where no pilaster
+    /// stands.
+    open: &'a [Side],
 }
 
 /// What a room adds to the level besides the space it takes out.
@@ -206,10 +220,17 @@ impl<'a> Room<'a> {
         Self {
             plan,
             part,
+            block: Block::Cell,
             dress: &[],
             doors: &[],
             unframed: &[],
+            open: &[],
         }
+    }
+
+    /// The room taken out of `block`.
+    pub(crate) const fn in_block(self, block: Block) -> Self {
+        Self { block, ..self }
     }
 
     /// The room dressed with `dress`, its doorways on `doors`.
@@ -224,6 +245,11 @@ impl<'a> Room<'a> {
     /// The room with no frame around its doorways on `unframed`.
     pub(crate) const fn unframed(self, unframed: &'a [Side]) -> Self {
         Self { unframed, ..self }
+    }
+
+    /// The room open as wide as its wall on `open`.
+    pub(crate) const fn opened(self, open: &'a [Side]) -> Self {
+        Self { open, ..self }
     }
 
     /// How far below its floor and above its ceiling the room's space reaches: a pit, a
@@ -407,8 +433,9 @@ impl<'a> Room<'a> {
             .boxed(self.centred(self.plan.half, [floor, floor + self.plan.height]))
     }
 
-    /// Pilasters on the room's four walls, two to a wall and clear of its doorway, from
-    /// `foot` to `head`, a torch on each.
+    /// Pilasters on the room's walls, two to a wall and clear of its doorway, from `foot` to
+    /// `head`, a torch on each; none on a wall open as wide as itself, which has no place clear
+    /// of its opening.
     fn pilasters(
         &self,
         paints: &Paints,
@@ -417,7 +444,10 @@ impl<'a> Room<'a> {
     ) -> Result<(), BrushError> {
         let trim = Coat::all(&paints.support);
         let [hx, hy] = self.plan.half;
-        for side in Side::ALL {
+        for side in Side::ALL
+            .into_iter()
+            .filter(|side| !self.open.contains(side))
+        {
             let [fx, fy] = side.facing();
             // Along the wall is a quarter turn from the way it faces.
             let (reach, width) = if fx.abs() > fy.abs() {

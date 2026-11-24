@@ -101,6 +101,23 @@ impl From<RoomPartKind> for RoomPart {
     }
 }
 
+impl From<RoomShape> for RoomKind {
+    fn from(shape: RoomShape) -> Self {
+        match shape {
+            RoomShape::Hall => Self::Hall,
+            RoomShape::Chamber => Self::Chamber,
+            RoomShape::Pit => Self::Pit,
+            RoomShape::Split => Self::Split,
+            RoomShape::Court => Self::Court,
+            RoomShape::Cross => Self::Cross,
+            RoomShape::Vault => Self::Vault,
+            RoomShape::Atrium => Self::Atrium,
+            RoomShape::Junction => Self::Junction,
+            RoomShape::Lake => Self::Lake,
+        }
+    }
+}
+
 impl From<RoomKind> for RoomShape {
     fn from(kind: RoomKind) -> Self {
         match kind {

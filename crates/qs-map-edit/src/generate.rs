@@ -9,11 +9,13 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use qs_commands::{Command, Outcome};
-use qs_map_gen::{Classes, Request, Size};
+use qs_map_gen::{Classes, LevelForm, LockKind, Request, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{HasMap, MapEditError, MapProject, WORLD_CLASSNAME, new_map_path, write_new_map};
+use crate::{
+    HasMap, MapEditError, MapProject, RoomKind, WORLD_CLASSNAME, new_map_path, write_new_map,
+};
 
 /// The id of `map.generate`.
 pub const MAP_GENERATE: &str = "map.generate";
@@ -65,11 +67,60 @@ pub struct GenerateParams {
 /// One room of a generated level.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RoomMade {
-    /// Its shape: `hall`, `chamber`, `pit`, `split`, `court`, `cross`, `vault`, `atrium`,
-    /// `junction` or `lake`.
-    pub shape: String,
+    /// Its shape.
+    pub shape: RoomKind,
     /// Where a player's box stands in it, on its floor: a place to look at it from.
     pub stand: [f64; 3],
+}
+
+/// A lock a generated level has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LockMade {
+    /// A door the silver key opens.
+    SilverKey,
+    /// A door the gold key opens.
+    GoldKey,
+    /// A door a button elsewhere opens.
+    Button,
+    /// A door that opens when the monsters of the room before it are dead.
+    Arena,
+}
+
+impl From<LockKind> for LockMade {
+    fn from(kind: LockKind) -> Self {
+        match kind {
+            LockKind::SilverKey => Self::SilverKey,
+            LockKind::GoldKey => Self::GoldKey,
+            LockKind::Button => Self::Button,
+            LockKind::Arena => Self::Arena,
+        }
+    }
+}
+
+/// The form a generated level takes besides its hook.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FormMade {
+    /// The hook alone.
+    Hook,
+    /// A great room early on, the rooms of its keys and buttons off it.
+    Hub,
+    /// A courtyard with a lake of water and a walk around it.
+    Lake,
+    /// Courtyards open into each other under the sky.
+    Canyon,
+}
+
+impl From<LevelForm> for FormMade {
+    fn from(form: LevelForm) -> Self {
+        match form {
+            LevelForm::Hook => Self::Hook,
+            LevelForm::Hub => Self::Hub,
+            LevelForm::Lake => Self::Lake,
+            LevelForm::Canyon => Self::Canyon,
+        }
+    }
 }
 
 /// What `map.generate` answers.
@@ -91,18 +142,14 @@ pub struct MapGenerated {
     pub floors: usize,
     /// How many loops its passages make.
     pub loops: usize,
-    /// Its locks, in the order they are met: `silver_key`, `gold_key`, `button` (a door a
-    /// button elsewhere opens) or `arena` (a door that opens when the room's monsters are
-    /// dead).
-    pub locks: Vec<String>,
+    /// Its locks, in the order they are met.
+    pub locks: Vec<LockMade>,
     /// How many places are seen before they are reached: each atrium's balcony.
     pub teasers: usize,
     /// How many secret rooms it has, each behind a wall that opens when shot.
     pub secrets: usize,
-    /// The form it takes besides its hook: `hook` alone, `hub` (a great room early on, its
-    /// keys' rooms off it), `lake` (a courtyard with a lake) or `canyon` (courtyards open into
-    /// each other under the sky).
-    pub form: String,
+    /// The form it takes besides its hook.
+    pub form: FormMade,
     /// Its monsters.
     pub monsters: usize,
     /// Its items.
@@ -183,7 +230,7 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
                 .rooms
                 .iter()
                 .map(|room| RoomMade {
-                    shape: room.shape.name().to_owned(),
+                    shape: room.shape.into(),
                     stand: room.stand,
                 })
                 .collect(),
@@ -195,11 +242,12 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
                 .report
                 .locks
                 .iter()
-                .map(|kind| kind.name().to_owned())
+                .copied()
+                .map(LockMade::from)
                 .collect(),
             teasers: level.report.teasers,
             secrets: level.report.secrets,
-            form: level.report.form.name().to_owned(),
+            form: level.report.form.into(),
             monsters: level.monsters,
             items: level.items,
             brushes: level.brushes,

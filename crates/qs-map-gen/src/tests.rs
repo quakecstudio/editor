@@ -691,3 +691,165 @@ fn levels_take_every_form() {
     }
     assert_eq!(forms.len(), 4, "forms seen: {forms:?}");
 }
+
+// No spec statement: L-74, a weapon due in a room with no free place, as a junction has none,
+// is placed in the next room that has one, so a level still hands out every weapon in order
+#[test]
+fn a_weapon_due_in_a_full_room_waits_for_the_next() {
+    let mut rng = Rng::new(1);
+    let mut armoury = Armoury::default();
+    let at = |rooms| Depth { rooms, deepest: 6 };
+    let weapons = |filled: &populate::Filled| -> Vec<&'static str> {
+        filled
+            .items
+            .iter()
+            .map(|item| item.classname)
+            .filter(|classname| classname.starts_with("weapon_"))
+            .collect()
+    };
+    let spots = [[0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [128.0, 0.0, 0.0]];
+    let junction = Classes::Any.fill(at(1), &[], &mut armoury, &mut rng);
+    assert!(weapons(&junction).is_empty());
+    let next = Classes::Any.fill(at(2), &spots, &mut armoury, &mut rng);
+    assert_eq!(weapons(&next), ["weapon_supershotgun"]);
+    let again = Classes::Any.fill(at(2), &spots, &mut armoury, &mut rng);
+    assert!(
+        weapons(&again).is_empty(),
+        "the nailgun is not due until 3 rooms in"
+    );
+    let third = Classes::Any.fill(at(3), &spots, &mut armoury, &mut rng);
+    assert_eq!(weapons(&third), ["weapon_nailgun"]);
+}
+
+// No spec statement: L-74, a passage too short for its climb is fitted when the larger of its
+// rooms is down to its least: the other gives way, here a room on two levels whose raised side
+// faces a lake a storey down, a climb of 192 that needs 256
+#[test]
+fn the_smaller_room_gives_way_when_the_larger_cannot() {
+    let room = |middle, shape, floor, half, turned| layout::RoomPlan {
+        middle,
+        shape,
+        floor,
+        half,
+        height: shape.least_height(),
+        turned,
+        depth: 0,
+        role: mission::Role::Way,
+    };
+    let lake_half = RoomShape::Lake.least_half();
+    let mut plan = layout::Plan {
+        rooms: vec![
+            room(
+                [0.0, 0.0],
+                RoomShape::Lake,
+                0.0,
+                [lake_half, lake_half],
+                layout::Side::East,
+            ),
+            room(
+                [768.0, 0.0],
+                RoomShape::Split,
+                layout::STOREY,
+                [352.0, 352.0],
+                layout::Side::West,
+            ),
+        ],
+        cells: Vec::new(),
+        links: vec![layout::Link {
+            from: layout::RoomId(0),
+            to: layout::RoomId(1),
+            side: layout::Side::East,
+            doorway: layout::Doorway::Open,
+            climb: layout::Climb::Stairs,
+            span: layout::Span::Corridor,
+        }],
+        path: 2,
+        hooks: Vec::new(),
+        form: LevelForm::Hook,
+        hub: None,
+        canyon: Vec::new(),
+    };
+    let link = plan.links[0];
+    assert!(plan.shortfall(&link).unwrap() > 0.0);
+    plan.fit_passages();
+    assert!(
+        plan.shortfall(&link).unwrap() <= 0.0,
+        "{:?}",
+        plan.rooms[1].half
+    );
+    assert_eq!(plan.rooms[0].half, [lake_half, lake_half]);
+}
+
+// No spec statement: L-74, once fitted every passage holds the stairs and landings of its
+// climb: when the larger of its rooms is down to its least the other gives way
+#[test]
+fn every_passage_holds_its_stairs_once_fitted() {
+    let textures = id_names();
+    for size in [Size::Small, Size::Medium, Size::Large] {
+        for seed in 0..64 {
+            let request = Request {
+                seed,
+                size,
+                textures: &textures,
+                classes: &Classes::Any,
+                name: "random",
+            };
+            let mut rng = Rng::new(seed);
+            let paints = theme::Paints::choose(&textures, &mut rng).unwrap();
+            let has = layout::Has::of(&paints);
+            let (mut plan, _) = request.best(has, &mut rng).unwrap();
+            plan.fit_passages();
+            for link in &plan.links {
+                let short = plan.shortfall(link).unwrap();
+                assert!(
+                    short <= 0.0,
+                    "{size:?} seed {seed}: a passage {short} short"
+                );
+            }
+        }
+    }
+}
+
+// No spec statement: L-74, a courtyard puts no pilaster in a canyon's opening: a wall open as
+// wide as itself has none, and its two torches go with them
+#[test]
+fn a_canyon_opening_has_no_pilasters() {
+    let plan = layout::RoomPlan {
+        middle: [0.0, 0.0],
+        shape: RoomShape::Court,
+        floor: 0.0,
+        half: [320.0, 320.0],
+        height: RoomShape::Court.least_height(),
+        turned: Side::East,
+        depth: 0,
+        role: mission::Role::Way,
+    };
+    let wall = theme::surface("wall");
+    let paints = theme::Paints::named(
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        wall.clone(),
+        None,
+        Some(theme::surface("sky1")),
+    );
+    let torches = |open: &[Side]| {
+        let mut mass = mass::Mass::of_blocks(
+            &[mass::Bounds {
+                min: [-384.0, -384.0, -384.0],
+                max: [384.0, 384.0, 704.0],
+            }],
+            &wall,
+        )
+        .unwrap();
+        rooms::Room::new(&plan, rooms::Part::Way)
+            .opened(open)
+            .build(&mut mass, &paints)
+            .unwrap()
+            .torches
+            .len()
+    };
+    assert_eq!(torches(&[]), 8);
+    assert_eq!(torches(&[Side::East]), 6);
+}

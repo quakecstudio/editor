@@ -52,7 +52,9 @@ pub use disk::{
 };
 pub use error::MapEditError;
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
-pub use generate::{GenerateParams, LevelSize, MAP_GENERATE, MapGenerated, RoomMade};
+pub use generate::{
+    FormMade, GenerateParams, LevelSize, LockMade, MAP_GENERATE, MapGenerated, RoomMade,
+};
 pub use groups::{
     EntityListParams, ExportParams, LAYER_KEY, LayerId, LayerInfo, LayerOption, MAP_EXPORT,
     MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL,

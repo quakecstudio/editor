@@ -24,8 +24,23 @@ const WEAPONS: &[&str] = &[
     "weapon_supernailgun",
     "weapon_rocketlauncher",
 ];
-/// A weapon is in every room this many rooms apart.
+/// The weapons come this many rooms apart: the first is due one room from the start.
 const ROOMS_A_WEAPON: usize = 2;
+
+/// The weapons a level has handed out, in [`WEAPONS`]' order: the next is due in a room as
+/// deep as its turn, and waits for the next room with a free place when the one it is due in,
+/// such as a junction, has none.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Armoury {
+    given: usize,
+}
+
+impl Armoury {
+    /// Whether the next weapon is due in a room at `depth`.
+    fn due(self, depth: Depth) -> bool {
+        self.given.saturating_mul(ROOMS_A_WEAPON).saturating_add(1) <= depth.rooms
+    }
+}
 
 /// What lies about a level. `item_health` and the ammunition are boxes from their origin to
 /// `(32 32 32)` (`items.qc`); the armour is one around its origin.
@@ -167,9 +182,15 @@ impl Classes {
         rng.pick(&self.monsters(depth)).copied()
     }
 
-    /// Fills a room at `depth` whose free places are `spots`: an item in each room, a weapon
-    /// in some, and monsters in every room but the first.
-    pub(crate) fn fill(&self, depth: Depth, spots: &[Point], rng: &mut Rng) -> Filled {
+    /// Fills a room at `depth` whose free places are `spots`: an item in each room, the next
+    /// weapon of `armoury` when it is due, and monsters in every room but the first.
+    pub(crate) fn fill(
+        &self,
+        depth: Depth,
+        spots: &[Point],
+        armoury: &mut Armoury,
+        rng: &mut Rng,
+    ) -> Filled {
         let mut spots = spots.to_vec();
         rng.shuffle(&mut spots);
         let mut filled = Filled::default();
@@ -185,13 +206,12 @@ impl Classes {
             });
         }
         let weapons = self.of(WEAPONS);
-        let due = depth.rooms.checked_rem(ROOMS_A_WEAPON) == Some(1);
-        let which = depth.rooms.checked_div(ROOMS_A_WEAPON).unwrap_or(0);
-        if due
-            && let Some(&classname) = weapons.get(which)
+        if armoury.due(depth)
+            && let Some(&classname) = weapons.get(armoury.given)
             && let Some(origin) = spots.pop()
         {
             filled.items.push(Placed { classname, origin });
+            armoury.given = armoury.given.saturating_add(1);
         }
         if depth.rooms == 0 {
             return filled;

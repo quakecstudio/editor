@@ -961,38 +961,46 @@ impl Plan {
     /// Shrinks rooms until every passage holds what it climbs, stairs and their landings
     /// (`Passage::least_length`): two great rooms side by side are close, which a passage on
     /// one floor takes as an arch in a thick wall and one between floors cannot. The larger of
-    /// the two rooms gives way, a step of [`FIT_STEP`] at a time, down to its shape's least.
+    /// the two rooms gives way, a step of [`FIT_STEP`] at a time, down to its shape's least,
+    /// and then the other.
     pub(crate) fn fit_passages(&mut self) {
         for index in 0..self.links.len() {
             for _ in 0..FIT_TRIES {
                 let Some(&link) = self.links.get(index) else {
                     break;
                 };
+                if self.shortfall(&link).is_none_or(|short| short <= 0.0) {
+                    break;
+                }
                 let (Some(from), Some(to)) =
                     (self.rooms.get(link.from.0), self.rooms.get(link.to.0))
                 else {
                     break;
                 };
-                let [fx, fy] = link.side.facing();
-                let [ax, ay] = from.middle;
-                let [bx, by] = to.middle;
-                let between = (bx - ax) * fx + (by - ay) * fy;
-                let length = between - from.reach(link.side) - to.reach(link.side.opposite());
-                let climb =
-                    (from.door_floor(link.side) - to.door_floor(link.side.opposite())).abs();
-                if length >= Passage::least_length(climb) {
-                    break;
-                }
-                let larger = if from.reach(link.side) >= to.reach(link.side.opposite()) {
-                    link.from
+                let (larger, smaller) = if from.reach(link.side) >= to.reach(link.side.opposite()) {
+                    (link.from, link.to)
                 } else {
-                    link.to
+                    (link.to, link.from)
                 };
-                if !self.shrink(larger, link.side) {
+                if !self.shrink(larger, link.side) && !self.shrink(smaller, link.side) {
                     break;
                 }
             }
         }
+    }
+
+    /// How much shorter `link`'s passage is than the stairs and landings of its climb need
+    /// (`Passage::least_length`), 0 or less when it holds them; `None` for a link to a room
+    /// the plan does not have.
+    pub(crate) fn shortfall(&self, link: &Link) -> Option<f64> {
+        let (from, to) = (self.rooms.get(link.from.0)?, self.rooms.get(link.to.0)?);
+        let [fx, fy] = link.side.facing();
+        let [ax, ay] = from.middle;
+        let [bx, by] = to.middle;
+        let between = (bx - ax) * fx + (by - ay) * fy;
+        let length = between - from.reach(link.side) - to.reach(link.side.opposite());
+        let climb = (from.door_floor(link.side) - to.door_floor(link.side.opposite())).abs();
+        Some(Passage::least_length(climb) - length)
     }
 
     /// Shrinks the room `id` by [`FIT_STEP`] along `side`'s axis, and across it too for a
@@ -1091,6 +1099,24 @@ impl Plan {
                     || link.climb == Climb::Lift
                     || link.span == Span::Open;
                 open.then_some(side)
+            })
+            .collect()
+    }
+
+    /// The sides of the room at `place` open to the room beside as wide as the narrower of the
+    /// two, a canyon's.
+    pub(crate) fn open_sides(&self, place: usize) -> Vec<Side> {
+        self.links
+            .iter()
+            .filter(|link| link.span == Span::Open)
+            .filter_map(|link| {
+                if link.from.place() == place {
+                    Some(link.side)
+                } else if link.to.place() == place {
+                    Some(link.side.opposite())
+                } else {
+                    None
+                }
             })
             .collect()
     }

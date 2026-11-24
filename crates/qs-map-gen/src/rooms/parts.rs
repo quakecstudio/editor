@@ -10,7 +10,7 @@
 
 use qs_map::BrushError;
 
-use super::{Built, Room, SPOT_INSET};
+use super::{Block, Built, Room, SPOT_INSET};
 use crate::RoomShape;
 use crate::layout::{HALF_CELL, Side};
 use crate::mass::{Bounds, Coat, Mass};
@@ -152,13 +152,21 @@ impl Room<'_> {
             .collect()
     }
 
-    /// The bare walls a bay fits behind: one whose bay leaves [`BAY_ROCK`] of its cell's rock
+    /// The bare walls a bay fits behind: one whose bay leaves [`BAY_ROCK`] of the room's block
     /// past it, so it opens into no room beside it and out of no level.
     fn bay_walls(&self) -> Vec<Side> {
         self.bare_walls()
             .into_iter()
-            .filter(|&side| self.plan.reach(side) + BAY_DEPTH + BAY_ROCK <= HALF_CELL)
+            .filter(|&side| BAY_DEPTH + BAY_ROCK <= self.rock_behind(side))
             .collect()
+    }
+
+    /// How thick the rock is behind the wall on `side`, to the edge of the room's block.
+    fn rock_behind(&self, side: Side) -> f64 {
+        match self.block {
+            Block::Cell => HALF_CELL - self.plan.reach(side),
+            Block::Walls(wall) => wall,
+        }
     }
 
     /// The box `out` beyond the room's middle toward `side` and `across` along its wall,

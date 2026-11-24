@@ -13,7 +13,7 @@ use crate::mission::{KeyColour, Role};
 use crate::passage::Passage;
 use crate::rng::Rng;
 use crate::rooms::RoomPart;
-use crate::rooms::{Part, Room};
+use crate::rooms::{Block, Part, Room};
 use crate::theme::{Hazard, surface};
 use crate::theme::{Paints, WorldType};
 use crate::{GenError, RoomShape};
@@ -433,7 +433,9 @@ impl RoomKit {
             depth: 0,
             role: Role::Way,
         };
-        let room = Room::new(&plan, Part::Way).dressed(&self.parts, &self.doors);
+        let room = Room::new(&plan, Part::Way)
+            .in_block(Block::Walls(self.wall))
+            .dressed(&self.parts, &self.doors);
         let [mx, my] = self.middle;
         let [hx, hy] = self.half;
         let [below, above] = room.beyond();
