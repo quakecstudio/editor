@@ -425,3 +425,33 @@ fn a_member_past_the_limit_mutes_only_itself() {
         .collect();
     assert_eq!(codes.len(), 1, "{codes:?}");
 }
+
+// spec QC-27.21: past the limit no warning is reported, so nested `?:` operands that each read
+// nothing after the skip do not give "Expected punctuation" (FTEF-16.15) twice at one place
+// (QCD-1.6), and the next statement warns afresh
+#[test]
+fn a_statement_past_the_limit_warns_of_nothing() {
+    let deep = "(".repeat(QC_MAX_NESTING.saturating_mul(2));
+    let next = "a = 1 b;";
+    let alone: Vec<Code> = parse_with(in_body(next).as_bytes(), Dialect::Fteqcc)
+        .diagnostics()
+        .iter()
+        .map(|d| d.code)
+        .collect();
+    assert_eq!(alone.first(), Some(&Code::W0205), "{alone:?}");
+    for wrap in [
+        "a ? a ? ",
+        "a ? (a ? ",
+        "a ? !((a ? ",
+        "a ? g(a ? ",
+        "a = a ? a ? ",
+    ] {
+        let source = in_body(&format!("{wrap}{deep} ; b;\n{next}"));
+        let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+        assert_eq!(parsed.syntax().text(), source.as_bytes());
+        let mut codes: Vec<Code> = parsed.diagnostics().iter().map(|d| d.code).collect();
+        assert_eq!(codes.first(), Some(&Code::E0509), "{wrap}: {codes:?}");
+        codes.remove(0);
+        assert_eq!(codes, alone, "{wrap}");
+    }
+}

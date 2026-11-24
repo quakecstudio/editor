@@ -1013,8 +1013,14 @@ impl<'a> Parser<'a> {
     }
 
     /// Reports a warning. A warning does not mute the errors after it, since it does not
-    /// abandon the statement or declaration it is in.
+    /// abandon the statement or declaration it is in. Past the nesting limit it is not
+    /// reported: the rest of the statement or declaration is skipped (QC-27.16), and the
+    /// constructs it unwinds through, which read nothing more, would each warn of the token
+    /// after the skip at one place (QC-27.21, QCD-1.6).
     fn warning_at(&mut self, code: Code, message: impl Into<String>, span: Span) {
+        if self.too_deep {
+            return;
+        }
         self.errors.push(Diagnostic {
             code,
             message: message.into(),
