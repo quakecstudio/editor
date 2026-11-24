@@ -411,7 +411,9 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         shell: pwsh
         run: |
-          foreach ($msi in Get-ChildItem dist/*.msi) {
+          $msis = @(Get-ChildItem dist/*.msi)
+          if ($msis.Count -eq 0) { throw 'dist holds no MSI to check' }
+          foreach ($msi in $msis) {
             $signature = Get-AuthenticodeSignature $msi.FullName
             if ($signature.Status -ne 'Valid') { throw "$($msi.Name): the signature is $($signature.Status)" }
             "ok    $($msi.Name) signed by $($signature.SignerCertificate.Subject)"
