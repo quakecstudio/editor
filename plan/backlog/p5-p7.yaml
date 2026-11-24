@@ -3242,3 +3242,27 @@ groups:
     - 'A large level of each theme generated and played to its exit, with screenshots, recorded in the PR'
     verify:
     - 'cargo nextest run -p qs-map-gen -p qs-map-edit -p qs-tests; the recorded runs in the PR'
+  - key: L-75
+    title: Sign the Windows MSI as well as the executables in it
+    labels:
+    - repo
+    - area:release
+    - type:feature
+    size: S
+    reqs:
+    - QA-6
+    - GOAL-6
+    depends:
+    - P4-18
+    summary: |
+      Justin, 2026-11-24: "should we publish a windows MSI or how can we sign it?", then "file the plan change and work it", keeping aas-sign for the executables, as vouch does, and adding Azure's own action for the MSI alone. QA-6 asks for a "signed MSI and portable zip for Windows x64/arm64", but the release signs only the four executables, with skeeto/aas-sign, whose README describes it as a "utility to code-sign PE images (EXE, DLL) via Azure Artifact Signing"; the MSI around them is unsigned, so a downloaded MSI shows SmartScreen's warning and an unknown publisher at its elevation prompt. Artifact Signing's FAQ (learn.microsoft.com/azure/artifact-signing/faq, "What types of files can we sign by using Artifact Signing?") answers "You can sign all file types that SignTool supports", and Microsoft's Azure/artifact-signing-action signs through SignTool after azure/login over OIDC, on Windows x64 runners, where both Windows jobs build.
+    deliverable:
+    - '.github/workflows/reusable-build.yml: on a tag, azure/login over OIDC with the existing AZURE_CLIENT_ID and AZURE_TENANT_ID and no subscription, and Azure/artifact-signing-action signing each MSI after WiX builds it and before it is attested, its signature checked; the four executables still signed by skeeto/aas-sign before they are packaged'
+    - '.github/workflows/actions.lock: rewritten by `gh actions-lock` for the new actions'
+    - 'docs/releasing.md, docs/ci.md, packaging/windows/package.sh and the release notes in .github/workflows/release.yml: the MSI is signed'
+    acceptance:
+    - 'A tagged pre-release''s Windows jobs report `Get-AuthenticodeSignature` status Valid, signed by Smoke Turner, LLC, for the four executables and for the MSI, on x64 and arm64'
+    - 'A release dry run (a pull request or a run by hand) still builds, installs and checks the unsigned packages'
+    - '`gh actions-lock --verify` passes'
+    verify:
+    - The release dry run on the PR; the first tagged pre-release's run, linked in the issue
