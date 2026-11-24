@@ -3394,7 +3394,7 @@ checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
 name = "qc-builtins"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-edict",
@@ -3405,7 +3405,7 @@ dependencies = [
 
 [[package]]
 name = "qc-codegen"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-diag",
@@ -3420,11 +3420,11 @@ dependencies = [
 
 [[package]]
 name = "qc-diag"
-version = "2026.11.2"
+version = "2026.11.3"
 
 [[package]]
 name = "qc-edict"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-progs",
@@ -3433,7 +3433,7 @@ dependencies = [
 
 [[package]]
 name = "qc-engines"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-builtins",
  "qc-diag",
@@ -3447,7 +3447,7 @@ dependencies = [
 
 [[package]]
 name = "qc-entities"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-progs",
  "qc-sema",
@@ -3458,7 +3458,7 @@ dependencies = [
 
 [[package]]
 name = "qc-ide"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-diag",
  "qc-engines",
@@ -3470,7 +3470,7 @@ dependencies = [
 
 [[package]]
 name = "qc-lexer"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-diag",
@@ -3478,7 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "qc-lno"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-progs",
@@ -3486,7 +3486,7 @@ dependencies = [
 
 [[package]]
 name = "qc-preproc"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-lexer",
@@ -3496,7 +3496,7 @@ dependencies = [
 
 [[package]]
 name = "qc-progs"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-types",
@@ -3504,7 +3504,7 @@ dependencies = [
 
 [[package]]
 name = "qc-project"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-lexer",
@@ -3515,7 +3515,7 @@ dependencies = [
 
 [[package]]
 name = "qc-sema"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-diag",
@@ -3529,7 +3529,7 @@ dependencies = [
 
 [[package]]
 name = "qc-syntax"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-lexer",
@@ -3538,7 +3538,7 @@ dependencies = [
 
 [[package]]
 name = "qc-trace"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "serde_json",
@@ -3546,14 +3546,14 @@ dependencies = [
 
 [[package]]
 name = "qc-types"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "qc-vm"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-edict",
  "qc-progs",
@@ -3563,7 +3563,7 @@ dependencies = [
 
 [[package]]
 name = "qs-acp"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "jsonschema",
@@ -3574,7 +3574,7 @@ dependencies = [
 
 [[package]]
 name = "qs-agent"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-edict",
  "qc-project",
@@ -3593,7 +3593,7 @@ dependencies = [
 
 [[package]]
 name = "qs-bench"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "criterion",
  "eframe",
@@ -3613,7 +3613,7 @@ dependencies = [
 
 [[package]]
 name = "qs-bridge"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "jsonschema",
  "proptest",
@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "qs-bsp"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-progs",
@@ -3633,7 +3633,7 @@ dependencies = [
 
 [[package]]
 name = "qs-checkpoint"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "miniz_oxide 0.9.1",
  "proptest",
@@ -3644,7 +3644,7 @@ dependencies = [
 
 [[package]]
 name = "qs-client"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-builtins",
  "qc-edict",
@@ -3656,7 +3656,7 @@ dependencies = [
 
 [[package]]
 name = "qs-commands"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "interprocess",
  "proptest",
@@ -3668,14 +3668,14 @@ dependencies = [
 
 [[package]]
 name = "qs-diff"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "qs-differential"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "qc-builtins",
@@ -3694,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "qs-editor-view"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "eframe",
@@ -3705,7 +3705,7 @@ dependencies = [
 
 [[package]]
 name = "qs-engine"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "interprocess",
  "qc-edict",
@@ -3720,7 +3720,7 @@ dependencies = [
 
 [[package]]
 name = "qs-game"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "cpal",
@@ -3752,7 +3752,7 @@ dependencies = [
 
 [[package]]
 name = "qs-git"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "schemars",
@@ -3761,7 +3761,7 @@ dependencies = [
 
 [[package]]
 name = "qs-install"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "junction",
@@ -3774,7 +3774,7 @@ dependencies = [
 
 [[package]]
 name = "qs-layout"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qs-commands",
  "schemars",
@@ -3785,7 +3785,7 @@ dependencies = [
 
 [[package]]
 name = "qs-log"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qs-paths",
  "tracing",
@@ -3794,14 +3794,14 @@ dependencies = [
 
 [[package]]
 name = "qs-map"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "qs-map-bsp"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qs-bsp",
@@ -3812,7 +3812,7 @@ dependencies = [
 
 [[package]]
 name = "qs-map-edit"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "image",
  "qs-bsp",
@@ -3831,14 +3831,14 @@ dependencies = [
 
 [[package]]
 name = "qs-map-gen"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qs-map",
 ]
 
 [[package]]
 name = "qs-map-light"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qs-bsp",
  "qs-map",
@@ -3850,7 +3850,7 @@ dependencies = [
 
 [[package]]
 name = "qs-map-vis"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qs-bsp",
@@ -3862,7 +3862,7 @@ dependencies = [
 
 [[package]]
 name = "qs-mcp"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-project",
  "qs-commands",
@@ -3876,7 +3876,7 @@ dependencies = [
 
 [[package]]
 name = "qs-mdl"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "miniz_oxide 0.9.1",
  "proptest",
@@ -3885,7 +3885,7 @@ dependencies = [
 
 [[package]]
 name = "qs-models"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "keyring",
  "qs-agent",
@@ -3898,7 +3898,7 @@ dependencies = [
 
 [[package]]
 name = "qs-pak"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-progs",
@@ -3906,18 +3906,18 @@ dependencies = [
 
 [[package]]
 name = "qs-paths"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "qs-porting-example"
-version = "2026.11.2"
+version = "2026.11.3"
 
 [[package]]
 name = "qs-render"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "egui-wgpu",
  "egui_kittest",
@@ -3932,7 +3932,7 @@ dependencies = [
 
 [[package]]
 name = "qs-settings"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qs-commands",
@@ -3945,7 +3945,7 @@ dependencies = [
 
 [[package]]
 name = "qs-sim"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "qc-builtins",
@@ -3964,7 +3964,7 @@ dependencies = [
 
 [[package]]
 name = "qs-sound"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qc-builtins",
  "qc-edict",
@@ -3975,7 +3975,7 @@ dependencies = [
 
 [[package]]
 name = "qs-templates"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qs-commands",
  "schemars",
@@ -3986,7 +3986,7 @@ dependencies = [
 
 [[package]]
 name = "qs-tests"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "jsonschema",
  "qc-builtins",
@@ -4018,7 +4018,7 @@ dependencies = [
 
 [[package]]
 name = "qs-vfs"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "miniz_oxide 0.9.1",
  "proptest",
@@ -4033,7 +4033,7 @@ dependencies = [
 
 [[package]]
 name = "qs-wad"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-progs",
@@ -4041,7 +4041,7 @@ dependencies = [
 
 [[package]]
 name = "qs-wav"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "proptest",
  "qc-progs",
@@ -4049,7 +4049,7 @@ dependencies = [
 
 [[package]]
 name = "qs-workbench"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "image",
  "interprocess",
@@ -4096,7 +4096,7 @@ dependencies = [
 
 [[package]]
 name = "quakec-engine"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "qs-game",
  "qs-log",
@@ -4106,7 +4106,7 @@ dependencies = [
 
 [[package]]
 name = "quakec-ide"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "mimalloc",
@@ -4126,7 +4126,7 @@ dependencies = [
 
 [[package]]
 name = "quakec-lsp"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "mimalloc",
  "proptest",
@@ -4140,7 +4140,7 @@ dependencies = [
 
 [[package]]
 name = "quakec-studio"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "clap",
  "eframe",
@@ -6293,7 +6293,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "2026.11.2"
+version = "2026.11.3"
 dependencies = [
  "cc",
  "clap",
