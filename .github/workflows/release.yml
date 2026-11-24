@@ -86,7 +86,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends libasound2-dev
           cargo xtask assets fetch
           mv "$QS_TEST_ASSETS/librequake-lite" librequake-lite
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: librequake-lite
           path: librequake-lite
@@ -299,7 +299,7 @@ jobs:
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
           echo "macos_sha256=$(awk '$2 ~ /-macos-arm64\.pkg$/ { print $1 }' SHA256SUMS)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: release
           path: dist
@@ -541,7 +541,7 @@ jobs:
         run: |
           cargo xtask compatibility
           cat docs/compatibility.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: compatibility
           path: docs/compatibility.md

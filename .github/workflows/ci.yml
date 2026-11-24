@@ -161,7 +161,7 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: clippy-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -208,10 +208,10 @@ jobs:
       # cargo-nextest stops scheduling tests after the first failure (its
       # fail-fast default), so a job with a failing test ends at that test.
       # The workspace has no doc tests: every rustdoc code block is `text`.
-      - uses: taiki-e/install-action@v2.87.22
+      - uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-nextest@0.9.148
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: debug-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -239,7 +239,7 @@ jobs:
       # golden; they are kept so the change can be seen.
       - name: Keep the snapshots that did not match
         if: failure() && env.CI_PATH == 'full'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: snapshots-${{ matrix.name }}
           path: |
@@ -324,7 +324,7 @@ jobs:
         run: |
           rustup toolchain install
           rustup target add "$TARGET"
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         if: env.CI_PATH == 'full'
         with:
           shared-key: build-${{ matrix.target }}
@@ -357,7 +357,7 @@ jobs:
           (cd "dist/$NAME" && sha256sum "$exe" > "$exe.sha256" && cat "$exe.sha256")
       - name: Keep the preview host
         if: env.CI_PATH == 'full'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: quakec-engine-${{ matrix.name }}
           path: dist/${{ matrix.name }}
@@ -381,7 +381,7 @@ jobs:
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-darwin
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: build-apple-darwin
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -394,7 +394,7 @@ jobs:
           lipo dist/macos-arm64/quakec-engine -verify_arch arm64
           (cd dist/macos-arm64 && shasum -a 256 quakec-engine > quakec-engine.sha256 && cat quakec-engine.sha256)
       - name: Keep the preview host
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: quakec-engine-macos-arm64
           path: dist/macos-arm64
@@ -412,16 +412,16 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: taiki-e/install-action@v2.87.22
+      - uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-deny@0.20.2
       # plan/check.py and its tests run inside cargo xtask ci and need PyYAML.
-      - uses: actions/setup-python@v7.0.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
       - name: Install PyYAML for the plan checks
         run: python -m pip install PyYAML==6.0.3
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: xtask-ci-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -458,7 +458,7 @@ jobs:
       # which the cargo xtask ci job skips because this job runs it.
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: taiki-e/install-action@v2.87.22
+      - uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-deny@0.20.2
       - run: cargo deny --locked --all-features check advisories bans licenses sources
@@ -475,7 +475,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/dependency-review-action@v5.0.0
+      - uses: actions/dependency-review-action@v5.0.1
         with:
           vulnerability-check: true
           license-check: true
@@ -512,7 +512,7 @@ jobs:
         if: env.CI_PATH == 'full'
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7.0.0
+      - uses: actions/setup-python@v7.1.0
         if: env.CI_PATH == 'full'
         with:
           python-version: "3.12"
