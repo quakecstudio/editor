@@ -205,6 +205,10 @@ sections:
       - {id: MAP-32, kind: implied, text: "Maps, WADs and QuakeC changed by another program are noticed and reloaded, and unsaved edits are never overwritten without asking"}
       - {id: MAP-33, kind: implied, text: "Prefabs: reusable pieces kept as .map files, placed from a browser, and external map instances drawn in place and compiled by qs-map-bsp"}
       - {id: MAP-34, kind: implied, text: "Lights previewed in the map view from their keys: falloff radius, colour and spotlight cones, as qs-map-light reads them"}
+      - {id: MAP-35, kind: implied, text: "An entity fired in the editor, in the simulation with the project's own QuakeC, shows what its targets did in order; what only running shows (a use that does nothing, a counter never reached, a target killed before it fires) is a diagnostic"}
+      - {id: MAP-36, kind: implied, text: "A compiled map is checked for play: the exit, every key, item and secret reached from the start, and no place the exit can no longer be reached from"}
+      - {id: MAP-37, kind: implied, text: "A balance sheet of a map on each skill: monsters and their health, weapons, ammo and the damage it can do, health, armour and secrets, as the game's own code spawns them"}
+      - {id: MAP-38, kind: implied, text: "How much of the target engine's limits a map uses (BSP lumps, edicts, precaches), shown while editing, with BSP2 offered when BSP29 is passed"}
 
   - id: QA
     title: Quality, testing and release
