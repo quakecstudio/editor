@@ -2095,7 +2095,7 @@ groups:
     verify:
     - 'cargo nextest run -p qs-acp -p quakec-studio; the recorded session in the PR'
   - key: P4-19
-    title: Update mechanism
+    title: Update check that names the install's own way to update
     labels:
     - apps
     - area:release
@@ -2106,13 +2106,25 @@ groups:
     - PRIN-9
     depends:
     - P4-18
+    - P4-40
+    summary: |
+      Justin, 2026-11-25: someone who installed with Homebrew, winget, apt or yum updates through it. So the app only says that a newer release exists and how to get it with what installed it; it never downloads or installs one. This replaces the earlier deliverable (an opt-in check with signature verification and AppImage zsync), whose signature and replace-only-installed-files criteria applied to an app that installs.
     deliverable:
-    - Opt-in update check against GitHub releases with signature verification; AppImage zsync
+    - '.github/workflows/release.yml: on a tag with no `-`, `latest.json` (the release''s version and the address of its release page) written to quakecstudio/packages, served as https://packages.quakecstudio.com/latest.json; a pre-release writes none, and a dry run writes it without pushing'
+    - 'crates/qs-update (L5, in layers.toml): the feed read with one GET through `ureq`, the `YYYY.MM.N` version comparison, and the install channel as an enum, found at run time from files and the environment alone, with no process started: Homebrew (`/opt/homebrew/Caskroom/quakec-studio` exists), the macOS package, the Windows MSI (running from Program Files), the portable zip, deb (`/var/lib/dpkg/info/quakec-studio.list` exists), rpm (the executable under `/usr` and an rpm database present), AppImage (`APPIMAGE` set) and Flatpak (`/.flatpak-info` exists)'
+    - 'crates/qs-commands: `help.check_for_updates`, in the Help menu, which checks whenever it is run; crates/qs-settings: `updates.check`, `off` (the default) or `daily`, for a check in the background at most once a day by an injected clock, and the version skipped'
+    - 'apps/desktop: a status bar item "Update available: <version>" opening a popup with both versions, the channel''s command and a Copy button (`brew upgrade --cask quakec-studio`; `winget upgrade SmokeTurner.QuakeCStudio`; `sudo apt update && sudo apt install --only-upgrade quakec-studio`; `sudo dnf upgrade quakec-studio`, or `yum` where there is no dnf), Release notes and Skip this version; a Download button, which opens the release page in the system''s browser as `help.user_guide` opens the guide, for the macOS package, the portable zip, AppImage and Flatpak, and beside the winget command for the MSI, since Microsoft merges a release into winget in its own time'
+    - 'docs/privacy.md: the request added to the table of every network request and "no update check" taken out; docs/commands.md regenerated; the user guide says how each install updates'
     acceptance:
-    - No network call unless the user enabled update checks
-    - 'An update replaces only the files the release installed: settings, projects, portable data and anything else in the install folder are left as they were'
+    - 'With `updates.check` unset the app makes no request for the feed: `cargo xtask offline` still passes, and a test with a local feed sees no request until `updates.check = "daily"` or `help.check_for_updates`; with `daily`, two starts within a day by the injected clock make one request'
+    - 'A check is one GET of the feed and nothing else, with no query, no body and the fixed `User-Agent: quakec-studio`, checked against a local server that records the request'
+    - 'A feed with a newer, the same and an older version, a malformed feed and an unreachable one are each a test: only the newer shows the item, a failed background check shows nothing, and a failed `help.check_for_updates` says it could not check'
+    - 'Each install channel is found from a fixture file tree and environment, one test per channel, and the popup shows that channel''s command or the Download button, checked by kittest tests'
+    - 'The app downloads and installs nothing: `cargo tree -i ureq` names qs-update, qs-models and qs-templates alone, and qs-update''s only request is the feed''s'
+    - 'Skip this version hides the item for that version alone, across a restart, and a later version shows it again'
+    - 'The release dry run writes a `latest.json` that names the tag''s version and that qs-update parses; a pre-release tag''s run writes none'
     verify:
-    - Update test against a fake release feed
+    - 'cargo nextest run -p qs-update -p quakec-studio; cargo xtask offline; the release dry run, linked in the PR'
   - key: P2-16
     title: Package editor integrations for VS Code, Zed and Neovim
     labels:
