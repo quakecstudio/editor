@@ -1284,6 +1284,7 @@ pub fn command_words(text: &[u8]) -> Vec<Vec<Vec<u8>>> {
 mod changes;
 mod edit;
 mod evaluate;
+mod fire;
 mod inspect;
 mod map_entities;
 mod reload;
@@ -1296,6 +1297,11 @@ pub(crate) mod tests;
 pub use changes::EdictChange;
 pub use edit::{EditError, LineHit};
 pub use evaluate::EvalError;
+pub(crate) use fire::Tracer;
+pub use fire::{
+    Callback, FIRE_MAX_SECONDS, FIRE_SECONDS, FireBy, FireError, FireOptions, FireTrace, TraceEnd,
+    TraceEvent,
+};
 pub use inspect::{NamedValue, QcValue};
 pub use map_entities::MapPlace;
 pub use qc_edict::Tracking;

@@ -36,6 +36,7 @@ use crate::physics::{Sound, dot};
 use crate::protocol::EntAlpha;
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 use crate::settings::Setting;
+use crate::world::Tracer;
 use crate::{HALF, POINT, ZERO};
 
 /// `setorigin`.
@@ -118,6 +119,9 @@ pub struct SimBuiltins {
     pub(crate) table: BuiltinTable,
     /// The debugger, the frames' runs' observer when a host debugs (WORLD-9).
     pub(crate) debugger: Option<Debugger>,
+    /// The recorder of a firing, lent to the frames' runs' observer as the debugger is
+    /// (FIRE-2).
+    pub(crate) tracer: Option<Tracer>,
     /// The statements each function has run since `profile` last printed, id's
     /// `dfunction_t.profile` (PHYS-13.7).
     pub(crate) profile: Vec<u64>,
@@ -153,6 +157,7 @@ impl SimBuiltins {
             messages: ServerMessages::new(map, crc),
             table,
             debugger: None,
+            tracer: None,
             profile: Vec::new(),
             qc_time: std::time::Duration::ZERO,
             paused: false,
@@ -457,14 +462,25 @@ impl Vm<'_, '_, '_> {
                 // watch the run; they are lent so the builtins and they are not borrowed twice.
                 let mut debugger = sim.debugger.take();
                 let mut profile = core::mem::take(&mut sim.profile);
+                // FIRE-2.2: the recorder of a firing, when there is one, is lent with them.
+                let mut tracer = sim.tracer.take();
+                if let Some(tracer) = &mut tracer {
+                    tracer.begin_run(machine);
+                }
                 let mut watch = Watch {
                     debugger: debugger.as_mut(),
                     profile: &mut profile,
+                    tracer: tracer.as_mut(),
+                    progs,
                 };
                 let start = std::time::Instant::now();
                 let outcome =
                     machine.execute_program(progs, ServerState::Active, sim, &mut watch, function);
                 sim.qc_time = sim.qc_time.saturating_add(start.elapsed());
+                if let Some(tracer) = &mut tracer {
+                    tracer.end_run(machine);
+                }
+                sim.tracer = tracer;
                 sim.debugger = debugger;
                 sim.profile = profile;
                 outcome

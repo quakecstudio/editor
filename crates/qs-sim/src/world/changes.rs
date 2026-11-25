@@ -45,6 +45,15 @@ impl World {
     /// field written (BRIDGE-3.2).
     pub fn take_changes(&mut self, progs: &Progs<'_>) -> Vec<EdictChange> {
         let events = self.machine.edicts_mut().take_events();
+        self.changes_of(progs, events)
+    }
+
+    /// What `events` did to the edicts, as [`World::take_changes`] lists it.
+    pub(super) fn changes_of(
+        &self,
+        progs: &Progs<'_>,
+        events: Vec<EdictEvent>,
+    ) -> Vec<EdictChange> {
         if events.is_empty() {
             return Vec::new();
         }
