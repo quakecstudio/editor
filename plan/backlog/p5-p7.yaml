@@ -3266,3 +3266,111 @@ groups:
     - '`gh actions-lock --verify` passes'
     verify:
     - The release dry run on the PR; the first tagged pre-release's run, linked in the issue
+  - key: L-76
+    title: Fire a map's triggers in the editor and trace what the QuakeC does
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-35
+    - MAP-16
+    - PRIN-1
+    depends: []
+    summary: |
+      Justin, 2026-11-25, asked what would make the map editor better than the tools mappers use today, and of the proposals said "1-4 sound good"; this is the first. TrenchBroom draws a line from an entity to what its `target` names, and the issue browser already reports a key that fires nothing and a `targetname` nothing fires (docs/spec/map.md, MAP-8.9), but both read the keys only: what happens when a trigger fires is in the QuakeC, which no map editor runs. A mapper finds a door that does not open by compiling, playing to it and trying. We hold the map, the program and the simulation in one process, so the editor can fire an entity and show what the code did. Prior art: Hammer's entity I/O with its `ent_fire` console command and its Check for Problems; Unreal's Blueprint debugger, which lights each wire as it fires. The model followed is the first: fire one entity, list what happened in order. What firing means is the mod's own code: `SUB_UseTargets` "does four things with `self`'s fields, in this order: with a `delay`, spawn an entity that fires later and return; `centerprint` the `message` to a player activator; `remove` every entity whose `targetname` is `killtarget`, and return if there was a `killtarget`; then call the `use` of every entity whose `targetname` is `target`" (docs/agent-reference/triggers.md), so the trace comes from running the program in qs-sim, never from a table of id's classnames, and a mod's own triggers are traced as id's are.
+    deliverable:
+    - 'docs/spec/scenario.md or a section of its own: what a fired trace records (each `use`, `touch` and `think` run because of the firing, in order, with the entity, its classname, the time, each entity removed, each `centerprint` and sound, and the fields that changed), and when a trace ends'
+    - 'crates/qs-sim: a headless spawn of a map''s entities with the project''s progs at a chosen skill, `fire` of one entity''s `use` with a player as activator, and the trace of it over simulated time, with no wall clock'
+    - 'crates/qs-workbench/src/map_logic.rs: `map.fire` (an entity, a skill, how long to run) answering the trace, and `map.logic_issues` answering what only running shows: an entity fired whose `use` is null after its spawn function ran, so firing it does nothing; a counter (`trigger_counter` in id''s code, any class by its `count` reaching a `use`) fired by fewer entities than its count; an entity a `killtarget` removes that another chain fires afterwards; a chain that never ends. Each joins `map.issues` with the entities it is about. qs-map-edit stays free of QuakeC (P6-40): the checks reach it through `MapProject`'
+    - 'apps/desktop: Fire on an entity''s menu and in Properties; the trace as a list beside the map view, each step selecting its entity; the link lines of the fired chain lit in order in the 3D view, with a scrubber over the trace''s time'
+    - 'docs/agent-reference/maps.md and the map user guide: `map.fire` and `map.logic_issues`'
+    acceptance:
+    - 'A test for each: firing a button that targets a door answers the door''s `use` and its move; a `delay` is honoured in simulated time; a `killtarget` removes its entities and fires no `target`, as the quoted order says; a mod''s own trigger class, in a fixture program, is traced with no change to the editor'
+    - 'A test of each logic issue on a map built for it, and of none of them on every map of the corpus and on 4 generated levels'
+    - 'The same map and skill give the same trace, byte for byte, checked by a test'
+    - '`map.fire` and `map.logic_issues` are in the registry, so the UI, the CLI, the agent and MCP share them, checked by the command surface test'
+    - 'A recorded run in the app: a button fired in the Map tab, its trace and lit chain shown, in the PR'
+    verify:
+    - 'cargo nextest run -p qs-sim -p qs-workbench -p qs-tests; the recorded run in the PR'
+  - key: L-77
+    title: Check a hand-built map can be finished, with nothing out of reach and no trap
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-36
+    - MAP-7
+    depends:
+    - L-74
+    summary: |
+      Justin, 2026-11-25, the second of the proposals he said "1-4 sound good" to. L-74 wrote a no-trap check for generated levels, "from every state the start reaches ... the exit can still be reached", the property AG(EF(exit)) of Mawhorter and Smith (FDG 2021), but it lives in a test (crates/qs-tests/tests/it/no_trap.rs) and runs on the generator's output only. A mapper's own level gets no such check: a key behind its own door, a secret nothing leads to, or a pit with no way out is found by a player. No Quake map editor checks this; the prior art is the softlock checkers the generator followed. Two things differ for a hand-built map. The generator's check takes no jump, so "a ledge or a rail the player could jump over counts as a wall", which is right for a level made to pass it and wrong for a mapper's, where a jump is an ordinary move: so the moves are a choice, and the default for a map takes the jump, its height measured in qs-sim from the game's own QuakeC as `water_escape` measured `CLIMB_OUT`. And the check knows id's classes (keys, doors, plats, teleporters, `trigger_changelevel`, `trigger_secret`): on a mod's map it says which entities it could not judge rather than passing or failing them (PRIN-8).
+    deliverable:
+    - 'crates/qs-workbench/src/map_playable.rs: the check moved out of the test into shipped code with no panic path, taking the moves as an enum (the generator''s, with no jump; a player''s, with the measured jump), and answering, for a compiled map: whether the exit is reached from the start; each key, weapon, item and secret that is never reached; each place the exit can no longer be reached from, as a region with a point inside it; each entity it could not judge'
+    - 'crates/qs-tests/tests/it/no_trap.rs: the generator''s tests call the shipped check, so there is one implementation'
+    - '`map.playability` in the registry, run after a compile; its findings join `map.issues` (unreachable exit, unreachable item, unreachable secret, trap) with the entity or point each is about, and the trap''s region is drawn in the 3D view as a leak''s path is'
+    - 'docs/agent-reference/maps.md and the map user guide: the check, its moves and what it cannot judge'
+    acceptance:
+    - 'The generator''s no-trap tests pass unchanged against the shipped check, and its four failing levels of L-74 still fail'
+    - 'A test for each finding on a map built for it: an exit behind a door whose key is behind that door; a secret with no way in; an item on a ledge above the jump; a pit deeper than the jump with no way out; and the same pit, one unit lower than the jump, passes'
+    - 'Every map of the corpus (LibreQuake) gives no unreachable exit; what it gives otherwise is recorded in the PR and each finding looked at: a true one is kept, a false one is a defect fixed before landing'
+    - 'A map with a class the check does not know lists it as not judged, by a test'
+    verify:
+    - 'cargo nextest run -p qs-workbench -p qs-map-gen -p qs-tests; the corpus run recorded in the PR'
+  - key: L-78
+    title: Show a map's monsters, ammo, health and armour on each skill
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-37
+    - MAP-4
+    depends: []
+    summary: |
+      Justin, 2026-11-25, the third of the proposals he said "1-4 sound good" to. A mapper balances a level by playing it on each skill and counting by hand; no Quake map editor counts it for them. What each skill holds is the engine's rule and the mod's code together. The engine frees an entity "when deathmatch is off and the skill is 0 with `SPAWNFLAG_NOT_EASY` (256), 1 with `SPAWNFLAG_NOT_MEDIUM` (512), or 2 or more with `SPAWNFLAG_NOT_HARD` (1024)" (docs/spec/edicts.md, EDICT-8.4), so nightmare has hard's entities; and a monster's health, and what an item gives, are set by its spawn function, which may read the skill. So the sheet is read from a headless spawn of the map in qs-sim on each of skills 0 to 3, with the project's own progs: a mod's monsters count with the health its code gives them, and the totals are the game's own `total_monsters` and `total_secrets` globals (EDICT-11.8). What a unit of ammo can do is the game's weapon code, not the engine's: for id 1.01 and the rerelease it is a table quoted from `weapons.qc` at the pinned commit; for a mod's own ammo the sheet shows the count and no damage, and says so.
+    deliverable:
+    - 'crates/qs-workbench/src/map_balance.rs: `map.balance` answering, for each skill 0 to 3 and for single player, co-op and deathmatch: monsters by class and their total health; weapons; ammo by kind with the damage it can do; health and armour given; secrets; the ratio of damage available to monster health; each for the whole map and for each layer or group, and for the selection'
+    - 'docs/agent-reference/weapons.md: the damage of one unit of each ammo for each of id''s weapons, quoted from `weapons.qc`, which the table is generated from or checked against'
+    - 'apps/desktop: a Balance panel of the Map tab, one column a skill, a row selecting its entities in the map; a view filter that shows the map as a chosen skill spawns it'
+    - 'docs/agent-reference/maps.md and the map user guide: `map.balance`'
+    acceptance:
+    - 'A test: an entity with each of the three skill flags and the deathmatch flag is counted on exactly the skills EDICT-8.4 keeps it on, and nightmare''s entities are hard''s'
+    - 'A test: the sheet''s monster total on each skill equals `total_monsters` after the spawn, on every map of the corpus'
+    - 'A test with a fixture program: a mod''s monster class is counted with the health its spawn function sets, and a mod''s ammo class is listed with a count and no damage'
+    - 'The sheet of one map is the same on every run, and `map.balance` is in the registry, checked by tests'
+    - 'A recorded run in the app: the Balance panel of a corpus map on each skill, in the PR'
+    verify:
+    - 'cargo nextest run -p qs-workbench -p qs-tests; the recorded run in the PR'
+  - key: L-79
+    title: Show how much of the target engine's limits a map uses
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-38
+    - MAP-6
+    - PRIN-8
+    depends: []
+    summary: |
+      Justin, 2026-11-25, the fourth of the proposals he said "1-4 sound good" to. A map past an engine's limit is found when the compiler stops, or later when a player's engine refuses it or runs out of edicts in the middle of a fight. id's limits are already written down: the compiler's in docs/spec/bsp.md, BSP-16 (`MAX_MAP_CLIPNODES` 32767, `MAX_MAP_MARKSURFACES` 65535 and the rest, from `WinQuake/bspfile.h`), and the server's in docs/spec/limits.md, LIMIT-6: "A server has at most 600 edicts, counting the world and the client edicts", and "at most 255 sounds can be precached, and at most 255 models including the world model in entry 1 and its submodels after it". The later engines raise them, each by its own amount, and the project already names the engine it targets (ENGT-3.9). So the editor can show, for the open map and that engine, how much of each limit is used, and whether the map still fits BSP29 or needs BSP2. Prior art: Hammer's Map, Show Information; the compilers' own counts at the end of a run; the engines' developer warnings when a lump is past id's limit, which are to be quoted from the pinned sources of ADR-0014 and ADR-0016 in the spec and not from memory. The rerelease engine has no source: its limits are stated as unknown, never guessed.
+    deliverable:
+    - 'docs/spec/engine-targets.md: a section giving each engine''s limits a map can reach (each BSP lump''s count, a face''s extent, edicts, model and sound precaches, light styles, the entity text), each with its file and identifier at the pinned commit, id''s by reference to BSP-16 and LIMIT-6, and unknown where a source is silent or absent'
+    - 'crates/qc-engines: the limits of an `Engine` as typed values, generated by `cargo xtask engines` from the same pinned sources as its builtin tables'
+    - 'crates/qs-map-edit/src/report.rs: the compile report carries each lump''s count; crates/qs-workbench/src/map_budget.rs: `map.budget` answering each limit, what the map uses and the share, for the project''s target engine and for id''s: the lumps from the last compile, and the edicts and precaches from a headless spawn in qs-sim on each skill, where the mod''s own code spawns and precaches; before a compile the lumps are answered as not measured'
+    - 'A limit passed, and one nearer than a named share, join `map.issues`; a map past BSP29 with a target that reads BSP2 is offered BSP2, and with one that does not is an error naming the lump'
+    - 'apps/desktop: meters in the Map tab''s compile panel, the worst first; docs/agent-reference/maps.md and the map user guide: `map.budget`'
+    acceptance:
+    - 'A test for each limit of the spec section: a map or a compile report at the limit passes, and one above it is reported with the limit''s name and the engine''s; every statement of the section is cited by a test'
+    - '`cargo xtask engines --check` passes with the limits in the generated tables'
+    - 'A test: a map of 601 edicts'' worth of entities is past id''s limit and inside an engine''s whose pinned source gives more; a map past 32767 clipnodes is offered BSP2 for an engine that reads it'
+    - 'A test: the edict and precache counts of `map.budget` equal those of the game started on the same map, on every map of the corpus'
+    - 'A recorded run in the app: the meters of a corpus map and of a generated large level, in the PR'
+    verify:
+    - 'cargo nextest run -p qc-engines -p qs-map-edit -p qs-workbench -p qs-tests; cargo xtask engines --check; the recorded run in the PR'
