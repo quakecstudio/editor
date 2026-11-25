@@ -10,8 +10,9 @@ name: Reusable build
 #     --signer-workflow quakecstudio/editor/.github/workflows/reusable-build.yml
 # The secrets are the repository-level ones docs/releasing.md lists, passed by name. On a tag,
 # the Windows executables are signed with Azure Artifact Signing (formerly Trusted Signing)
-# through skeeto/aas-sign, which signs PE files only, so the MSI around them is not; Azure
-# trusts only tag runs of the `release` workflow, so a run by hand leaves them unsigned.
+# through skeeto/aas-sign, which signs PE files only, and each MSI around them with
+# Azure/artifact-signing-action after azure/login; Azure trusts only tag runs of the `release`
+# workflow, so a run by hand leaves both unsigned.
 # Each rpm is signed with the key of packages.quakecstudio.com before it is attested (P4-40),
 # so the file a release publishes, the file dnf checks and the attested file are one.
 on:
@@ -372,6 +373,51 @@ jobs:
         run: |
           packaging/windows/package.sh zip "$ARCH" "target/$TARGET/release" "$VERSION" dist
           packaging/windows/package.sh msi "$ARCH" "target/$TARGET/release" "$VERSION" dist
+      # aas-sign signs PE files only, so the MSI is signed by Azure's own action, which signs
+      # through SignTool ("You can sign all file types that SignTool supports", Artifact
+      # Signing's FAQ) with the Azure CLI's login. The same app registration and federated
+      # credential as aas-sign's, with no subscription; only a tag's run signs.
+      - name: Log in to Azure for the MSI
+        if: ${{ github.ref_type == 'tag' }}
+        uses: azure/login@v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Code sign the MSI
+        if: ${{ github.ref_type == 'tag' }}
+        uses: Azure/artifact-signing-action@v2.0.0
+        with:
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          # The Azure CLI's login above, and no other credential.
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+      - name: Check the MSI's signature
+        if: ${{ github.ref_type == 'tag' }}
+        shell: pwsh
+        run: |
+          $msis = @(Get-ChildItem dist/*.msi)
+          if ($msis.Count -eq 0) { throw 'dist holds no MSI to check' }
+          foreach ($msi in $msis) {
+            $signature = Get-AuthenticodeSignature $msi.FullName
+            if ($signature.Status -ne 'Valid') { throw "$($msi.Name): the signature is $($signature.Status)" }
+            "ok    $($msi.Name) signed by $($signature.SignerCertificate.Subject)"
+          }
       - name: Attest the zip and the MSI
         uses: actions/attest@v4.2.2
         with:

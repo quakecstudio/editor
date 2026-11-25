@@ -212,7 +212,7 @@ package, so each attestation names the reusable workflow as its signer:
 | `Build / Signing secrets are set` | Linux | fails naming each signing secret that is not set, printing no value |
 | `Build / Version` | Linux | reads the workspace version and fails a tag that does not name it |
 | `Build / Package, sign and notarize on macOS` | macOS | builds for Apple silicon, makes the app, signs it with the hardened runtime from `build.keychain`, notarizes and staples it, makes the installer package, signs it as the Developer ID Installer identity, notarizes and staples it, and attests it |
-| `Build / Package on Windows (x64, arm64)` | Windows | on a tag, signs the four executables with aas-sign (Azure Artifact Signing over OIDC) and checks each signature; makes the zip and the MSI and attests them |
+| `Build / Package on Windows (x64, arm64)` | Windows | on a tag, signs the four executables with aas-sign (Azure Artifact Signing over OIDC) and checks each signature; makes the zip and the MSI; on a tag, signs the MSI with Azure/artifact-signing-action after azure/login and checks its signature; attests them |
 | `Build / Package on Linux (x86_64, aarch64)` | Linux | makes the deb, rpm, AppImage and Flatpak, signs the rpm with the key of packages.quakecstudio.com and attests them |
 | `Install on macOS`, `Install on Windows (x64, arm64)`, `Install on Linux (x86_64, aarch64)` | each | installs each package on a clean runner and checks it with `quakec-ide doctor` |
 | `Checksums and publish` | Linux | writes `SHA256SUMS`; on a tag, publishes the GitHub release |

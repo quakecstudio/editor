@@ -39,6 +39,8 @@ workflows:
         - 'actions/attest@v4.2.2'
         - 'actions/checkout@v7.0.1'
         - 'actions/upload-artifact@v7.0.2'
+        - 'azure/artifact-signing-action@v2.0.0'
+        - 'azure/login@v3.1.0'
         - 'skeeto/aas-sign@v1.1.1'
     '.github/workflows/secure_workflows.yml':
         - 'actions/checkout@v7.0.1'
@@ -49,6 +51,11 @@ dependencies:
         commit: 'sha1-1e69f48acb82d1966a394da916b4c1698aa569d6'
         owner_id: 44036562
         repo_id: 760701061
+    'actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7':
+        ref: 'v5.0.4'
+        commit: 'sha1-668228422ae6a00e4ad889ee87cd7109ec5666a7'
+        owner_id: 44036562
+        repo_id: 215566462
     'actions/cache@v6.1.0':
         ref: 'v6.1.0'
         commit: 'sha1-55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
@@ -79,6 +86,18 @@ dependencies:
         commit: 'sha1-cf430e030ddbb5b0abf93d22962f4752f3646cd9'
         owner_id: 44036562
         repo_id: 192625955
+    'azure/artifact-signing-action@v2.0.0':
+        ref: 'v2.0.0'
+        commit: 'sha1-c7ab2a863ab5f9a846ddb8265964877ef296ee82'
+        owner_id: 6844498
+        repo_id: 771200572
+        uses:
+            - 'actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7'
+    'azure/login@v3.1.0':
+        ref: 'v3.1.0'
+        commit: 'sha1-a641126d1b8aa4d1fa005f4f92df94a3a4c4c906'
+        owner_id: 6844498
+        repo_id: 210798615
     'github/codeql-action@9b3254085494b55a0f7c4c2b3d2d52cc712ce370':
         ref: 'v4.39.1'
         commit: 'sha1-9b3254085494b55a0f7c4c2b3d2d52cc712ce370'

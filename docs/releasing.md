@@ -6,7 +6,8 @@ How QuakeC Studio is packaged, signed, checked and released (P4-18,
 reusable `.github/workflows/reusable-build.yml`, which builds, signs and attests every package.
 The attestations are made in the reusable workflow so that each names it as the signer,
 whatever calls it. On a tag, the Windows executables are signed with Azure Artifact Signing
-(formerly Trusted Signing); a run by hand leaves them unsigned, since Azure trusts only tag runs.
+(formerly Trusted Signing), and so is each MSI around them; a run by hand leaves both unsigned,
+since Azure trusts only tag runs.
 
 ## Making a release
 
@@ -30,7 +31,7 @@ checkout of its repository, and commits them there without pushing.
 | Platform | Package | Made by |
 | --- | --- | --- |
 | macOS, Apple silicon (arm64) | `quakec-studio-<version>-macos-arm64.pkg`: an installer package, signed with the Developer ID Installer identity, notarized and stapled, that puts `QuakeC Studio.app` in `/Applications`, replacing whatever version is there, and whose `postinstall` script links to its `quakec-ide` and `quakec-lsp` in `/usr/local/bin`; each executable and the app inside signed with the hardened runtime, the app notarized and stapled | `packaging/macos/package.sh`, with `packaging/macos/Info.plist`, `components.plist` and `scripts/postinstall` (for `pkgbuild`) and `distribution.xml` (for `productbuild`) |
-| Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
+| Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the MSI and the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
 | Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak`; the `.rpm` signed with the key of packages.quakecstudio.com | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it; `packaging/linux/sign-rpm.sh` signs the rpm |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
 
@@ -200,11 +201,11 @@ their values; the reusable workflow's first job checks each is set, and the two 
 | `APPLE_NOTARY_KEY_ID` | The App Store Connect API key notarization signs in with | `notarytool` |
 | `APPLE_NOTARY_ISSUER_ID` | That key's issuer | `notarytool` |
 | `APPLE_NOTARY_KEY` | That key's `.p8` | `notarytool` |
-| `AZURE_CLIENT_ID` | The Entra app registration that signs, trusted over OIDC | `aas-sign` |
-| `AZURE_TENANT_ID` | Its tenant | `aas-sign` |
-| `TRUSTED_SIGNING_ENDPOINT` | The Trusted Signing account's regional endpoint | `aas-sign` |
-| `TRUSTED_SIGNING_ACCOUNT` | The Trusted Signing account's name | `aas-sign` |
-| `CERTIFICATE_PROFILE` | The certificate profile that signs | `aas-sign` |
+| `AZURE_CLIENT_ID` | The Entra app registration that signs, trusted over OIDC | `aas-sign`, `azure/login` |
+| `AZURE_TENANT_ID` | Its tenant | `aas-sign`, `azure/login` |
+| `TRUSTED_SIGNING_ENDPOINT` | The Trusted Signing account's regional endpoint | `aas-sign`, `Azure/artifact-signing-action` |
+| `TRUSTED_SIGNING_ACCOUNT` | The Trusted Signing account's name | `aas-sign`, `Azure/artifact-signing-action` |
+| `CERTIFICATE_PROFILE` | The certificate profile that signs | `aas-sign`, `Azure/artifact-signing-action` |
 
 **Owner and renewal:** every credential is Justin's.
 - **Apple secrets:** `smoketurner/smoketurner-infra` makes and copies every `APPLE_*` secret
@@ -231,8 +232,14 @@ its ticket once installed and opens offline. It then makes the package with `pac
 which refuses a payload holding AppleDouble `._` files, signs it with `productsign` as the
 Developer ID Installer identity, and notarizes and staples it. It always deletes the keychain. On Windows, a tag's run signs the four executables with `skeeto/aas-sign`, which exchanges
 the job's OIDC token for an Azure token itself, then checks each Authenticode signature before
-the zip and the MSI are made. `aas-sign` signs PE files only, so the MSI itself is not signed;
-the executables it installs are.
+the zip and the MSI are made. `aas-sign` signs PE files only, so each MSI is then signed by
+Microsoft's `Azure/artifact-signing-action`, which signs through SignTool ("You can sign all
+file types that SignTool supports", the
+[Artifact Signing FAQ](https://learn.microsoft.com/azure/artifact-signing/faq)), after
+`azure/login` signs in to the Azure CLI over OIDC with the same app registration and no
+subscription (`allow-no-subscriptions`); the action uses that login and no other credential.
+The job checks the MSI's Authenticode signature before it is attested. That action runs on
+Windows x64 runners only, where both Windows jobs build, arm64 included.
 
 ## Checking an attestation
 

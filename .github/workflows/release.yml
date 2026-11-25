@@ -315,7 +315,7 @@ jobs:
           case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
           gh release create "$TAG" --repo "$REPO" --verify-tag "${prerelease[@]}" \
             --title "QuakeC Studio $TAG" \
-            --notes "QuakeC Studio $VERSION, built from $TAG. The source is the tag's commit; every package holds LICENSE, NOTICE and THIRD-PARTY. Check a file with \`gh attestation verify <file> --repo $REPO --signer-workflow $REPO/.github/workflows/reusable-build.yml\`. The Windows executables are signed; the MSI around them is not." \
+            --notes "QuakeC Studio $VERSION, built from $TAG. The source is the tag's commit; every package holds LICENSE, NOTICE and THIRD-PARTY. Check a file with \`gh attestation verify <file> --repo $REPO --signer-workflow $REPO/.github/workflows/reusable-build.yml\`. The Windows MSIs and the executables in them and in the zips are signed." \
             dist/*
 
   # The package managers (P4-40, docs/releasing.md). Each of the three jobs below runs after
