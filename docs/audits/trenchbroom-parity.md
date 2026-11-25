@@ -146,7 +146,7 @@ Tests are named `crate-or-app path::test`; `desktop` is `apps/desktop/src`, `map
 
 | TrenchBroom | Ours | Test | Verdict |
 | --- | --- | --- | --- |
-| Automatic updates | None: the app makes no network request without a provider (P4-16) | `cargo xtask offline` | Decision for Justin: an update check breaks P4-16 |
+| Automatic updates | None: the app makes no network request without a provider (P4-16) | `cargo xtask offline` | Later, P4-19: a check that names the install's own way to update, off until asked for |
 | Command repetition | `edit.repeat` | as above | Same |
 | Issue browser | `map.issues`, `map.fix` | `map-edit issues::tests` | Beyond |
 | Compile profiles: export map, run tool, launch engine, copy, rename, delete | `bsp`, `vis`, `light`, `tool`, `copy`, `launch` | `qs-workbench map_profile::tests::a_profile_renames_and_deletes_files`, `a_name_pattern_matches_with_stars_and_marks` | Same: `rename` and `delete`, with `*` and `?` in the file name |
@@ -174,8 +174,9 @@ What we do that the manual does not list:
 
 None left: every row above is Same or Better, or Different with its reason.
 
-Automatic updates are left to Justin: an update check would make a network request, which P4-16
-rules out without a provider.
+Automatic updates wait for P4-19 (Justin, 2026-11-25): the app says a newer release exists and how
+to update with what installed it, and checks only when asked or once `updates.check` is set, so
+P4-16 holds as shipped.
 
 ## Benchmark
 

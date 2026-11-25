@@ -141,7 +141,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | The toolbar says a host that does not answer is not answering | ENG-1, PRIN-8; found in the follow-up playtest of v2026.11.2 on 2026-11-22 | [L-72](https://github.com/quakecstudio/editor/issues/1123) The toolbar shows a host that does not answer as playing |
 | The game popped out of the Game tab to full screen | Preview (ENG-10, ENG-9); asked for by Justin on 2026-11-22 | [L-73](https://github.com/quakecstudio/editor/issues/1124) Pop the game out of the Game tab into a full-screen window |
 | The Windows MSI signed, not only the executables in it | Quality, testing and release (QA-6); asked for by Justin on 2026-11-24 | [L-75](https://github.com/quakecstudio/editor/issues/1132) Sign the Windows MSI as well as the executables in it |
-| In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
+| In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update check that names the install's own way to update |
 | Editor integrations for VS Code, Zed and Neovim | Language server; moved out of Phase 2 by Justin on 2026-10-29, as it serves other editors and not the IDE or the engine | [P2-16](https://github.com/quakecstudio/editor/issues/72) Package editor integrations for VS Code, Zed and Neovim |
 
 ### The map editor, Phases 5 to 7
