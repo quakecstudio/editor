@@ -309,6 +309,16 @@ excerpt. An excerpt of a file with bytes that are not UTF-8 is shown read-only.
 ([`qs-editor-view`](../../crates/qs-editor-view/README.md), `vim`), read when the window
 starts.
 
+**The update notice (P4-19, QA-11).** `update.rs` shows, in the status bar, "Update available:
+<version>" once a check found a later release, and its window says how to get it with what
+installed this copy (`qs_update::Install::channel`): the package manager's command with Copy
+Command, or Download, which opens the release's page in the browser, as Release Notes does.
+Skip This Version keeps the version as `updates.skip_version`. The app downloads and installs
+nothing. A check is `qs-update`'s one request, made off the frame when Help, Check for Updates
+runs (`help.check_for_updates`) and, only with `updates.check = "daily"`, as the app starts, at
+most once a day ([`docs/privacy.md`](../../docs/privacy.md)); a failed background check is
+logged and said nowhere else.
+
 ## Accessibility
 
 Every area and control has an AccessKit name and role (QA-9, P2-23): the toolbar, the status

@@ -6,7 +6,8 @@
 //! It opens the project in the app, headless through `egui_kittest`, with no model provider
 //! set up, as on a first start. It then does what a modder does on a first afternoon: it draws
 //! frames, opens each source file, builds, checks, runs the tests, searches, opens the command
-//! palette, and asks the agent for a thread, which cannot start with no provider. It fails if
+//! palette, and asks the agent for a thread, which cannot start with no provider. The update
+//! check is started as the app starts it, with nothing set, so it asks nothing. It fails if
 //! any of that fails, and the trace shows whether any of it touched the network.
 
 #![expect(
@@ -58,6 +59,12 @@ fn session(project: &std::path::Path) -> Result<usize, String> {
         );
     let mut app = App::checked_on_the_frame(&harness.ctx, None).map_err(|e| e.to_string())?;
     let shell = app.shell_mut();
+    // As the app's `main` starts it, with no settings file: the update check, which is off
+    // until `updates.check` says otherwise, asks nothing (P4-19).
+    shell.start_update_check(
+        std::env::temp_dir().join(format!("quakec-studio-offline-{}.json", std::process::id())),
+        &harness.ctx,
+    );
     shell
         .open_project(project)
         .map_err(|e| format!("{}: {e}", project.display()))?;

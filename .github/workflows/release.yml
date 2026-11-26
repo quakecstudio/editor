@@ -9,7 +9,8 @@ name: release
 # and writes SHA256SUMS. A tag also publishes the packages as a GitHub release, a pre-release
 # when the tag has a `-` (v2026.11.1-rc1), and regenerates the compatibility list. A tag
 # with no `-` then reaches the package managers too (P4-40): the debs and rpms go to
-# packages.quakecstudio.com, the cask to the Homebrew tap and the MSIs to winget. A run by
+# packages.quakecstudio.com with the release feed the app's update check reads (P4-19), the
+# cask to the Homebrew tap and the MSIs to winget. A run by
 # hand, or by a pull request that changes the packaging, is the dry run: everything but
 # publishing, the packages kept as its `release` artifact.
 on:
@@ -365,6 +366,23 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: packaging/linux/repository.sh dist packages-repository
+      # The release feed the app's update check reads (P4-19): packaging/latest.json with this
+      # release's version, served as https://packages.quakecstudio.com/latest.json. A
+      # pre-release writes none, so no install is told of one; a dry run writes it and, as
+      # with the packages, does not push it.
+      - name: Write the release feed
+        if: ${{ !(github.ref_type == 'tag' && contains(github.ref_name, '-')) }}
+        run: |
+          feed=packages-repository/latest.json
+          sed "s/@VERSION@/$VERSION/g" packaging/latest.json > "$feed"
+          if grep -n '@[A-Z0-9]*@' "$feed"; then
+            echo "::error::the feed still has a placeholder"
+            exit 1
+          fi
+          jq -e --arg version "$VERSION" \
+            '.version == $version and .url == "https://github.com/quakecstudio/editor/releases/tag/v" + $version' \
+            "$feed"
+          cat "$feed"
       - name: Commit, and push on a release
         working-directory: packages-repository
         run: |

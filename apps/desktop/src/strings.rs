@@ -429,8 +429,45 @@ pub enum Text {
     AboutSite,
     /// The About window's link to the app's source.
     AboutSource,
-    /// The About window's button that closes it.
+    /// The About window's button that closes it, and the update window's when it has only
+    /// said something.
     AboutClose,
+    /// The update window's title (P4-19).
+    UpdateTitle,
+    /// The update window, while a check a person asked for has no answer yet.
+    UpdateChecking,
+    /// Why a check failed when it ended with no answer at all.
+    UpdateNoAnswer,
+    /// What the status bar's notice of a later release does.
+    UpdateItemHint,
+    /// The update window's button that copies the command.
+    UpdateCopy,
+    /// The update window's button that opens the release's page for its downloads.
+    UpdateDownload,
+    /// The update window's button that opens the release's page for its notes.
+    UpdateReleaseNotes,
+    /// The update window's button that stops the notice of this release.
+    UpdateSkip,
+    /// The update window's button that closes it, the notice staying.
+    UpdateLater,
+    /// The update window, for an install by Homebrew.
+    UpdateViaHomebrew,
+    /// The update window, for an install from the macOS package.
+    UpdateViaMacPackage,
+    /// The update window, for an install by the Windows installer.
+    UpdateViaMsi,
+    /// The update window, for a copy from the portable zip.
+    UpdateViaZip,
+    /// The update window, for an install from the deb.
+    UpdateViaDeb,
+    /// The update window, for an install from the rpm.
+    UpdateViaRpm,
+    /// The update window, for a copy run from the AppImage.
+    UpdateViaAppImage,
+    /// The update window, for an install from the Flatpak bundle.
+    UpdateViaFlatpak,
+    /// The update window, for a build no package installed.
+    UpdateViaSource,
     /// Beside a file with edits waiting for review, in the Project tree and on its tab.
     ReviewMark,
     /// That mark, to a screen reader.
@@ -1145,7 +1182,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 564] = [
+    pub const ALL: [Self; 582] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1290,6 +1327,24 @@ impl Text {
         Self::AboutSite,
         Self::AboutSource,
         Self::AboutClose,
+        Self::UpdateTitle,
+        Self::UpdateChecking,
+        Self::UpdateNoAnswer,
+        Self::UpdateItemHint,
+        Self::UpdateCopy,
+        Self::UpdateDownload,
+        Self::UpdateReleaseNotes,
+        Self::UpdateSkip,
+        Self::UpdateLater,
+        Self::UpdateViaHomebrew,
+        Self::UpdateViaMacPackage,
+        Self::UpdateViaMsi,
+        Self::UpdateViaZip,
+        Self::UpdateViaDeb,
+        Self::UpdateViaRpm,
+        Self::UpdateViaAppImage,
+        Self::UpdateViaFlatpak,
+        Self::UpdateViaSource,
         Self::ReviewMark,
         Self::ReviewMarkName,
         Self::ReviewWaitingHint,
@@ -1876,6 +1931,32 @@ impl Text {
             Self::AboutSite => "Website",
             Self::AboutSource => "Source code",
             Self::AboutClose => "OK",
+            Self::UpdateTitle => "Software Update",
+            Self::UpdateChecking => "Checking for updates\u{2026}",
+            Self::UpdateNoAnswer => "the check ended without an answer",
+            Self::UpdateItemHint => "Show how to update",
+            Self::UpdateCopy => "Copy Command",
+            Self::UpdateDownload => "Download",
+            Self::UpdateReleaseNotes => "Release Notes",
+            Self::UpdateSkip => "Skip This Version",
+            Self::UpdateLater => "Not Now",
+            Self::UpdateViaHomebrew => "Installed with Homebrew. To update:",
+            Self::UpdateViaMacPackage => {
+                "Installed from the macOS package. Download the new one to update."
+            }
+            Self::UpdateViaMsi => {
+                "Installed with the Windows installer. To update with winget, or download the new installer if winget does not have this release yet:"
+            }
+            Self::UpdateViaZip => "Running from the portable zip. Download the new one to update.",
+            Self::UpdateViaDeb => "Installed from the .deb package. To update:",
+            Self::UpdateViaRpm => "Installed from the .rpm package. To update:",
+            Self::UpdateViaAppImage => "Running from the AppImage. Download the new one to update.",
+            Self::UpdateViaFlatpak => {
+                "Installed from the Flatpak bundle. Download the new one to update."
+            }
+            Self::UpdateViaSource => {
+                "This build was not installed from a package. The release's page has the packages."
+            }
             Self::ReviewMark => "R",
             Self::ReviewMarkName => "edits to review",
             Self::ReviewWaitingHint => "Open the first edit waiting for review",
@@ -2554,6 +2635,7 @@ pub fn menu_title(id: &str) -> Option<&'static str> {
         "view.map_save_view_4" => "Save View 4",
         "help.user_guide" => "QuakeC Studio Guide",
         "help.report_issue" => "Report an Issue\u{2026}",
+        "help.check_for_updates" => "Check for Updates\u{2026}",
         _ => return None,
     })
 }
@@ -2568,6 +2650,30 @@ pub fn texture_of_level(map: &str) -> String {
 #[must_use]
 pub fn version_line(version: &str) -> String {
     format!("Version {version}")
+}
+
+/// The status bar's notice of a later release (P4-19).
+#[must_use]
+pub fn update_item(version: &str) -> String {
+    format!("Update available: {version}")
+}
+
+/// The update window's line for a later release, `latest`, over the one running, `current`.
+#[must_use]
+pub fn update_available(latest: &str, current: &str) -> String {
+    format!("QuakeC Studio {latest} is available (you have {current}).")
+}
+
+/// The update window's line when the release running, `current`, is the latest.
+#[must_use]
+pub fn up_to_date(current: &str) -> String {
+    format!("QuakeC Studio {current} is the latest release.")
+}
+
+/// The update window's line when a check a person asked for failed, and why.
+#[must_use]
+pub fn update_failed(why: &str) -> String {
+    format!("Could not check for updates: {why}")
 }
 
 /// The status bar's count of the edits waiting for review, and of the files they are in

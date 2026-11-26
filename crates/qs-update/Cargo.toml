@@ -1,0 +1,18 @@
+[package]
+name = "qs-update"
+description = "The update check: the release feed read with one request, the version compared, and the install's own way to update found from how it was installed; nothing is downloaded or installed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std"] }
+ureq = { workspace = true, features = ["rustls"] }
+
+[lints]
+workspace = true

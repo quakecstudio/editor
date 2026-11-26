@@ -593,7 +593,9 @@ fn settings_commands_change_the_files_and_undo() {
             "agent.profile",
             "agent.tool_permissions",
             "agent.external",
-            "editor.key_mode"
+            "editor.key_mode",
+            "updates.check",
+            "updates.skip_version"
         ]
     );
     assert_eq!(list[1]["default"], "info");
@@ -651,6 +653,57 @@ fn the_key_mode_is_standard_or_vim() {
     };
     let (_, _, store) = store(&dir, &spec);
     assert_eq!(store.value(Setting::KeyMode), (json!("vim"), Source::User));
+}
+
+// No spec statement: P4-19, PRIN-9: `updates.check` is `off` by default, so nothing looks for
+// a release unasked, and `daily` when set, and nothing else; `updates.skip_version` is unset
+// by default and a text when set
+#[test]
+fn the_update_check_is_off_until_set_to_daily() {
+    let mut file = SettingsFile::default();
+    assert_eq!(file.get(Setting::UpdateCheck), None);
+    assert_eq!(Setting::UpdateCheck.default_value(), json!("off"));
+    assert_eq!(crate::UpdateCheck::default(), crate::UpdateCheck::Off);
+    file.put(Setting::UpdateCheck, Some(json!("daily")))
+        .unwrap();
+    assert_eq!(file.updates.check, Some(crate::UpdateCheck::Daily));
+    assert!(
+        file.put(Setting::UpdateCheck, Some(json!("hourly")))
+            .is_err()
+    );
+    assert!(file.put(Setting::UpdateCheck, Some(json!(true))).is_err());
+    assert_eq!(file.updates.check, Some(crate::UpdateCheck::Daily));
+    file.put(Setting::UpdateCheck, Some(json!("off"))).unwrap();
+    assert_eq!(file.get(Setting::UpdateCheck), Some(json!("off")));
+
+    assert_eq!(file.get(Setting::SkipVersion), None);
+    assert_eq!(Setting::SkipVersion.default_value(), Value::Null);
+    assert!(file.put(Setting::SkipVersion, Some(json!(2026))).is_err());
+    file.put(Setting::SkipVersion, Some(json!("2026.12.1")))
+        .unwrap();
+    assert_eq!(file.updates.skip_version.as_deref(), Some("2026.12.1"));
+
+    let dir = TempDir::new("updates");
+    let spec = StoreSpec {
+        user: Some("[updates]\ncheck = \"daily\"\n"),
+        ..StoreSpec::default()
+    };
+    let (user, _, mut store) = store(&dir, &spec);
+    assert_eq!(
+        store.value(Setting::UpdateCheck),
+        (json!("daily"), Source::User)
+    );
+    assert_eq!(
+        store.value(Setting::SkipVersion),
+        (Value::Null, Source::Default)
+    );
+    store
+        .put(Scope::User, Setting::SkipVersion, Some(json!("2026.12.1")))
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(&user).unwrap(),
+        "[updates]\ncheck = \"daily\"\nskip_version = \"2026.12.1\"\n"
+    );
 }
 
 // QA-10: every setting is documented: docs/settings.md is the generated reference.
@@ -834,6 +887,7 @@ proptest! {
             game: crate::Game { folder: folder.clone() },
             editor: crate::Editor::default(),
             agent: crate::Agent::default(),
+            updates: crate::Updates::default(),
         };
         store
             .put(Scope::User, Setting::Theme, theme.map(|t| serde_json::to_value(t).unwrap()))
