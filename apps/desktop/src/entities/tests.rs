@@ -13,6 +13,7 @@ use qs_workbench::entities::Entities;
 use serde_json::json;
 
 use super::{Edict, EntityAction, PlayState, Properties, Shown, properties};
+use crate::strings::Text;
 use crate::theme::{Mode, Theme};
 
 // No spec statement: L-53: a paused field's box holds the game's value now: what a box
@@ -156,4 +157,19 @@ fn the_drawn_panel_shows_each_pauses_values() {
     harness.state_mut().game = PlayState::Paused;
     harness.run();
     assert_eq!(boxes(&harness), [shot, armour]);
+}
+
+// No spec statement: UI-24: while the game runs the panel's lock says why the fields cannot be
+// typed in, to a screen reader as on hover, and it is gone once the game is paused
+#[test]
+fn the_lock_says_why_fields_are_read_only() {
+    let mut harness = drawn();
+    let why = Text::ReadOnlyWhilePlaying.get();
+    assert!(harness.query_by_label(why).is_none());
+    harness.state_mut().game = PlayState::Playing;
+    harness.run();
+    harness.get_by_label(why);
+    harness.state_mut().game = PlayState::Paused;
+    harness.run();
+    assert!(harness.query_by_label(why).is_none());
 }

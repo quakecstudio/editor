@@ -65,6 +65,7 @@ mod picker;
 pub mod project;
 pub mod shell;
 pub mod strings;
+mod suggest;
 mod terminal;
 mod texture_browser;
 mod texture_import;

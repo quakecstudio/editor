@@ -19,6 +19,8 @@ use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::{Camera, Degrees};
 use qs_vfs::{StdFs, Vfs};
 
+use crate::strings::Text;
+
 /// A line in map space.
 pub(crate) type Line = [[f32; 3]; 2];
 
@@ -42,6 +44,8 @@ pub(crate) const TARGETNAME: &str = "targetname";
 pub(crate) const SPAWNFLAGS: &str = "spawnflags";
 /// The key holding a point entity's yaw, or -1 for up and -2 for down (`SetMovedir`).
 pub(crate) const ANGLE: &str = "angle";
+/// The key that names an entity's class.
+pub(crate) const CLASSNAME: &str = "classname";
 /// The end of a key holding a colour as three numbers: `_color`, `color`.
 pub(crate) const COLOR_SUFFIX: &str = "color";
 /// How `project.entities` names a float key's type.
@@ -70,6 +74,17 @@ impl From<&ClassInfo> for ClassLook {
             color: class.color,
             model: class.model.clone(),
             brush: class.shape == BRUSH_SHAPE,
+        }
+    }
+}
+
+impl ClassLook {
+    /// What the class is, said beside its name where classes are offered.
+    pub(crate) const fn kind(&self) -> Text {
+        if self.brush {
+            Text::MapBrushKind
+        } else {
+            Text::MapPointKind
         }
     }
 }

@@ -723,14 +723,22 @@ pub enum Text {
     MapCompare,
     /// The key editor's button that removes a key.
     MapRemoveKey,
-    /// The key editor's heading over the keys the entity's class reads that it does not set.
-    MapClassKeys,
+    /// The mark beside a targeting key whose value no entity has as its targetname.
+    MapNoSuchTarget,
     /// The key editor's hint in the new key's field.
     MapKey,
     /// The key editor's hint in the new value's field.
     MapValue,
-    /// The key editor's list of the map's targetnames for a target key.
-    MapTargets,
+    /// The list a field offers its known values in (UI-24).
+    SuggestList,
+    /// The label before the compile profile picker.
+    MapCompileLabel,
+    /// The label before the texture import's choice of how colours are matched.
+    MapColours,
+    /// What a point class is, beside its name where classes are offered.
+    MapPointKind,
+    /// What a brush class is, beside its name where classes are offered.
+    MapBrushKind,
     /// The key editor's button that adds the key typed.
     MapAddKey,
     /// The entity browser's filter hint.
@@ -1203,7 +1211,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 592] = [
+    pub const ALL: [Self; 596] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1558,10 +1566,14 @@ impl Text {
         Self::MapKeepMine,
         Self::MapCompare,
         Self::MapRemoveKey,
-        Self::MapClassKeys,
+        Self::MapNoSuchTarget,
         Self::MapKey,
         Self::MapValue,
-        Self::MapTargets,
+        Self::SuggestList,
+        Self::MapCompileLabel,
+        Self::MapColours,
+        Self::MapPointKind,
+        Self::MapBrushKind,
         Self::MapAddKey,
         Self::MapFilterEntities,
         Self::MapTextures,
@@ -1797,6 +1809,13 @@ impl Text {
         Self::MapLitNone,
         Self::MapLitStale,
     ];
+
+    /// The string as the start of a field's value, an axis's letter before its number:
+    /// `X 128`.
+    #[must_use]
+    pub fn prefix(self) -> String {
+        format!("{} ", self.get())
+    }
 
     /// The string, in English.
     #[must_use]
@@ -2198,10 +2217,14 @@ impl Text {
             Self::MapKeepMine => "Keep mine",
             Self::MapCompare => "Compare",
             Self::MapRemoveKey => "Remove",
-            Self::MapClassKeys => "Keys its class reads:",
-            Self::MapKey => "key",
-            Self::MapValue => "value",
-            Self::MapTargets => "Targetnames",
+            Self::MapNoSuchTarget => "No entity has this targetname yet",
+            Self::MapKey => "New key",
+            Self::MapValue => "Its value",
+            Self::SuggestList => "Suggestions",
+            Self::MapCompileLabel => "Compile with",
+            Self::MapColours => "Colours",
+            Self::MapPointKind => "point entity",
+            Self::MapBrushKind => "brush entity",
             Self::MapAddKey => "Add key",
             Self::MapFilterEntities => "Filter entities",
             Self::MapTextures => "Textures",
@@ -2280,7 +2303,7 @@ impl Text {
                 "Runs the selected entity's use, or its touch, with your mod's QuakeC and lists what happened. Changes nothing in the map or a running game."
             }
             Self::MapFireNone => "Select an entity and choose Fire to see what its targets do",
-            Self::MapFireStep => "step",
+            Self::MapFireStep => "events shown",
             Self::MapFireStepHint => {
                 "Steps through the trace: the map view lights the links fired so far"
             }
@@ -3194,4 +3217,31 @@ pub(crate) const fn panes_text(panes: qs_layout::MapPanes) -> Text {
 #[must_use]
 pub fn help_for(title: &str) -> String {
     format!("Help: {title}")
+}
+
+/// What an offer of a field names, shown muted after its value (UI-24).
+#[must_use]
+pub fn offer_detail(detail: &str) -> String {
+    format!("   {detail}")
+}
+
+/// What an offered targetname names: the classnames of the entities that have it.
+#[must_use]
+pub fn targetname_detail(classnames: &[String]) -> String {
+    classnames.join(", ")
+}
+
+/// What an offered key is: its type, the class's default when it has one, and what the
+/// class's comment says of it.
+#[must_use]
+pub fn key_detail(ty: &str, default: Option<&str>, comment: Option<&str>) -> String {
+    let default = default.map_or_default(|default| format!(", {default} by default"));
+    let comment = comment.map_or_default(|comment| format!(": {comment}"));
+    format!("{ty}{default}{comment}")
+}
+
+/// An offer as a screen reader names it: its value, then what it names.
+#[must_use]
+pub fn offer_name(name: &str, detail: &str) -> String {
+    format!("{name}, {detail}")
 }

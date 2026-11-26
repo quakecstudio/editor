@@ -237,13 +237,8 @@ pub(crate) fn properties(
         }
         if !paused {
             // A lock, read as the sentence it stands for.
-            let lock = ui
-                .label(
-                    RichText::new(Icon::Lock.char().to_string())
-                        .color(theme.color(Token::TextMuted)),
-                )
-                .on_hover_text(Text::ReadOnlyWhilePlaying.get());
-            icons::mark(ui, &lock, Text::ReadOnlyWhilePlaying.get(), icons::ROW);
+            let muted = theme.color(Token::TextMuted);
+            Icon::Lock.sign(ui, muted, Text::ReadOnlyWhilePlaying);
         }
     });
     egui::ScrollArea::vertical()

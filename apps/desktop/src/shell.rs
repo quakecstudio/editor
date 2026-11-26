@@ -1747,12 +1747,12 @@ impl Shell {
                         } else {
                             (Text::PopOut, qs_layout::POP_OUT_GAME)
                         };
-                        let pop = Button::new(RichText::new(text.get()).small()).frame(false);
+                        // Framed, so it reads as a button and not as the label beside it.
+                        let pop = Button::new(RichText::new(text.get()).small());
                         if ui.add(pop).on_hover_text(Text::PopOutHint.get()).clicked() {
                             layout_command = Some(id);
                         }
-                        let full =
-                            Button::new(RichText::new(Text::FullScreen.get()).small()).frame(false);
+                        let full = Button::new(RichText::new(Text::FullScreen.get()).small());
                         if ui
                             .add(full)
                             .on_hover_text(Text::FullScreenHint.get())

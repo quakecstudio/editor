@@ -145,6 +145,7 @@ impl ImportPreview {
                     field.accessible_name(Text::MapTextureName.get());
                 });
                 ui.horizontal(|ui| {
+                    ui.label(Text::MapColours.get());
                     ui.selectable_value(
                         &mut self.dither,
                         DitherChoice::None,
