@@ -497,3 +497,22 @@ fn world_brush_entities_join_the_world_in_the_extended_dialect() {
         "id's qbsp: each its own brush model"
     );
 }
+
+// spec QBSP-15.50: the lump holds each entity with pairs, in order (MAP-2.6); the extended
+// dialect leaves out the world brush entities, whose brushes the world takes (QBSP-15.24), and
+// id's keeps them
+#[test]
+fn the_lump_holds_the_entities_each_dialect_writes() {
+    let file = qs_map::MapFile::parse(
+        b"{\n\"classname\" \"worldspawn\"\n}\n\
+          {\n\"classname\" \"func_group\"\n}\n\
+          {\n}\n\
+          {\n\"classname\" \"func_detail\"\n}\n\
+          {\n\"classname\" \"info_null\"\n}\n",
+    )
+    .unwrap();
+    let id = Compiler::default().with_dialect(Dialect::Id);
+    let extended = Compiler::default().with_dialect(Dialect::Extended);
+    assert_eq!(id.lump_places(&file), [0, 1, 3, 4]);
+    assert_eq!(extended.lump_places(&file), [0, 4]);
+}

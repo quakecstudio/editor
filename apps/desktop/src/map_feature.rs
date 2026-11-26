@@ -67,6 +67,7 @@ use qs_workbench::map_filter::{FilterParams, MAP_FILTER, MapFiltered};
 use qs_workbench::map_logic::{
     FireParams, FiredBy, LogicIssues, LogicParams, MAP_FIRE, MAP_LOGIC_ISSUES, MapFired,
 };
+use qs_workbench::map_playable::{MAP_PLAYABILITY, Playability, PlayabilityParams};
 use qs_workbench::map_profile::{
     MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
 };
@@ -354,9 +355,7 @@ impl MapFeature {
                     self.load_map_textures(commands);
                     imported
                 }
-                MapAction::CheckLeaks => commands
-                    .execute(MAP_LEAKS, serde_json::json!({}))
-                    .map_err(ShellError::from),
+                MapAction::CheckLeaks => self.check_leaks(commands),
                 MapAction::PlayFromHere => self.play_from_here(commands),
                 MapAction::ListPrefabs => self.list_prefabs(commands),
                 MapAction::PlacePrefab(path, origin) => commands.attempt(
@@ -478,6 +477,34 @@ impl MapFeature {
         Ok(serde_json::Value::Null)
     }
 
+    /// Checks the open map for leaks and missing textures, and then that it can be finished
+    /// (P6-11, L-77).
+    fn check_leaks(
+        &mut self,
+        commands: &mut Commands<'_>,
+    ) -> Result<serde_json::Value, ShellError> {
+        let checked = commands
+            .execute(MAP_LEAKS, serde_json::json!({}))
+            .map_err(ShellError::from);
+        if checked.is_ok() {
+            self.check_playability(commands);
+        }
+        checked
+    }
+
+    /// Checks that the open map, just compiled, can be finished (L-77), and lists its issues
+    /// again, which the findings join. A map that cannot be checked, such as one with no player
+    /// start, which its issues say, shows nothing of it.
+    fn check_playability(&mut self, commands: &mut Commands<'_>) {
+        let found: Result<Playability<EntityIndex>, ShellError> =
+            commands.attempt(MAP_PLAYABILITY, &PlayabilityParams::default());
+        if let Ok(found) = found {
+            let at = commands.session().context().map_edits();
+            self.map_editor.set_playability(found, at);
+            drop(self.check_map_issues(commands));
+        }
+    }
+
     /// Lists the open map's issues in the map editor's issue browser (P6-19).
     pub(crate) fn check_map_issues(
         &mut self,
@@ -594,6 +621,7 @@ impl MapFeature {
             commands.attempt(MAP_RUN_PROFILE, &RunProfileParams::default());
         let run = ran?;
         self.map_editor.profiles_mut().set_run(run);
+        self.check_playability(commands);
         if self.map_editor.profiles().shows_portals() {
             let read: Result<MapPortals, ShellError> =
                 commands.attempt(MAP_PORTALS, &serde_json::json!({}));

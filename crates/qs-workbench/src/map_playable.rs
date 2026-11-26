@@ -181,3 +181,6 @@ pub(crate) fn register_map_playable<C: HasPreview + 'static>(
 ) -> Result<(), RegisterError> {
     registry.register(MapPlayability)
 }
+
+#[cfg(test)]
+mod tests;

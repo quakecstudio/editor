@@ -74,6 +74,9 @@ pub enum Skill {
     Nightmare,
 }
 
+/// The `skill` setting of nightmare, which the inhibition test reads as hard (EDICT-8.4).
+const NIGHTMARE_LEVEL: i32 = 3;
+
 impl Skill {
     /// The skill as the engine's inhibition test reads it, 0 to 3 (EDICT-8.4).
     #[must_use]
@@ -82,7 +85,7 @@ impl Skill {
             Self::Easy => 0,
             Self::Normal => 1,
             Self::Hard => 2,
-            Self::Nightmare => 3,
+            Self::Nightmare => NIGHTMARE_LEVEL,
         }
     }
 
@@ -173,6 +176,8 @@ const UP_ANGLE: f32 = -1.0;
 const DOWN_ANGLE: f32 = -2.0;
 /// How much of a door's size it keeps in its frame when open, when it has no `lip` (`doors.qc`).
 const DOOR_LIP: f32 = 8.0;
+/// Where a door is from where it is drawn before it opens: there.
+const NOT_MOVED: [f32; 3] = [0.0, 0.0, 0.0];
 /// The most corners a train's path is followed round.
 const MOST_STOPS: usize = 64;
 /// The most doors a check follows; one past them is taken as open and listed as not judged.
@@ -309,17 +314,10 @@ impl Volume {
     fn touched(&self, at: [f32; 3], margin: f32) -> bool {
         let low = [at[0] - HALF, at[1] - HALF, at[2] - FEET];
         let high = [at[0] + HALF, at[1] + HALF, at[2] + HEAD];
-        (0..3).all(|axis| {
-            let (Some(l), Some(h), Some(min), Some(max)) = (
-                low.get(axis),
-                high.get(axis),
-                self.min.get(axis),
-                self.max.get(axis),
-            ) else {
-                return false;
-            };
-            l - margin <= *max && h + margin >= *min
-        })
+        low.iter()
+            .zip(high)
+            .zip(self.min.iter().zip(self.max))
+            .all(|((l, h), (min, max))| l - margin <= max && h + margin >= *min)
     }
 }
 
@@ -816,9 +814,7 @@ fn linked_doors(doors: &[(usize, Volume, u32)]) -> Vec<usize> {
     };
     for (a, (_, va, fa)) in doors.iter().enumerate() {
         for (b, (_, vb, fb)) in doors.iter().enumerate().skip(a.saturating_add(1)) {
-            let touching = (0..3).all(|axis| {
-                va.min.get(axis) <= vb.max.get(axis) && va.max.get(axis) >= vb.min.get(axis)
-            });
+            let touching = va.overlaps(vb);
             if touching && fa & DOOR_DONT_LINK == 0 && fb & DOOR_DONT_LINK == 0 {
                 let (ra, rb) = (root(&group, a), root(&group, b));
                 if let Some(slot) = group.get_mut(rb) {
@@ -994,7 +990,7 @@ impl<'a> Ground<'a> {
                 };
                 ground.doors.push(Door {
                     model,
-                    from: [0.0; 3],
+                    from: NOT_MOVED,
                     opener,
                     open,
                     stays,
@@ -1035,7 +1031,7 @@ impl<'a> Ground<'a> {
             }
             ground.doors.push(Door {
                 model,
-                from: [0.0; 3],
+                from: NOT_MOVED,
                 opener: Some(Held::door(bit)),
                 open: Open::Gone,
                 stays: Stays::Open,
@@ -1078,7 +1074,7 @@ impl<'a> Ground<'a> {
             chains.link(Event::Kill(name), Event::Door(next_bit));
             ground.doors.push(Door {
                 model,
-                from: [0.0; 3],
+                from: NOT_MOVED,
                 opener: Some(Held::door(next_bit)),
                 open: Open::Gone,
                 stays: Stays::Open,
@@ -1636,9 +1632,9 @@ impl<'a> Ground<'a> {
             // so the player is taken to be carried up, and not to walk off it while it rises.
             next.push(Landing::still([at[0], at[1], lift.top + FEET]));
         } else {
-            // A pace on each axis, and whether it lands beside the player at about its height.
-            let mut level_on = [false; 4];
-            for (side, step) in flat.into_iter().enumerate() {
+            // The paces that land beside the player at about its height.
+            let mut level_steps: Vec<[f32; 2]> = Vec::new();
+            for step in flat {
                 let walked = self.paced(held, at, step, CLIMB);
                 // At an edge, or a wall, a running jump may clear a gap: anywhere a pace does
                 // not land beside the player at about its height, as one into a teleporter.
@@ -1649,8 +1645,8 @@ impl<'a> Ground<'a> {
                         && z >= at[2] - CLIMB
                 };
                 let is_level = walked.as_ref().is_some_and(level);
-                if let Some(slot) = level_on.get_mut(side) {
-                    *slot = is_level;
+                if is_level {
+                    level_steps.push(step);
                 }
                 if !is_level {
                     next.extend(self.leaps(held, at, step));
@@ -1678,14 +1674,13 @@ impl<'a> Ground<'a> {
             }
             // Across a corner, as a running player cuts it: a diagonal leap wherever either of
             // the paces it is between leaves level ground.
-            for (x_side, y_side) in [(0, 2), (0, 3), (1, 2), (1, 3)] {
-                let (Some(&[dx, _]), Some(&[_, dy])) = (flat.get(x_side), flat.get(y_side)) else {
-                    continue;
-                };
-                let corner = level_on.get(x_side).copied().unwrap_or(false)
-                    && level_on.get(y_side).copied().unwrap_or(false);
-                if !corner {
-                    next.extend(self.leaps(held, at, [dx, dy]));
+            for dx in [PACE, -PACE] {
+                for dy in [PACE, -PACE] {
+                    let corner =
+                        level_steps.contains(&[dx, 0.0]) && level_steps.contains(&[0.0, dy]);
+                    if !corner {
+                        next.extend(self.leaps(held, at, [dx, dy]));
+                    }
                 }
             }
         }

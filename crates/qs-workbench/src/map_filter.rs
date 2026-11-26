@@ -159,7 +159,10 @@ impl SpawnWorld {
         {
             return bsp.clone();
         }
+        // id's dialect, whose lump the spawn reads (`load_map_file`): the extended one merges a
+        // `func_group` into the world, and the models of the entities after it would move.
         let bsp = qs_map_bsp::Compiler::default()
+            .with_dialect(qs_map_bsp::Dialect::Id)
             .compile(text, None)
             .ok()
             .map(|compiled| compiled.bsp)

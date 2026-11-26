@@ -104,7 +104,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.find_leaks`](#mapfind_leaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.fire`](#mapfire) | Fires an entity of the open map as the game would, its use or its touch run in the simulation with the project's program, and answers what the QuakeC did about it in order: each use, touch and think the firing reached, each entity looked up by its targetname, removed or spawned, each centerprint and sound, and the fields written. Changes nothing: not the map, not a game that is playing it. |
 | [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
-| [`map.generate`](#mapgenerate) | Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave. One seed gives one level. |
+| [`map.generate`](#mapgenerate) | Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave: each level is compiled and checked as map.playability checks a map, with no jump, and a seed whose level fails gives way to the seeds after it. One seed gives one level. |
 | [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
@@ -127,6 +127,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.place_entity`](#mapplace_entity) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13), or with no eye the map's own player start. It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built. |
+| [`map.playability`](#mapplayability) | Checks that the open map can be finished, as a player moves through it compiled: walking, falling, swimming, riding lifts and teleporters, opening doors with keys, buttons and triggers, and jumping (or with moves "generator", no jump). Answers whether an exit is reached from the player start, each key, weapon, item and secret never reached, each place from which the exit can no longer be reached, with a point inside it, and each entity whose class the check does not follow. Its findings join map.issues until the map changes. |
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
@@ -4977,7 +4978,7 @@ Parameters:
       ]
     },
     "Skill": {
-      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "description": "The skill a map is played at, the `skill` setting (DIFF-3.2), which decides the entities the\ngame keeps (EDICT-8.4).",
       "oneOf": [
         {
           "const": "easy",
@@ -5492,7 +5493,7 @@ Parameters:
       ]
     },
     "Skill": {
-      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "description": "The skill a map is played at, the `skill` setting (DIFF-3.2), which decides the entities the\ngame keeps (EDICT-8.4).",
       "oneOf": [
         {
           "const": "easy",
@@ -5665,7 +5666,7 @@ Parameters:
 
 ## `map.generate`
 
-Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave. One seed gives one level.
+Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave: each level is compiled and checked as map.playability checks a map, with no jump, and a seed whose level fails gives way to the seeds after it. One seed gives one level.
 
 Parameters:
 
@@ -6077,7 +6078,7 @@ Parameters:
       ]
     },
     "Skill": {
-      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "description": "The skill a map is played at, the `skill` setting (DIFF-3.2), which decides the entities the\ngame keeps (EDICT-8.4).",
       "oneOf": [
         {
           "const": "easy",
@@ -6661,6 +6662,76 @@ Parameters:
     }
   },
   "title": "PlayFromHereParams",
+  "type": "object"
+}
+```
+
+## `map.playability`
+
+Checks that the open map can be finished, as a player moves through it compiled: walking, falling, swimming, riding lifts and teleporters, opening doors with keys, buttons and triggers, and jumping (or with moves "generator", no jump). Answers whether an exit is reached from the player start, each key, weapon, item and secret never reached, each place from which the exit can no longer be reached, with a point inside it, and each entity whose class the check does not follow. Its findings join map.issues until the map changes.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Moves": {
+      "description": "The moves a player is taken to have.",
+      "oneOf": [
+        {
+          "const": "player",
+          "description": "A player's: walking, swimming, lifts, teleporters and a jump of [`JUMP`].",
+          "type": "string"
+        },
+        {
+          "const": "generator",
+          "description": "The level generator's: a player's with no jump, so that a ledge or a rail a player\ncould jump over counts as a wall.",
+          "type": "string"
+        }
+      ]
+    },
+    "Skill": {
+      "description": "The skill a map is played at, the `skill` setting (DIFF-3.2), which decides the entities the\ngame keeps (EDICT-8.4).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "1, the game's own default.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "3.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.playability`.",
+  "properties": {
+    "moves": {
+      "$ref": "#/$defs/Moves",
+      "default": "player",
+      "description": "The moves the player is taken to have: a player's, with a jump, when not given."
+    },
+    "skill": {
+      "$ref": "#/$defs/Skill",
+      "default": "normal",
+      "description": "The skill the map is played at, which decides the entities the game keeps (EDICT-8.4)."
+    }
+  },
+  "title": "PlayabilityParams",
   "type": "object"
 }
 ```

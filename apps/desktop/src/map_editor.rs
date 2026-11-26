@@ -30,6 +30,7 @@ use qs_map_edit::{
 use qs_render::Camera;
 use qs_workbench::map_filter::{GameMode, Skill};
 use qs_workbench::map_logic::{LogicIssues, MapFired};
+use qs_workbench::map_playable::Playability;
 
 use crate::help::{self, Topic};
 use crate::icons::{self, Icon, Toggled};
@@ -42,6 +43,7 @@ use crate::map_leaks::LeakView;
 use crate::map_logic::LogicPane;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
+use crate::map_playable::PlayView;
 use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
@@ -95,6 +97,9 @@ const NEW_PAIR_WIDTH: f32 = 90.0;
 /// The map units the camera stands back from a framed box beyond that, so a small entity is not
 /// right against the eye.
 const FRAME_MARGIN: f32 = 64.0;
+/// How far around a place an issue is about the view frames, in map units: a player's box and
+/// some room about it.
+const PLACE_REACH: f32 = 64.0;
 /// How far a 2D view's name is from its corner, in points.
 const PANE_LABEL_INSET: f32 = 6.0;
 /// The size of a 2D view's name, in points.
@@ -395,6 +400,8 @@ pub struct MapEditor {
     plans: HashMap<Plan, PlanCamera>,
     /// The map's last leak check (P6-11).
     leaks: LeakView,
+    /// What the playability check last found of the map (L-77).
+    playable: PlayView,
     /// The prefab browser (P6-23).
     prefabs: PrefabBrowser,
     /// The issue browser and search (P6-19).
@@ -774,6 +781,17 @@ impl MapEditor {
         self.bottom = BottomTab::Logic;
     }
 
+    /// Takes what `map.playability` found in the map at `at` (L-77).
+    pub(crate) fn set_playability(&mut self, found: Playability<EntityIndex>, at: MapRevision) {
+        self.playable.set(found, at);
+    }
+
+    /// What the playability check last found, for tests.
+    #[cfg(test)]
+    pub(crate) const fn playable(&self) -> &PlayView {
+        &self.playable
+    }
+
     /// Takes the issues `map.issues` found in the map at `at` (P6-19).
     pub fn set_issues(&mut self, issues: Vec<MapIssue>, at: MapRevision) {
         self.issues.set_issues(issues, at);
@@ -820,6 +838,7 @@ impl MapEditor {
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
         self.issues.follow(document.edits());
         self.logic.follow(document.edits());
+        self.playable.follow(document.edits());
         // The one entity selected, which the Logic tab's Fire fires.
         let one_selected = document.selected().filter(|_| self.also.is_empty());
         browser_ui.horizontal(|ui| {
@@ -872,7 +891,13 @@ impl MapEditor {
                 &self.models,
             ),
             BottomTab::Prefabs => self.prefabs.body(&mut browser_ui, theme),
-            BottomTab::Issues => actions.extend(self.issues.body(&mut browser_ui, theme)),
+            BottomTab::Issues => {
+                actions.extend(self.issues.body(&mut browser_ui, theme));
+                // A place an issue is about, such as a trap, is framed in the view.
+                if let Some(point) = self.issues.take_look() {
+                    self.frame = Some(Framing::Place(point));
+                }
+            }
             BottomTab::Logic => actions.extend(self.logic.body(&mut browser_ui, theme)),
         }
         if let Some((path, name, dither)) = self.textures.import_window(ui.ctx(), theme) {
@@ -1092,6 +1117,13 @@ impl MapEditor {
                 selected.into_iter().chain(self.also.iter().copied()),
                 self.tools.bounds(&self.scene),
             ),
+            Some(Framing::Place(point)) => {
+                let [x, y, z] = point.map(single);
+                Some([
+                    [x - PLACE_REACH, y - PLACE_REACH, z - PLACE_REACH],
+                    [x + PLACE_REACH, y + PLACE_REACH, z + PLACE_REACH],
+                ])
+            }
             None => None,
         };
         if let Some(bounds) = framed {
@@ -1607,6 +1639,7 @@ impl MapEditor {
         }
         self.leaks
             .draw(&painter, &projection, theme, &self.scene, report);
+        self.playable.draw(&painter, &projection, theme);
         self.profiles.draw(&painter, &projection, theme);
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
@@ -1729,6 +1762,7 @@ impl MapEditor {
         actions.extend(self.review.properties(ui, theme));
         actions.extend(self.profiles.controls(ui, theme));
         self.leaks.properties(ui, theme, report);
+        self.playable.properties(ui, theme);
         if self.disk != DiskNotice::None {
             ui.label(
                 RichText::new(Text::MapChangedOnDisk.get()).color(theme.color(Token::StatusWarn)),
@@ -2154,13 +2188,24 @@ enum Keyboard {
     Elsewhere,
 }
 
+/// A position of the map, as the view's single precision holds it.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the view draws in single precision"
+)]
+const fn single(value: f64) -> f32 {
+    value as f32
+}
+
 /// What the view frames on its next frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Framing {
     /// An entity chosen in the outline.
     Entity(EntityIndex),
     /// Every selected entity and brush (P7-08).
     Selection,
+    /// A place an issue is about, as a player's box there (L-77).
+    Place([f64; 3]),
 }
 
 impl MapEditor {

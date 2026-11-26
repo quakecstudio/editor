@@ -44,6 +44,7 @@ mod map_leaks;
 mod map_logic;
 mod map_outline;
 mod map_panes;
+mod map_playable;
 mod map_prefabs;
 mod map_profiles;
 mod map_review;

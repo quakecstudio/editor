@@ -291,7 +291,7 @@ fn checked_level(
             level
                 .rooms
                 .get(room)
-                .map_or([0.0; 3], |room| room.stand.map(single))
+                .map_or_default(|room| room.stand.map(single))
         };
         match ground.check(stand(0), stand(level.exit)) {
             Ok(()) => return Ok((at, level)),
