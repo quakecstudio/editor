@@ -527,6 +527,13 @@ impl MapFeature {
             .then(|| commands.session().context().map_edits());
     }
 
+    /// Whether a check [`MapFeature::check_playability`] started has not answered yet, for tests
+    /// that wait on its thread.
+    #[cfg(test)]
+    pub(crate) const fn checking_playability(&self) -> bool {
+        self.playing.is_some()
+    }
+
     /// Takes the answer of the check [`MapFeature::check_playability`] started once it is done,
     /// and lists the map's issues again, which its findings join; whether it is still running.
     /// An edit since it started drops it: its answer is of another map.

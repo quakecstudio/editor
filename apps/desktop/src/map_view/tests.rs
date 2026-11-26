@@ -32,6 +32,7 @@ use super::DEPTH_FORMAT;
 use crate::App;
 use crate::shell::CentreTab;
 use crate::strings::Text;
+use crate::tests::settle_playability;
 use serde_json::json;
 
 /// egui-kittest's test renderer as `qs_render::Offscreen`, with a depth buffer in its render
@@ -372,8 +373,7 @@ fn the_map_editor_draws_the_map_textured_and_lit() {
         .unwrap();
     harness.run();
     harness.get_by_label(Text::MapCompileProfile.get()).click();
-    harness.run();
-    harness.run();
+    settle_playability(&mut harness);
     assert!(dir.join("maps/keep.bsp").exists());
     assert_eq!(note(&harness), None, "the compile is the map's newest");
     // The compile's notice in Properties gives its time, which differs each run: the golden
