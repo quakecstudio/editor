@@ -112,6 +112,18 @@ void() mod_use = {
     }
 };
 void() mod_relay = { self.use = mod_use; };
+void() SUB_Remove = { remove(self); };
+void() once_use = {
+    activator = other;
+    SUB_UseTargets();
+    self.think = SUB_Remove;
+    self.nextthink = time + 0.1;
+};
+void() trigger_once_self = { self.use = once_use; };
+void() twice_again = { SUB_UseTargets(); };
+void() twice_use = { SUB_UseTargets(); self.think = twice_again; self.nextthink = time + 0.5; };
+void() trigger_twice = { self.use = twice_use; };
+void() func_renamed = { self.classname = "door"; self.use = door_use; };
 "#;
 
 /// The world's entity, with a brush.
@@ -128,12 +140,29 @@ fn entity(classname: &str, keys: &[(&str, &str)]) -> String {
     text
 }
 
+/// The player's entry when the game cannot put a player in the map: it stops with an error, as
+/// id's `PutClientInServer` does on a level with no `info_player_start`.
+const NO_START: &str = "void() PutClientInServer = { world.think(); };";
+
 /// A session with the project of [`CODE`] open and the map of `entities` after the world.
 fn session(name: &str, entities: &[String]) -> (Session<Workbench<FsLoader>>, PathBuf) {
+    session_with(name, entities, "")
+}
+
+/// [`session`], with `entry` in place of the empty `PutClientInServer` when it is not empty.
+fn session_with(
+    name: &str,
+    entities: &[String],
+    entry: &str,
+) -> (Session<Workbench<FsLoader>>, PathBuf) {
     let dir = std::env::temp_dir().join(format!("qs-wb-logic-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("maps")).unwrap();
-    std::fs::write(dir.join("defs.qc"), system_defs()).unwrap();
+    let mut defs = system_defs();
+    if !entry.is_empty() {
+        defs = defs.replace("void() PutClientInServer = {};", entry);
+    }
+    std::fs::write(dir.join("defs.qc"), defs).unwrap();
     std::fs::write(dir.join("world.qc"), CODE).unwrap();
     std::fs::write(dir.join("progs.src"), "progs.dat\ndefs.qc\nworld.qc\n").unwrap();
     std::fs::write(
@@ -576,4 +605,48 @@ fn the_issues_leave_once_the_code_changes() {
         .execute(FILES_CHANGED, json!({ "paths": [world] }))
         .unwrap();
     assert_eq!(listed(&mut session), 0, "the code changed");
+}
+
+// spec FIRE-4.3: a once-trigger that removes itself after firing, fired again, is no issue
+#[test]
+fn a_trigger_that_removes_itself_is_no_issue() {
+    let map = [
+        entity("func_button", &[("target", "once")]),
+        entity(
+            "trigger_once_self",
+            &[("targetname", "once"), ("target", "d")],
+        ),
+        entity("func_door", &[("targetname", "d")]),
+        entity("trigger_twice", &[("target", "once")]),
+    ];
+    let (mut session, _) = session("selfremove", &map);
+    assert_eq!(issues(&mut session).issues, []);
+}
+
+// spec FIRE-4.1: a map with no player start is fired with no player in it
+#[test]
+fn a_map_with_no_player_start_is_fired() {
+    let (mut session, _) = session_with("nostart", &button_and_door(), NO_START);
+    let fired = fire(&mut session, json!({ "entity": 1 }));
+    assert!(
+        fired.events.iter().any(
+            |event| matches!(event, FiredEvent::Ran { function, .. } if function == "door_use")
+        )
+    );
+}
+
+// spec FIRE-5.1, BRIDGE-4.18: an entity whose spawn function renames it keeps its place in the
+// map
+#[test]
+fn a_renamed_entity_keeps_its_place() {
+    let map = [
+        entity("func_button", &[("target", "d")]),
+        entity("func_renamed", &[("targetname", "d")]),
+    ];
+    let (mut session, _) = session("renamed", &map);
+    let fired = fire(&mut session, json!({ "entity": 1 }));
+    assert!(fired.events.iter().any(|event| matches!(event,
+        FiredEvent::Ran { function, entity, classname, .. }
+            if function == "door_use" && classname == "door"
+                && entity.entity.map(|place| place.get()) == Some(2))));
 }

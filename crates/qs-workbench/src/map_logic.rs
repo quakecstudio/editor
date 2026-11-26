@@ -198,6 +198,9 @@ pub enum FiredEvent {
         entity: Fired,
         /// The classname it had.
         classname: String,
+        /// The entity that removed it with `remove`, itself when it removed itself; `None` when
+        /// it was freed another way.
+        by: Option<Fired>,
     },
     /// The program spawned an entity.
     Spawned {
@@ -362,16 +365,21 @@ impl<'p, 'a> Stage<'p, 'a> {
         mut world: World,
     ) -> Result<Self, WorkbenchError> {
         world.settle(progs).map_err(|error| spawn.failed(error))?;
-        world
-            .enter(progs, SCN_FRAMETIME)
-            .map_err(|error| spawn.failed(error))?;
+        // FIRE-4.1: a map the player cannot enter, as one with no player start, is fired with
+        // no player in it.
+        let settled = world.clone();
+        if world.enter(progs, SCN_FRAMETIME).is_err() {
+            world = settled;
+        }
         let entities = spawn
             .places()
             .iter()
             .enumerate()
             .skip(1)
             .filter_map(|(place, &entity)| {
-                let edict = world.map_entity(progs, MapPlace::new(place))?;
+                // A spawn function may rename its entity, as id's `func_door` names itself
+                // `door`: the entity is found by the edict it took (BRIDGE-4.18).
+                let edict = world.map_edict(MapPlace::new(place))?;
                 Some((edict, EntityIndex::new(entity)))
             })
             .collect();
@@ -447,13 +455,16 @@ impl<'p, 'a> Stage<'p, 'a> {
                     time,
                     entity,
                     classname,
+                    by,
                 } => {
                     let removed = fired(entity);
+                    let by = by.map(fired);
                     entities.remove(&entity);
                     FiredEvent::Removed {
                         time,
                         entity: removed,
                         classname,
+                        by,
                     }
                 }
                 TraceEvent::Spawned {
@@ -581,14 +592,17 @@ impl Finder<'_, '_, '_> {
                         ),
                     });
                 }
+                // FIRE-4.3: removed by another entity, as by a `killtarget`; one that removes
+                // itself, as id's once-triggers do, is meant to be gone.
                 FiredEvent::Removed {
                     entity:
                         Fired {
+                            edict,
                             entity: Some(entity),
-                            ..
                         },
+                    by: Some(by),
                     ..
-                } => {
+                } if by.edict != *edict => {
                     if let Some(name) = self.targetnames.get(entity) {
                         removed.insert(name, *entity);
                     }

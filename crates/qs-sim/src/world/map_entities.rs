@@ -106,7 +106,8 @@ impl World {
     /// then, whatever classname it holds now: a spawn function may rename its entity, as
     /// LibreQuake's `func_door` names itself `door`, and a swap must still find it
     /// (BRIDGE-4.18). `None` when it is in none.
-    pub(crate) fn map_edict(&self, place: MapPlace) -> Option<usize> {
+    #[must_use]
+    pub fn map_edict(&self, place: MapPlace) -> Option<usize> {
         let taken = self.map_entities.0.get(place.0)?.taken?;
         self.taken(taken.edict)
             .filter(|now| now.freetime.to_bits() == taken.freetime.to_bits())

@@ -273,13 +273,15 @@ impl<L: crate::Loader> Workbench<L> {
         mode: GameMode,
     ) -> Result<Vec<EntityIndex>, WorkbenchError> {
         let spawn = self.map_spawn()?;
-        let kept: BTreeSet<usize> = spawn.world(skill, mode, |progs, world| {
+        let kept: BTreeSet<usize> = spawn.world(skill, mode, |_, world| {
             Ok(spawn
                 .places()
                 .iter()
                 .enumerate()
                 .skip(1)
-                .filter(|&(place, _)| world.map_entity(progs, MapPlace::new(place)).is_some())
+                // A spawn function may rename its entity, as id's `func_door` names itself
+                // `door`; it is still kept (BRIDGE-4.18).
+                .filter(|&(place, _)| world.map_edict(MapPlace::new(place)).is_some())
                 .map(|(_, &entity)| entity)
                 .collect())
         })?;

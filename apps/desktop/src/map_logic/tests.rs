@@ -209,6 +209,13 @@ fn every_event_has_its_line() {
             time: 2.0,
             entity: spawned,
             classname: "DelayedUse".to_owned(),
+            by: Some(spawned),
+        },
+        FiredEvent::Removed {
+            time: 2.0,
+            entity: of_map(5, 4),
+            classname: "info_null".to_owned(),
+            by: Some(of_map(2, 1)),
         },
         FiredEvent::Spawned {
             time: 2.0,
@@ -243,6 +250,10 @@ fn every_event_has_its_line() {
                 Some(4)
             ),
             ("2.00  edict 40 (DelayedUse) is removed".to_owned(), None),
+            (
+                "2.00  entity 4 (info_null) is removed by entity 1".to_owned(),
+                Some(4)
+            ),
             ("2.00  edict 40 is spawned (DelayedUse)".to_owned(), None),
             ("2.00  prints \"open\"".to_owned(), None),
             ("2.00  entity 2 plays doors/open.wav".to_owned(), Some(2)),

@@ -2825,13 +2825,18 @@ pub fn fired_line(event: &FiredEvent) -> (String, Option<EntityIndex>) {
             time,
             entity,
             classname,
-        } => (
-            format!(
-                "{time:.2}  {} is removed",
-                fired_name(*entity, Some(classname))
-            ),
-            entity.entity,
-        ),
+            by,
+        } => {
+            let removed = fired_name(*entity, Some(classname));
+            let text = match by.filter(|by| by.edict != entity.edict) {
+                Some(by) => format!(
+                    "{time:.2}  {removed} is removed by {}",
+                    fired_name(by, None)
+                ),
+                None => format!("{time:.2}  {removed} is removed"),
+            };
+            (text, entity.entity)
+        }
         FiredEvent::Spawned {
             time,
             edict,

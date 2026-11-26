@@ -123,6 +123,9 @@ pub enum TraceEvent {
         entity: usize,
         /// The classname it had.
         classname: String,
+        /// `self` when `remove` removed it, the entity itself when it removed itself; `None`
+        /// when it was freed another way.
+        by: Option<usize>,
     },
     /// An entity was spawned (FIRE-2.5).
     Spawned {
@@ -267,6 +270,7 @@ enum Raw {
     Removed {
         time: f32,
         entity: usize,
+        by: Option<usize>,
     },
     Spawned {
         time: f32,
@@ -358,6 +362,10 @@ pub(crate) struct Tracer {
     run_time: f32,
     raw: Vec<Raw>,
     lookup: Option<Lookup>,
+    /// The lookups of the run under way that answered nothing, judged at its end (FIRE-2.4).
+    unanswered: Vec<Lookup>,
+    /// The entities a lookup of the run under way found and answered (FIRE-2.4).
+    answered: BTreeSet<usize>,
     /// The edicts the run under way spawned or removed by a builtin, recorded where it
     /// happened (FIRE-2.5).
     placed: BTreeSet<usize>,
@@ -375,6 +383,8 @@ impl Tracer {
             run_time: 0.0,
             raw: Vec::new(),
             lookup: None,
+            unanswered: Vec::new(),
+            answered: BTreeSet::new(),
             placed: BTreeSet::new(),
             events: Vec::new(),
             slots: Slots::new(),
@@ -396,6 +406,8 @@ impl Tracer {
         self.recording = reached(self.slots.self_global) || reached(self.slots.other_global);
         self.entering = false;
         self.lookup = None;
+        self.unanswered.clear();
+        self.answered.clear();
         self.placed.clear();
         self.run_time = self.time(machine);
     }
@@ -404,6 +416,18 @@ impl Tracer {
     /// from now on (FIRE-2.2).
     pub(crate) fn end_run(&mut self, machine: &mut Machine) {
         self.close_lookup();
+        // FIRE-2.4: an entity answered nothing when no lookup of the run answered it, as a
+        // teleporter's destination is both fired, with no `use`, and read.
+        let mut reported = BTreeSet::new();
+        for lookup in core::mem::take(&mut self.unanswered) {
+            if !self.answered.contains(&lookup.entity) && reported.insert(lookup.entity) {
+                self.raw.push(Raw::Unanswered {
+                    time: lookup.time,
+                    by: lookup.by,
+                    entity: lookup.entity,
+                });
+            }
+        }
         let events = machine.edicts_mut().take_events();
         for event in &events {
             match *event {
@@ -425,6 +449,7 @@ impl Tracer {
                         self.raw.push(Raw::Removed {
                             time: self.run_time,
                             entity: n.index(),
+                            by: None,
                         });
                     }
                     self.affected.remove(&n.index());
@@ -529,6 +554,7 @@ impl Tracer {
                     self.raw.push(Raw::Removed {
                         time: self.time(machine),
                         entity,
+                        by: edict_at(machine, self.slots.self_global),
                     });
                 }
             }
@@ -617,17 +643,16 @@ impl Tracer {
     }
 
     /// The entity last looked up is done with: one whose `use` was read and was none, and of
-    /// which nothing else was read or called, answered nothing (FIRE-2.4).
+    /// which nothing else was read or called, may have answered nothing; the run's end decides
+    /// (FIRE-2.4).
     fn close_lookup(&mut self) {
-        if let Some(lookup) = self.lookup.take()
-            && lookup.no_use
-            && !lookup.answered
-        {
-            self.raw.push(Raw::Unanswered {
-                time: lookup.time,
-                by: lookup.by,
-                entity: lookup.entity,
-            });
+        let Some(lookup) = self.lookup.take() else {
+            return;
+        };
+        if lookup.answered {
+            self.answered.insert(lookup.entity);
+        } else if lookup.no_use {
+            self.unanswered.push(lookup);
         }
     }
 }
@@ -845,10 +870,11 @@ impl World {
                     entity,
                     classname: classname(self, entity),
                 },
-                Raw::Removed { time, entity } => TraceEvent::Removed {
+                Raw::Removed { time, entity, by } => TraceEvent::Removed {
                     time,
                     entity,
                     classname: classnames.remove(&entity).unwrap_or_default(),
+                    by,
                 },
                 Raw::Spawned { time, entity } => TraceEvent::Spawned {
                     time,

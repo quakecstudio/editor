@@ -52,18 +52,23 @@ with `self` the target and `other` the entity firing it ([`../agent-reference/tr
 - **FIRE-2.3** A `find` (BUILTIN-8) whose field is `targetname` is recorded as a lookup: `self`
   then, the name looked for, whether the search began at the world, and the entity found, or
   none when it found the world.
-- **FIRE-2.4** An entity found by a lookup has answered nothing when, before the next lookup or
-  the end of the run, the program read its `use`, which held no function, and read or took the
-  address of no other field of it and entered no function with it as `self`. It is recorded
-  with `self` at the lookup. This is what id's `SUB_UseTargets` does with a target that has no
-  `use` (`if (self.use != SUB_Null) { if (self.use) self.use (); }`); a destination a
-  teleporter looks up and reads, or an entity a `killtarget` looks up and removes, is not one.
+- **FIRE-2.4** An entity found by a lookup has answered nothing in a run when, after some lookup
+  of the run found it and before the next lookup, the program read its `use`, which held no
+  function, and after no lookup of the run that found it did the program read or take the
+  address of another field of it or enter a function with it as `self`. It is recorded once
+  for the run, at the run's end, with `self` and the time at the first such lookup. This is
+  what id's `SUB_UseTargets` does with a target that has no `use` (`if (self.use != SUB_Null)
+  { if (self.use) self.use (); }`). A destination a teleporter looks up and reads is not one,
+  even when the teleporter fired it first: id's `teleport_touch` calls `SUB_UseTargets ()` with
+  its own `target`, the destination, then looks it up again for its origin. An entity a
+  `killtarget` looks up and removes is not one either.
 - **FIRE-2.5** An entity a recorded run spawns with `spawn` or removes with `remove`
   (BUILTIN-8) is recorded where it happens, with the `time` global then, so the trace keeps the
   order of a removal and what the program did after it. One freed or taken any other way in a
   recorded run is recorded after the run's other events, with the `time` global at the run's
   start. A removed entity's classname is the one it last had; a spawned one's is read at the end
-  of the frame.
+  of the frame. A removal by `remove` names `self` then, the entity itself when it removed
+  itself; one freed another way names none.
 - **FIRE-2.6** A `centerprint` in a recorded run is recorded with its text, its strings joined,
   and a `sound` with its entity and its sample.
 - **FIRE-2.7** After the firing's run, and after each frame, each entity reached and still in
@@ -103,13 +108,16 @@ with `self` the target and `other` the entity firing it ([`../agent-reference/tr
 
 - **FIRE-4.1** `map.logic_issues` spawns the open map with the project's program at a skill
   and in a kind of game, as `map.entities_removed_by_skill` does, brings the player into the
-  game, and fires, each in a copy of that world, every entity of the map the game kept that has
+  game, or leaves it out of a map it cannot enter, as one with no player start, and fires, each in a copy of that world, every entity of the map the game kept that has
   a key naming entities to fire (MAP-8.8), by either function (FIRE-1.2). An entity with
   neither function is not fired.
 - **FIRE-4.2** An entity that answered nothing in a trace (FIRE-2.4) is reported once for the
   map, with the entity fired and the entity whose targets they were: firing it does nothing.
-- **FIRE-4.3** An entity removed in a trace whose `targetname` a later lookup of the same trace
-  looks for and does not find is reported: the chain removes what it then fires. A search by an
+- **FIRE-4.3** An entity removed in a trace by another entity, `self` at its `remove` being
+  another entity than it, whose `targetname` a later lookup of the same trace looks for and does
+  not find is reported: the chain removes what it then fires. An entity that removes itself, as
+  id's once-triggers do after firing (`multi_trigger`'s `SUB_Remove`), is meant to be gone, and
+  is not one. A search by an
   entity for the name its own `killtarget` key holds removes rather than fires, and is not one.
 - **FIRE-4.4** An entity whose `use` ran more than `FIRE_LOOP_USES` times in one trace is
   reported: the chain comes back to it. A trace that ended in an error (FIRE-3.4) is reported

@@ -15,8 +15,10 @@
 //!
 //! With `--logic` too, each map is opened with each codebase and its triggers fired as
 //! `map.logic_issues` fires them (L-76, FIRE-4): the issues found are printed by kind and
-//! counted, and a map the codebase's program cannot spawn is listed. Nothing here fails the
-//! check: the corpus is not ours to put right, and the counts are the record of a run.
+//! counted, and a map the codebase's program cannot spawn is listed. A corpus map's issues fail
+//! nothing: the corpus is not ours to put right, and the counts are the record of a run. Four
+//! levels `qs-map-gen` makes are fired too, and any issue in one of them, or one that does not
+//! spawn, fails the check: the generator is ours.
 //!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
@@ -74,6 +76,9 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             maps.push((label, map));
         }
     }
+    if args.logic {
+        compiled.extend(generated_levels()?);
+    }
     let mut ok = true;
     for codebase in &args.codebases {
         ok &= check(root, codebase, args.write, &used)?;
@@ -81,7 +86,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             ok &= check_maps(codebase, &maps)?;
         }
         if args.logic {
-            check_logic(codebase, &compiled)?;
+            ok &= check_logic(codebase, &compiled)?;
         }
     }
     println!(
@@ -266,7 +271,7 @@ fn check_maps(dir: &Path, maps: &[(String, MapFile)]) -> Result<bool, String> {
 /// Fires the triggers of every map with one codebase's program, as `map.logic_issues` does
 /// (FIRE-4), and prints what it found: the issues by kind, each issue, and the maps the
 /// program could not spawn. It is a record, not a verdict.
-fn check_logic(dir: &Path, maps: &[(String, Vec<u8>)]) -> Result<(), String> {
+fn check_logic(dir: &Path, maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
     let mut registry = qs_commands::Registry::new();
     register(&mut registry).map_err(|e| e.to_string())?;
     let config = Config {
@@ -291,8 +296,10 @@ fn fire_maps(
     scratch: &Path,
     dir: &Path,
     maps: &[(String, Vec<u8>)],
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let name = dir.display();
+    // A generated level with an issue, or one that does not spawn, fails the check.
+    let mut ours_ok = true;
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut fired = 0_u64;
     let mut unspawned = Vec::new();
@@ -319,12 +326,20 @@ fn fire_maps(
                             .unwrap_or_default()
                             .to_owned()
                     };
-                    println!("info  {name}: {label}: {}", text("message"));
+                    if label.starts_with(GENERATED) {
+                        ours_ok = false;
+                        println!("FAIL  {name}: {label}: {}", text("message"));
+                    } else {
+                        println!("info  {name}: {label}: {}", text("message"));
+                    }
                     let count = counts.entry(text("kind")).or_default();
                     *count = count.saturating_add(1);
                 }
             }
-            Err(error) => unspawned.push(format!("{label}: {error}")),
+            Err(error) => {
+                ours_ok &= !label.starts_with(GENERATED);
+                unspawned.push(format!("{label}: {error}"));
+            }
         }
     }
     let found: Vec<String> = counts.iter().map(|(k, n)| format!("{n} {k}")).collect();
@@ -344,7 +359,54 @@ fn fire_maps(
             unspawned.join("; ")
         );
     }
-    Ok(())
+    if ours_ok {
+        println!("ok    {name}: no logic issue in the {GENERATED_LEVELS} generated levels");
+    }
+    Ok(ours_ok)
+}
+
+/// The label of a level `qs-map-gen` made, before its seed.
+const GENERATED: &str = "generated-";
+/// How many generated levels `--logic` fires (L-76).
+const GENERATED_LEVELS: u64 = 4;
+/// The textures the generated levels are painted from: names of id's, which the firing does
+/// not read.
+const LEVEL_TEXTURES: &[&str] = &[
+    "tech04_1",
+    "sfloor4_1",
+    "tech01_1",
+    "tech03_1",
+    "adoor01_2",
+    "*water1",
+    "sky1",
+    "trigger",
+];
+
+/// [`GENERATED_LEVELS`] medium levels, seeds 1 and up, each compiled by id's qbsp as
+/// `qs-map-bsp` ports it, labelled with its seed.
+fn generated_levels() -> Result<Vec<(String, Vec<u8>)>, String> {
+    let textures: Vec<String> = LEVEL_TEXTURES
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    let mut levels = Vec::new();
+    for seed in 1..=GENERATED_LEVELS {
+        let level = qs_map_gen::Request {
+            seed,
+            size: qs_map_gen::Size::Medium,
+            textures: &textures,
+            classes: &qs_map_gen::Classes::Any,
+            name: "random",
+        }
+        .generate()
+        .map_err(|e| format!("generated level {seed}: {e}"))?;
+        let bsp = qs_map_bsp::Compiler::default()
+            .compile(&level.map.to_bytes(), None)
+            .map_err(|e| format!("generated level {seed}: {e}"))?
+            .bsp;
+        levels.push((format!("{GENERATED}{seed}"), bsp));
+    }
+    Ok(levels)
 }
 
 /// Misspells the first key of `map` that names a field of four bytes or more, as its last

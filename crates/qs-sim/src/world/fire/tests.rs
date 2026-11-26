@@ -94,8 +94,10 @@ void() clock_use = { self.think = tick; self.nextthink = time + 0.1; };
 void() trigger_clock = { self.use = clock_use; };
 void() teleport_use = {
     local entity t;
+    activator = other;
+    SUB_UseTargets();
     t = find(world, targetname, self.target);
-    other.origin = t.origin;
+    self.oldorigin = t.origin;
 };
 void() trigger_teleport = { self.use = teleport_use; };
 void() PutClientInServer = { self.classname = "player"; self.health = 100; };
@@ -298,7 +300,8 @@ fn a_target_with_no_use_answers_nothing() {
     assert_eq!(unanswered, [(FIRST, FIRST + 1, "info_null")]);
 }
 
-// spec FIRE-2.4: a target with a use, and one looked up and read, are answered
+// spec FIRE-2.4: a target with a use is answered, and so is a teleporter's destination, which id's
+// teleport_touch fires with SUB_UseTargets and then looks up again and reads
 #[test]
 fn a_door_and_a_teleport_destination_are_answered() {
     let door = button_and(&entity("func_door", "0 0 24", "\"targetname\" \"d\"\n"));
