@@ -860,13 +860,14 @@ impl<L: crate::Loader> Workbench<L> {
                 .issues
                 .iter()
                 .map(|issue| EntityProblem {
-                    entity: issue.entity,
+                    entity: Some(issue.entity),
                     line: file
                         .entities
                         .get(issue.entity.get())
                         .map_or(0, qs_map::Entity::line),
                     message: issue.message.clone(),
                     fix: None,
+                    point: None,
                 })
                 .collect();
             self.logic = LogicFound {

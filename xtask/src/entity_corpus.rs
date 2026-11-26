@@ -20,6 +20,12 @@
 //! levels `qs-map-gen` makes are fired too, and any issue in one of them, or one that does not
 //! spawn, fails the check: the generator is ours.
 //!
+//! With `--playable`, each map's BSP is checked as `map.playability` checks it (L-77, MAP-36),
+//! with a player's moves: whether its exit is reached from its start, the keys, weapons, items
+//! and secrets never reached, the places from which the exit no longer is, and the entities the
+//! check could not judge, each printed. A map whose exit is not reached fails the check: the
+//! corpus's maps can all be finished, so the check is wrong about it.
+//!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,10 +35,12 @@ use std::path::{Path, PathBuf};
 use qc_entities::{EntitySchema, MapDiagnosticKind};
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::MapFile;
-use qs_map_edit::MAP_OPEN;
+use qs_map_edit::{EntityIndex, MAP_OPEN};
 use qs_pak::Pak;
 use qs_workbench::entity_classes::PROJECT_ENTITIES;
+use qs_workbench::map_filter::Skill;
 use qs_workbench::map_logic::MAP_LOGIC_ISSUES;
+use qs_workbench::map_playable::{ExitReach, Ground, Moves};
 use qs_workbench::{Config, Dialect, FsLoader, OPEN_PROJECT, Workbench, register};
 
 /// Where the golden files are, under the repository root.
@@ -55,6 +63,9 @@ pub(crate) struct Args {
     /// issues (`map.logic_issues`).
     #[arg(long)]
     logic: bool,
+    /// Also check that each map can be finished (`map.playability`).
+    #[arg(long)]
+    playable: bool,
     /// Each codebase directory.
     #[arg(required = true)]
     codebases: Vec<PathBuf>,
@@ -70,16 +81,19 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 let classname = String::from_utf8_lossy(classname).into_owned();
                 used.entry(classname).or_default().insert(label.clone());
             }
-            if args.logic {
+            if args.logic || args.playable {
                 compiled.push((label.clone(), bsp));
             }
             maps.push((label, map));
         }
     }
+    let mut ok = true;
+    if args.playable {
+        ok &= check_playable(&compiled)?;
+    }
     if args.logic {
         compiled.extend(generated_levels()?);
     }
-    let mut ok = true;
     for codebase in &args.codebases {
         ok &= check(root, codebase, args.write, &used)?;
         if !maps.is_empty() {
@@ -367,6 +381,66 @@ fn fire_maps(
 
 /// The label of a level `qs-map-gen` made, before its seed.
 const GENERATED: &str = "generated-";
+/// Checks that each of `maps` can be finished, as `map.playability` does with a player's moves
+/// (L-77), and prints what each gives; false when a map's exit is not reached.
+fn check_playable(maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
+    let mut ok = true;
+    for (label, bytes) in maps {
+        let bsp = Bsp::read(bytes, BspLoader::default()).map_err(|e| format!("{label}: {e}"))?;
+        let found = Ground::new(&bsp, Moves::Player, Skill::Normal)
+            .and_then(|ground| ground.playability(|n| Some(EntityIndex::new(n))));
+        let found = match found {
+            Ok(found) => found,
+            Err(error) => {
+                println!("info  {label}: not checked: {error}");
+                continue;
+            }
+        };
+        let exit = match found.exit {
+            ExitReach::Reached => "the exit is reached",
+            ExitReach::NoExit => "no exit",
+            ExitReach::NotReached => {
+                ok = false;
+                "FAIL the exit is not reached"
+            }
+        };
+        println!(
+            "{}  {label}: {exit}, {} places; {} unreached, {} traps, {} not judged",
+            if found.exit == ExitReach::NotReached {
+                "FAIL"
+            } else {
+                "ok  "
+            },
+            found.places,
+            found.unreached.len(),
+            found.traps.len(),
+            found.not_judged.len()
+        );
+        for unreached in &found.unreached {
+            let [x, y, z] = unreached.at;
+            println!(
+                "        unreached {:?} {} (entity {}) at {x} {y} {z}",
+                unreached.kind, unreached.classname, unreached.entity
+            );
+        }
+        for trap in &found.traps {
+            let [x, y, z] = trap.at;
+            let ([x0, y0, z0], [x1, y1, z1]) = (trap.min, trap.max);
+            println!("        trap at {x} {y} {z}, over {x0} {y0} {z0} to {x1} {y1} {z1}");
+        }
+        let unjudged: BTreeSet<&str> = found
+            .not_judged
+            .iter()
+            .map(|n| n.classname.as_str())
+            .collect();
+        if !unjudged.is_empty() {
+            let unjudged: Vec<&str> = unjudged.into_iter().collect();
+            println!("        not judged: {}", unjudged.join(", "));
+        }
+    }
+    Ok(ok)
+}
+
 /// How many generated levels `--logic` fires (L-76).
 const GENERATED_LEVELS: u64 = 4;
 /// The textures the generated levels are painted from: names of id's, which the firing does

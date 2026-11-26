@@ -978,10 +978,10 @@ impl MapFile {
         Ok(())
     }
 
-    /// The map without the layers marked to be left out of an export, and the entities in
-    /// them (MAP-9.9).
+    /// The places of the entities an export keeps, in order: all but the layers marked to be
+    /// left out of an export, and the entities in them (MAP-9.9).
     #[must_use]
-    pub fn without_omitted_layers(&self) -> Self {
+    pub fn exported_places(&self) -> Vec<usize> {
         let omitted: Vec<ContainerId> = self
             .entities
             .iter()
@@ -991,14 +991,23 @@ impl MapFile {
                 Some((RoomKind::Group, _)) | None => None,
             })
             .collect();
-        let layers = self.layer_of_each();
+        self.layer_of_each()
+            .into_iter()
+            .enumerate()
+            .filter(|(_, layer)| !layer.is_some_and(|layer| omitted.contains(&layer)))
+            .map(|(place, _)| place)
+            .collect()
+    }
+
+    /// The map without the layers marked to be left out of an export, and the entities in
+    /// them (MAP-9.9).
+    #[must_use]
+    pub fn without_omitted_layers(&self) -> Self {
         let mut out = self.clone();
         out.entities = self
-            .entities
-            .iter()
-            .zip(layers)
-            .filter(|(_, layer)| !layer.is_some_and(|layer| omitted.contains(&layer)))
-            .map(|(entity, _)| entity.clone())
+            .exported_places()
+            .into_iter()
+            .filter_map(|place| self.entities.get(place).cloned())
             .collect();
         out
     }

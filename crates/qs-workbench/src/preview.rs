@@ -29,6 +29,7 @@ use crate::export::{MAP_FILES, MAPS_DIR, asset_files};
 use crate::full_build::{FullBuild, Start};
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
+use crate::map_playable::register_map_playable;
 use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
 use crate::{GameFolders, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
@@ -2600,6 +2601,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(MapChooseProfile)?;
     registry.register(MapProfiles)?;
     registry.register(MapRunProfile)?;
+    register_map_playable(registry)?;
     registry.register(SetFieldCommand)?;
     registry.register(BreakpointCommand)?;
     registry.register(ActCommand::<ConsoleAct>(core::marker::PhantomData))?;

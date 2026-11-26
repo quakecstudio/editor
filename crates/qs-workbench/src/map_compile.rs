@@ -39,6 +39,9 @@ pub const MAP_PLAY_FROM_HERE: &str = "map.play_from_here";
 /// The id of `map.portals`.
 pub const MAP_PORTALS: &str = "map.portals";
 
+/// The dialect the open map is compiled in: ericw-tools', as the modder's own tools compile it.
+pub(crate) const COMPILE_DIALECT: qs_map_bsp::Dialect = qs_map_bsp::Dialect::Extended;
+
 impl<L: crate::Loader> Workbench<L> {
     /// The open map compiled in memory, its WADs found in the project, beside the map or in
     /// the game at `game`; its report, kept with the map; and the map's path. With `region`
@@ -74,7 +77,7 @@ impl<L: crate::Loader> Workbench<L> {
                 .map_err(WorkbenchError::RegionSeal)?;
         }
         let text = file.to_bytes();
-        let compiler = Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
+        let compiler = Compiler::default().with_dialect(COMPILE_DIALECT);
         let failed = |error| WorkbenchError::MapCompile { error };
         // The world's `_wad` or `wad`, split at `;` as the texture browser and ericw-tools read
         // it (MAP-6.3). The compiler takes one WAD: one found is passed as it is; several are

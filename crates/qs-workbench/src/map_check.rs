@@ -97,13 +97,20 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
     }
 
     fn entity_check(&mut self) -> Option<EntityCheck> {
-        let schema = self.entity_schema().ok()?;
+        // L-77: what `map.playability` last found, while the map is the same; it needs no
+        // project.
+        let playable = self.playable.clone();
+        let Ok(schema) = self.entity_schema() else {
+            return Some(Box::new(move |map| playable.problems(&map.to_bytes())));
+        };
         // FIRE-5.3: what `map.logic_issues` last found, while the map and the sources are the same.
         let logic = self.logic.clone();
         let sources = self.source_key();
         Some(Box::new(move |map| {
+            let text = map.to_bytes();
             let mut problems = entity_problems(&schema, map);
-            problems.extend(logic.problems(&map.to_bytes(), sources));
+            problems.extend(logic.problems(&text, sources));
+            problems.extend(playable.problems(&text));
             problems
         }))
     }
@@ -146,10 +153,11 @@ fn entity_problems(schema: &EntitySchema, map: &MapFile) -> Vec<EntityProblem> {
                 | MapDiagnosticKind::Untargeted { .. } => None,
             };
             EntityProblem {
-                entity,
+                entity: Some(entity),
                 line: d.line,
                 message: d.kind.to_string(),
                 fix,
+                point: None,
             }
         })
         .collect()

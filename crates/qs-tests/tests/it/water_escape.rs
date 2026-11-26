@@ -134,7 +134,7 @@ void() PlayerPreThink =
 ";
 
 /// The progs of [`SWIMMER`] after id's system definitions.
-fn progs() -> Vec<u8> {
+pub(crate) fn progs() -> Vec<u8> {
     let files = [
         ("defs.qc", system_defs()),
         ("player.qc", SWIMMER.to_owned()),
@@ -154,7 +154,7 @@ fn progs() -> Vec<u8> {
     qc_progs::write(&compiled.progs).unwrap()
 }
 
-fn surface(texture: &str) -> Surface {
+pub(crate) fn surface(texture: &str) -> Surface {
     Surface {
         texture: texture.as_bytes().to_vec(),
         texdef: TexDef::Standard {

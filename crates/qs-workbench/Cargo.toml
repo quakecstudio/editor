@@ -30,6 +30,8 @@ qs-map = { workspace = true }
 # Map editing, the commands that need no QuakeC (P6-40); the workbench gives it the project
 # and the game through its seam.
 qs-map-edit = { workspace = true }
+# map.playability: how high above a liquid a swimmer climbs out (CLIMB_OUT, L-74).
+qs-map-gen = { workspace = true }
 qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
 # map.run_profile: vis in a compile profile (P6-20).

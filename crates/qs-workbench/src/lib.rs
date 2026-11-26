@@ -28,6 +28,7 @@ pub mod map_check;
 pub mod map_compile;
 pub mod map_filter;
 pub mod map_logic;
+pub mod map_playable;
 pub mod map_profile;
 pub mod models;
 pub mod next_edit;
@@ -369,6 +370,8 @@ pub struct Workbench<L> {
     opened_paths: Option<open_paths::PathsOpened>,
     /// The issues `map.logic_issues` last found, which `map.issues` lists (FIRE-5.3).
     logic: map_logic::LogicFound,
+    /// What `map.playability` last found, for `map.issues` (L-77).
+    playable: map_playable::PlayFound,
     /// The world the open `.map` was last compiled to for spawning (FIRE-5.4).
     spawn_world: map_filter::SpawnWorld,
 }
@@ -398,6 +401,7 @@ impl<L: Loader> Workbench<L> {
             profile: None,
             opened_paths: None,
             logic: map_logic::LogicFound::default(),
+            playable: map_playable::PlayFound::default(),
             spawn_world: map_filter::SpawnWorld::default(),
         }
     }
@@ -850,6 +854,11 @@ pub enum WorkbenchError {
         /// The entity.
         entity: EntityIndex,
     },
+    /// The open map's playability could not be checked (L-77).
+    Playability {
+        /// Why.
+        error: map_playable::PlayError,
+    },
     /// The entity cannot be fired (FIRE-1.3).
     NotFired {
         /// The entity.
@@ -940,6 +949,7 @@ impl fmt::Display for WorkbenchError {
             Self::NotFired { entity, error } => {
                 write!(f, "entity {} cannot be fired: {error}", entity.get())
             }
+            Self::Playability { error } => write!(f, "the map cannot be checked: {error}"),
             Self::MapEdit(error) => error.fmt(f),
             Self::NoRegion => f.write_str("the region has no volume"),
             Self::NotInRoom { entity } => write!(
@@ -991,6 +1001,7 @@ impl Error for WorkbenchError {
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
             Self::NotFired { error, .. } => Some(error),
+            Self::Playability { error } => Some(error),
             Self::NotSpawned { .. } => None,
             Self::NoRegion
             | Self::NotInRoom { .. }

@@ -10,6 +10,7 @@ use qs_map::qbsp::{QbspMap, load_map_file};
 use qs_wad::Wad;
 
 use crate::brush::BrushSet;
+use crate::extended::brush::is_world_brush_entity;
 use crate::extended::process as extended;
 
 use crate::math::{Vec3, each};
@@ -256,6 +257,23 @@ impl Compiler {
     #[must_use]
     pub fn with_dialect(self, dialect: Dialect) -> Self {
         Self { dialect, ..self }
+    }
+
+    /// The places in `file` of the entities a compile of it writes to the BSP's entity lump,
+    /// in the lump's order: each with pairs (MAP-2.6), and in the extended dialect but the
+    /// world brush entities, whose brushes the world takes (QBSP-15.24, QBSP-15.50).
+    #[must_use]
+    pub fn lump_places(self, file: &MapFile) -> Vec<usize> {
+        file.entities
+            .iter()
+            .enumerate()
+            .filter(|(_, entity)| entity.pairs().next().is_some())
+            .filter(|(_, entity)| match self.dialect {
+                Dialect::Id => true,
+                Dialect::Extended => !is_world_brush_entity(entity),
+            })
+            .map(|(place, _)| place)
+            .collect()
     }
 
     /// The WAD paths the map's world names (MAP-6.3), relative to the game directory, which the

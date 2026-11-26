@@ -44,6 +44,16 @@ pub enum Skill {
 }
 
 impl Skill {
+    /// The skill as the engine's inhibition test reads it, 0 to 3 (EDICT-8.4).
+    pub(crate) const fn level(self) -> i32 {
+        match self {
+            Self::Easy => 0,
+            Self::Normal => 1,
+            Self::Hard => 2,
+            Self::Nightmare => 3,
+        }
+    }
+
     /// The value of the `skill` setting.
     const fn setting(self) -> &'static str {
         match self {

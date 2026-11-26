@@ -96,7 +96,7 @@ fn ogre_check(map: &MapFile) -> Vec<EntityProblem> {
         let entity_index = EntityIndex::new(place);
         if let Some(pair) = entity.pairs().find(|pair| pair.key() == b"sped") {
             problems.push(EntityProblem {
-                entity: entity_index,
+                entity: Some(entity_index),
                 line: pair.line(),
                 message: "sped is not a field; did you mean speed?".to_owned(),
                 fix: Some(QuickFix::RenameKey {
@@ -104,17 +104,19 @@ fn ogre_check(map: &MapFile) -> Vec<EntityProblem> {
                     from: "sped".to_owned(),
                     to: "speed".to_owned(),
                 }),
+                point: None,
             });
         }
         if entity.classname() == Some(b"monster_orge".as_slice()) {
             problems.push(EntityProblem {
-                entity: entity_index,
+                entity: Some(entity_index),
                 line: entity.line(),
                 message: "no spawn function monster_orge; did you mean monster_ogre?".to_owned(),
                 fix: Some(QuickFix::SetClassname {
                     entity: entity_index,
                     classname: "monster_ogre".to_owned(),
                 }),
+                point: None,
             });
         }
     }

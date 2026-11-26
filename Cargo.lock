@@ -4130,6 +4130,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-map-edit",
+ "qs-map-gen",
  "qs-map-light",
  "qs-map-vis",
  "qs-mdl",
