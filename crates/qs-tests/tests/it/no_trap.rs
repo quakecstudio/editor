@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The no-trap check of a generated level (L-74), the shipped check of
-//! `qs_workbench::map_playable` with the generator's moves: from every place and state a player
+//! `qs_map_gen::playable` with the generator's moves: from every place and state a player
 //! reaches from the start, the exit can still be reached, and walking reaches no lava. The
 //! generator's moves take no jump, so a ledge or a rail the player could jump over counts as a
 //! wall, and a level that passes holds no trap a jump would hide.
@@ -17,9 +17,8 @@
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Item, MapFile, Surface, TexDef};
+use qs_map_gen::playable::{Ground, Moves, Skill, Trap};
 use qs_map_gen::{Classes, Level, LockKind, Request, Size};
-use qs_workbench::map_filter::Skill;
-use qs_workbench::map_playable::{Ground, Moves, Trap};
 
 use crate::water_escape::{DEPTH, POOL, pool};
 

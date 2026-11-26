@@ -36,11 +36,10 @@ use qc_entities::{EntitySchema, MapDiagnosticKind};
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::MapFile;
 use qs_map_edit::{EntityIndex, MAP_OPEN};
+use qs_map_gen::playable::{ExitReach, Ground, Moves, Skill};
 use qs_pak::Pak;
 use qs_workbench::entity_classes::PROJECT_ENTITIES;
-use qs_workbench::map_filter::Skill;
 use qs_workbench::map_logic::MAP_LOGIC_ISSUES;
-use qs_workbench::map_playable::{ExitReach, Ground, Moves};
 use qs_workbench::{Config, Dialect, FsLoader, OPEN_PROJECT, Workbench, register};
 
 /// Where the golden files are, under the repository root.

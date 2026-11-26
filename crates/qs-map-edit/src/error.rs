@@ -3,6 +3,7 @@
 //! Why a map command could not open, change or save the open map.
 
 use core::fmt;
+use qs_map_gen::playable::{PlayError, Trap};
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -243,6 +244,23 @@ pub enum MapEditError {
         /// Why.
         error: qs_map_gen::GenError,
     },
+    /// A generated level did not compile, to be checked (`map.generate`).
+    LevelCompile {
+        /// Why.
+        error: qs_map_bsp::CompileError,
+    },
+    /// A generated level could not be checked (`map.generate`, L-77).
+    LevelUnchecked {
+        /// Why.
+        error: PlayError,
+    },
+    /// The level of every seed tried holds a trap (`map.generate`, L-77).
+    Trapped {
+        /// The seed asked for, the first tried.
+        seed: u64,
+        /// The trap in the last level tried.
+        trap: Trap,
+    },
 }
 
 impl fmt::Display for MapEditError {
@@ -356,6 +374,17 @@ impl fmt::Display for MapEditError {
                 "no game was found to take textures from: choose the folder of the game's files",
             ),
             Self::Generate { error } => write!(f, "no level was made: {error}"),
+            Self::LevelCompile { error } => {
+                write!(f, "the level made does not compile, to be checked: {error}")
+            }
+            Self::LevelUnchecked { error } => {
+                write!(f, "the level made could not be checked: {error}")
+            }
+            Self::Trapped { seed, trap } => write!(
+                f,
+                "no level was made: the levels of seed {seed} and the seeds after it hold a \
+                 trap ({trap})"
+            ),
         }
     }
 }
@@ -375,7 +404,10 @@ impl Error for MapEditError {
             Self::Shape { error } => Some(error),
             Self::Link { error } => Some(error),
             Self::Generate { error } => Some(error),
+            Self::LevelCompile { error } => Some(error),
+            Self::LevelUnchecked { error } => Some(error),
             Self::NoFile { .. }
+            | Self::Trapped { .. }
             | Self::Exists { .. }
             | Self::NotNewMap { .. }
             | Self::NoProject

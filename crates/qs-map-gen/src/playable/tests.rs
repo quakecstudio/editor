@@ -14,11 +14,7 @@
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Entity, Item, MapFile, Surface, TexDef};
 
-use qs_map_edit::EntityIndex;
-
-use crate::map_filter::Skill;
-
-use super::{ExitReach, Ground, JUMP, Moves, PlayError, Playability, Sought};
+use super::{ExitReach, Ground, JUMP, Moves, PlayError, Playability, Skill, Sought};
 
 /// The room's half length, half width and height.
 const LONG: f64 = 512.0;
@@ -60,8 +56,8 @@ fn entity(classname: &str, pairs: &[(&str, &str)], brushes: Vec<Brush>) -> Entit
     clippy::unnecessary_wraps,
     reason = "the check names entities through an Option"
 )]
-fn lump(place: usize) -> Option<EntityIndex> {
-    Some(EntityIndex::new(place))
+fn lump(place: usize) -> Option<usize> {
+    Some(place)
 }
 
 /// What a test builds in the room.
@@ -125,7 +121,7 @@ impl Room {
     }
 
     /// The map compiled and checked with `moves`.
-    fn checked(self, moves: Moves) -> Result<Playability, PlayError> {
+    fn checked(self, moves: Moves) -> Result<Playability<usize>, PlayError> {
         let compiled = qs_map_bsp::Compiler::default()
             .compile(&self.map(), None)
             .unwrap();
@@ -161,7 +157,7 @@ fn an_open_room_can_be_finished() {
     assert_eq!(found.traps, Vec::new());
     assert_eq!(found.unreached, Vec::new());
     assert_eq!(found.not_judged, Vec::new());
-    assert_eq!(found.exits, vec![EntityIndex::new(2)]);
+    assert_eq!(found.exits, vec![2]);
 }
 
 // No spec statement: L-77, an exit behind a door whose key is behind that door is not reached,
@@ -247,11 +243,11 @@ fn a_secret_with_no_way_in_is_never_reached() {
     assert_eq!(found.exit, ExitReach::Reached);
     assert_eq!(found.unreached.len(), 1, "{:?}", found.unreached);
     assert_eq!(found.unreached[0].kind, Sought::Secret);
-    assert_eq!(found.unreached[0].entity, EntityIndex::new(3));
+    assert_eq!(found.unreached[0].entity, 3);
 }
 
 /// The room with a ledge `height` high along its north side and a health box on it.
-fn ledge(height: f64, moves: Moves) -> Playability {
+fn ledge(height: f64, moves: Moves) -> Playability<usize> {
     let ledge = vec![cuboid([100.0, 32.0, 0.0], [300.0, WIDE, height])];
     let health = entity(
         "item_health",
@@ -281,7 +277,7 @@ fn an_item_above_the_jump_is_never_reached() {
 }
 
 /// The room with a pit `depth` deep beside the way to the exit, which it does not cross.
-fn pit(depth: f64, moves: Moves) -> Playability {
+fn pit(depth: f64, moves: Moves) -> Playability<usize> {
     let bottom = -HIGH;
     let floor = vec![
         cuboid([-LONG, -WIDE, bottom], [LONG, WIDE, -depth]),
@@ -335,7 +331,7 @@ fn a_class_the_check_does_not_know_is_not_judged() {
     let names: Vec<(usize, &str)> = found
         .not_judged
         .iter()
-        .map(|n| (n.entity.get(), n.classname.as_str()))
+        .map(|n| (n.entity, n.classname.as_str()))
         .collect();
     assert_eq!(names, vec![(3, "func_train"), (4, "func_mover")]);
 }

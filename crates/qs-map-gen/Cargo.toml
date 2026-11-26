@@ -11,6 +11,17 @@ publish.workspace = true
 [dependencies]
 # The map document and its brush operations.
 qs-map = { workspace = true }
+# The playability check (L-77): a compiled map's hulls and entity lump, read as the game reads
+# them, the engine's collision and its skill inhibition (EDICT-8.4).
+qs-bsp = { workspace = true }
+qs-sim = { workspace = true }
+# map.playability answers the check's own findings.
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+
+[dev-dependencies]
+# The playability check's tests compile the maps they build for each finding.
+qs-map-bsp = { workspace = true }
 
 [lints]
 workspace = true

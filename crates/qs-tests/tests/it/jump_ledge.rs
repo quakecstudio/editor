@@ -8,8 +8,8 @@
 //! `self.velocity_z = self.velocity_z + 270` lifts a player on the ground, run in `qs-sim` on
 //! ledges compiled by `qs-map-bsp` at each height, the player running into the ledge with jump
 //! held; and how wide a gap a running jump clears, the player running at it and jumping at its
-//! edge. The playability check of a map (`qs_workbench::map_playable`) takes a player's jump as
-//! [`qs_workbench::map_playable::JUMP`] and [`qs_workbench::map_playable::LEAP`].
+//! edge. The playability check of a map (`qs_map_gen::playable`) takes a player's jump as
+//! [`qs_map_gen::playable::JUMP`] and [`qs_map_gen::playable::LEAP`].
 
 #![expect(
     clippy::unwrap_used,
@@ -22,8 +22,8 @@ use std::rc::Rc;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::{Brush, Item, MapFile};
+use qs_map_gen::playable::{JUMP, LEAP};
 use qs_sim::{LoadOptions, UserCmd, World};
-use qs_workbench::map_playable::{JUMP, LEAP};
 
 use crate::shape_stairs::{EYE, FRAME};
 use crate::water_escape::{progs, surface};

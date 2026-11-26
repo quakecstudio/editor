@@ -16,6 +16,7 @@ mod layout;
 mod mass;
 mod mission;
 mod passage;
+pub mod playable;
 mod populate;
 mod rng;
 mod rooms;

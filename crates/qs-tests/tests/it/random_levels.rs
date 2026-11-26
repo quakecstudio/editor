@@ -20,8 +20,7 @@ use qs_map::{Diagnostic, DiagnosticKind};
 use qs_map_gen::{Classes, Level, Request, Size};
 use qs_sim::collision::{Hull, HullSet};
 
-use qs_workbench::map_filter::Skill;
-use qs_workbench::map_playable::{Ground, Moves};
+use qs_map_gen::playable::{Ground, Moves, Skill};
 
 /// `CONTENTS_SOLID` (BSP-10.2).
 const SOLID: i32 = -2;

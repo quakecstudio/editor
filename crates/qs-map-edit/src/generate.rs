@@ -8,8 +8,10 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, Outcome};
-use qs_map_gen::{Classes, LevelForm, LockKind, Request, Size};
+use qs_map_gen::playable::{Ground, Moves, PlayError, Skill, Trap};
+use qs_map_gen::{Classes, Level, LevelForm, LockKind, Request, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -128,7 +130,8 @@ impl From<LevelForm> for FormMade {
 pub struct MapGenerated {
     /// The map made, which is now the open map.
     pub path: PathBuf,
-    /// The seed it was made from.
+    /// The seed it was made from: the one asked for, or the first after it whose level the
+    /// playability check finds no trap in.
     pub seed: u64,
     /// The theme its textures are of.
     pub theme: String,
@@ -169,7 +172,9 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
         shapes on several floors joined by passages, stairs and doors, from a start to an exit, \
         with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, \
         lights, monsters and weapons, textured from the game's own levels, and no trap a player \
-        cannot leave. One seed gives one level.";
+        cannot leave: each level is compiled and checked as map.playability checks a map, with \
+        no jump, and a seed whose level fails gives way to the seeds after it. One seed gives \
+        one level.";
     type Params = GenerateParams;
     type Output = MapGenerated;
     type Error = MapEditError;
@@ -212,15 +217,17 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
         } else {
             Classes::Any
         };
-        let level = Request {
-            seed,
-            size: size.into(),
-            textures: &textures,
-            classes: &classes,
-            name: &name,
-        }
-        .generate()
-        .map_err(|error| MapEditError::Generate { error })?;
+        let (seed, level) = checked_level(seed, |seed| {
+            Request {
+                seed,
+                size: size.into(),
+                textures: &textures,
+                classes: &classes,
+                name: &name,
+            }
+            .generate()
+            .map_err(|error| MapEditError::Generate { error })
+        })?;
         let opened = write_new_map(context, path, &level.map)?;
         Ok(Outcome::outside_history(MapGenerated {
             path: opened.path,
@@ -254,6 +261,53 @@ impl<C: HasMap + 'static> Command<C> for MapGenerate {
             entities: opened.entities,
         }))
     }
+}
+
+/// How many seeds, from the one asked for, are tried for a level the check finds no trap in.
+const SEEDS_TRIED: u64 = 8;
+
+/// The first level `make` makes from `seed` or a seed after it, at most [`SEEDS_TRIED`], in which
+/// the playability check (L-77) with the generator's moves finds no trap between its first room
+/// and its exit, compiled as `qs-map-bsp` compiles it; and its seed.
+fn checked_level(
+    seed: u64,
+    mut make: impl FnMut(u64) -> Result<Level, MapEditError>,
+) -> Result<(u64, Level), MapEditError> {
+    let mut last = Trap::NoExit;
+    for tried in 0..SEEDS_TRIED {
+        let at = seed.wrapping_add(tried);
+        let level = make(at)?;
+        let compiled = qs_map_bsp::Compiler::default()
+            .compile(&level.map.to_bytes(), None)
+            .map_err(|error| MapEditError::LevelCompile { error })?;
+        let bsp = Bsp::read(&compiled.bsp, BspLoader::default()).map_err(|error| {
+            MapEditError::LevelUnchecked {
+                error: PlayError::Lump(error.to_string()),
+            }
+        })?;
+        let ground = Ground::new(&bsp, Moves::Generator, Skill::Normal)
+            .map_err(|error| MapEditError::LevelUnchecked { error })?;
+        let stand = |room: usize| {
+            level
+                .rooms
+                .get(room)
+                .map_or([0.0; 3], |room| room.stand.map(single))
+        };
+        match ground.check(stand(0), stand(level.exit)) {
+            Ok(()) => return Ok((at, level)),
+            Err(trap) => last = trap,
+        }
+    }
+    Err(MapEditError::Trapped { seed, trap: last })
+}
+
+/// A position of the map, as the game's single precision holds it.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the game holds positions in single precision"
+)]
+const fn single(value: f64) -> f32 {
+    value as f32
 }
 
 /// The seed of a level asked for with none at the time `since` the epoch: its seconds mixed

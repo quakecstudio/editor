@@ -28,42 +28,7 @@ use qs_map_edit::{BSP_EXTENSION, EntityIndex, MapSource};
 /// The id of `map.entities_removed_by_skill`.
 pub const MAP_FILTER: &str = "map.entities_removed_by_skill";
 
-/// The skill a map is spawned at, the `skill` setting (DIFF-3.2).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Skill {
-    /// 0.
-    Easy,
-    /// 1, the game's own default.
-    #[default]
-    Normal,
-    /// 2.
-    Hard,
-    /// 3.
-    Nightmare,
-}
-
-impl Skill {
-    /// The skill as the engine's inhibition test reads it, 0 to 3 (EDICT-8.4).
-    pub(crate) const fn level(self) -> i32 {
-        match self {
-            Self::Easy => 0,
-            Self::Normal => 1,
-            Self::Hard => 2,
-            Self::Nightmare => 3,
-        }
-    }
-
-    /// The value of the `skill` setting.
-    const fn setting(self) -> &'static str {
-        match self {
-            Self::Easy => "0",
-            Self::Normal => "1",
-            Self::Hard => "2",
-            Self::Nightmare => "3",
-        }
-    }
-}
+pub use qs_map_gen::playable::Skill;
 
 /// The kind of game a map is spawned for: the `coop` and `deathmatch` settings.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
