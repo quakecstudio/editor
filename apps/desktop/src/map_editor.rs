@@ -1772,12 +1772,7 @@ impl MapEditor {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(keys.classname.clone().unwrap_or_default()).strong());
             // L-76: fire the one entity selected and see what its targets do.
-            if also.is_empty()
-                && ui
-                    .small_button(Text::MapFire.get())
-                    .on_hover_text(Text::MapFireHint.get())
-                    .clicked()
-            {
+            if also.is_empty() && Icon::Trigger.tool(ui, Text::MapFire).clicked() {
                 actions.push(MapAction::Fire(entity));
             }
         });
