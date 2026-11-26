@@ -4059,6 +4059,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-update"
+version = "2026.11.3"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracing",
+ "ureq",
+]
+
+[[package]]
 name = "qs-vfs"
 version = "2026.11.3"
 dependencies = [
@@ -4216,6 +4226,7 @@ dependencies = [
  "qs-render",
  "qs-settings",
  "qs-templates",
+ "qs-update",
  "qs-vfs",
  "qs-wad",
  "qs-workbench",

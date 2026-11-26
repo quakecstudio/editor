@@ -57,6 +57,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
 | [`help.about`](#helpabout) | Opens the About window: the app's name, version, copyright and license, and links to its site and its source. |
+| [`help.check_for_updates`](#helpcheck_for_updates) | Looks for a later release of the app, with one request for the release feed, and says what it found: the version, and how to update with what installed this one. Nothing is downloaded or installed. |
 | [`help.report_issue`](#helpreport_issue) | Opens the page where an issue with the app is reported, in the browser. |
 | [`help.user_guide`](#helpuser_guide) | Opens the user guide on the website, in the browser. |
 | [`map.accept_hunks`](#mapaccept_hunks) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
@@ -1747,6 +1748,22 @@ Parameters:
 ## `help.about`
 
 Opens the About window: the app's name, version, copyright and license, and links to its site and its source.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `help.check_for_updates`
+
+Looks for a later release of the app, with one request for the release feed, and says what it found: the version, and how to update with what installed this one. Nothing is downloaded or installed.
 
 Parameters:
 
@@ -9196,6 +9213,16 @@ Parameters:
           "const": "editor.key_mode",
           "description": "`editor.key_mode`.",
           "type": "string"
+        },
+        {
+          "const": "updates.check",
+          "description": "`updates.check`.",
+          "type": "string"
+        },
+        {
+          "const": "updates.skip_version",
+          "description": "`updates.skip_version`.",
+          "type": "string"
         }
       ]
     }
@@ -9310,6 +9337,16 @@ Parameters:
           "const": "editor.key_mode",
           "description": "`editor.key_mode`.",
           "type": "string"
+        },
+        {
+          "const": "updates.check",
+          "description": "`updates.check`.",
+          "type": "string"
+        },
+        {
+          "const": "updates.skip_version",
+          "description": "`updates.skip_version`.",
+          "type": "string"
         }
       ]
     }
@@ -9396,6 +9433,16 @@ Parameters:
         {
           "const": "editor.key_mode",
           "description": "`editor.key_mode`.",
+          "type": "string"
+        },
+        {
+          "const": "updates.check",
+          "description": "`updates.check`.",
+          "type": "string"
+        },
+        {
+          "const": "updates.skip_version",
+          "description": "`updates.skip_version`.",
           "type": "string"
         }
       ]

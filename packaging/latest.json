@@ -1,0 +1,4 @@
+{
+  "version": "@VERSION@",
+  "url": "https://github.com/quakecstudio/editor/releases/tag/v@VERSION@"
+}

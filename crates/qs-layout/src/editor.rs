@@ -52,6 +52,8 @@ pub const ABOUT: &str = "help.about";
 pub const USER_GUIDE: &str = "help.user_guide";
 /// The id of the command that opens the page where an issue is reported (P7-17).
 pub const REPORT_ISSUE: &str = "help.report_issue";
+/// The id of the command that looks for a later release of the app (P4-19).
+pub const CHECK_FOR_UPDATES: &str = "help.check_for_updates";
 /// The id of the command that opens the user's settings file in the editor (P7-17).
 pub const OPEN_SETTINGS: &str = "settings.open";
 /// The id of the command that splits the editor into two panes side by side.
@@ -163,6 +165,8 @@ pub enum EditorRequest {
     ReportIssue,
     /// Open the user's settings file in the editor.
     Settings,
+    /// Look for a later release of the app, and say what was found (P4-19).
+    CheckForUpdates,
 }
 
 /// Asks the window for `request`.
@@ -274,6 +278,14 @@ asking!(
     REPORT_ISSUE,
     EditorRequest::ReportIssue,
     "Opens the page where an issue with the app is reported, in the browser."
+);
+asking!(
+    CheckForUpdatesCommand,
+    CHECK_FOR_UPDATES,
+    EditorRequest::CheckForUpdates,
+    "Looks for a later release of the app, with one request for the release feed, and says \
+     what it found: the version, and how to update with what installed this one. Nothing is \
+     downloaded or installed."
 );
 asking!(
     SettingsCommand,
@@ -515,6 +527,7 @@ pub(crate) fn register<C: HasLayout + 'static>(
     registry.register(Asking::<AboutCommand>(std::marker::PhantomData))?;
     registry.register(Asking::<UserGuideCommand>(std::marker::PhantomData))?;
     registry.register(Asking::<ReportIssueCommand>(std::marker::PhantomData))?;
+    registry.register(Asking::<CheckForUpdatesCommand>(std::marker::PhantomData))?;
     registry.register(Asking::<SettingsCommand>(std::marker::PhantomData))?;
     registry.register(GoToLine)?;
     registry.register(ToggleSoftWrap)?;
@@ -563,6 +576,7 @@ mod tests {
             (super::ABOUT, EditorRequest::About),
             (super::USER_GUIDE, EditorRequest::UserGuide),
             (super::REPORT_ISSUE, EditorRequest::ReportIssue),
+            (super::CHECK_FOR_UPDATES, EditorRequest::CheckForUpdates),
             (super::OPEN_SETTINGS, EditorRequest::Settings),
         ] {
             let before = s.context().editor_requests;

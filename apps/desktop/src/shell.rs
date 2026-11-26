@@ -91,6 +91,7 @@ use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation, explain_task, panel_button, review_waiting};
 use crate::theme::{Theme, Token, semibold};
+use crate::update::{Asked, UpdateNotice};
 use crate::welcome::{self, WelcomeAction};
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
@@ -192,6 +193,8 @@ enum StatusAsk {
     Review,
     /// Show the Problems panel, which lists what the counts count (L-44).
     Problems,
+    /// Show the later release and how to get it (P4-19).
+    Update,
 }
 
 /// The tab shown in the centre.
@@ -292,6 +295,8 @@ pub struct Shell {
     pub(crate) palette: Palette,
     /// The About window (P7-17).
     about: AboutWindow,
+    /// The notice of a later release, and its window (P4-19).
+    pub(crate) update: UpdateNotice,
     /// The command line above the status bar (UI-23).
     pub(crate) command_line: CommandLineView,
     /// The file finder.
@@ -377,6 +382,7 @@ impl Shell {
             drawn: [None; 3],
             palette: Palette::default(),
             about: AboutWindow::default(),
+            update: UpdateNotice::new(),
             command_line: CommandLineView::default(),
             finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
@@ -563,6 +569,7 @@ impl Shell {
             Some(qs_settings::KeyMode::Vim) => KeyMode::Vim,
             Some(qs_settings::KeyMode::Standard) | None => KeyMode::Standard,
         };
+        self.update.read_settings(settings.as_ref(), &file);
         let saved = settings.and_then(|settings| settings.game.folder);
         self.features.agent.load_external(&file);
         self.settings_file = Some(file);
@@ -572,6 +579,12 @@ impl Shell {
                 tracing::info!("the saved game folder no longer holds a game");
             }
         }
+    }
+
+    /// Starts the background update check, its state kept in `state_file` (P4-19): with
+    /// `updates.check` unset or `off` in the settings read before, it does nothing.
+    pub fn start_update_check(&mut self, state_file: PathBuf, ctx: &egui::Context) {
+        self.update.start(state_file, ctx);
     }
 
     /// Puts the app's menu in the window, on the toolbar, for the systems with no menu bar of
@@ -1070,6 +1083,7 @@ impl Shell {
                 return ctx.open_url(egui::OpenUrl::new_tab(about::NEW_ISSUE));
             }
             EditorRequest::Settings => return self.open_settings(),
+            EditorRequest::CheckForUpdates => return self.update.check(Asked::Person, ctx),
             EditorRequest::Fold
             | EditorRequest::Unfold
             | EditorRequest::FoldAll
@@ -1098,7 +1112,8 @@ impl Shell {
             | EditorRequest::About
             | EditorRequest::UserGuide
             | EditorRequest::ReportIssue
-            | EditorRequest::Settings => {}
+            | EditorRequest::Settings
+            | EditorRequest::CheckForUpdates => {}
         }
         // A fold over the caret puts it on the fold's first line, as VS Code does, so the
         // fold is not undone by the caret in it.
@@ -1463,6 +1478,8 @@ impl Shell {
         self.game_guide(ui);
         self.new_project_dialog(ui);
         self.about.show(ui.ctx(), &self.theme);
+        self.update.poll();
+        self.update.show(ui.ctx(), &self.theme);
         let asked = self.status_bar(ui);
         self.answer_status(asked);
         self.follow_review();
@@ -2117,6 +2134,7 @@ impl Shell {
                 };
                 let _: Option<Docks> = self.run(qs_layout::SHOW_PANEL, &params);
             }
+            Some(StatusAsk::Update) => self.update.open(),
             None => {}
         }
     }
@@ -2193,6 +2211,9 @@ impl Shell {
                             ui.add(said(RichText::new(why).small().color(error)));
                         }
                         None => {}
+                    }
+                    if self.update.status_item(ui, theme) {
+                        asked = Some(StatusAsk::Update);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         for dock in [Panel::Right, Panel::Bottom] {

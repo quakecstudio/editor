@@ -53,6 +53,7 @@ qs-render = { workspace = true }
 # The user's settings file, which keeps the chosen game folder (P3-44).
 qs-settings = { workspace = true }
 qs-templates = { workspace = true }
+qs-update = { workspace = true }
 qs-vfs = { workspace = true }
 qs-workbench = { workspace = true }
 qs-map-edit = { workspace = true }

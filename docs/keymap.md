@@ -193,6 +193,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `git.switch` | needs a value | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | `git.unstage` | needs a value | Unstages a file, or one hunk of its staged changes. |
 | `help.about` | run from a menu | Opens the About window: the app's name, version, copyright and license, and links to its site and its source. |
+| `help.check_for_updates` | run from a menu | Looks for a later release of the app, with one request for the release feed, and says what it found: the version, and how to update with what installed this one. Nothing is downloaded or installed. |
 | `help.report_issue` | run from a menu | Opens the page where an issue with the app is reported, in the browser. |
 | `help.user_guide` | run from a menu | Opens the user guide on the website, in the browser. |
 | `map.add_layer` | needs a value | Adds an empty layer to the open map, as TrenchBroom writes one. |

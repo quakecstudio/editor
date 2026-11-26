@@ -69,6 +69,7 @@ mod terminal;
 mod texture_browser;
 mod texture_import;
 pub mod theme;
+mod update;
 mod welcome;
 
 pub use about::ICON;

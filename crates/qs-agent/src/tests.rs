@@ -957,6 +957,16 @@ fn other_tools_begin_no_map_review() {
     );
 }
 
+// No spec statement: P4-19, PRIN-9: the agent cannot ask for the update check, which makes a
+// network request no task needs; only a person's choice, or their setting, does
+#[test]
+fn the_agent_cannot_check_for_updates() {
+    assert!(!super::allowed("help.check_for_updates"));
+    assert!(super::DENIED.contains(&"help.check_for_updates"));
+    // The other Help commands open a window or a page and are left as they were.
+    assert!(super::allowed("help.about"));
+}
+
 // No spec statement: P6-21: the agent cannot decide its own map review; a map command that
 // changes nothing leaves no review open
 #[test]

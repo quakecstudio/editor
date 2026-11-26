@@ -64,6 +64,10 @@ fn main() -> ExitCode {
         },
         None => None,
     };
+    let update_file = dirs
+        .as_ref()
+        .ok()
+        .map(|dirs| qs_update::state_path(dirs.data()));
     let agent_file = dirs
         .as_ref()
         .ok()
@@ -106,6 +110,11 @@ fn main() -> ExitCode {
         }
         if let Some(file) = settings_file {
             app.shell_mut().set_settings_file(file);
+        }
+        // P4-19: the update check, which asks nothing unless the settings just read say
+        // `updates.check = "daily"`.
+        if let Some(file) = update_file {
+            app.shell_mut().start_update_check(file, &cc.egui_ctx);
         }
         if welcome {
             app.shell_mut().look_for_game();

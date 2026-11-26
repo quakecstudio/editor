@@ -89,6 +89,17 @@ pub enum KeyMode {
     Vim,
 }
 
+/// Whether the app looks for a later release by itself (P4-19, `docs/privacy.md`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateCheck {
+    /// Only when Help, Check for Updates is chosen: no request is made unasked.
+    #[default]
+    Off,
+    /// In the background too, when the app starts, at most once a day.
+    Daily,
+}
+
 /// The log filter's default, `qs_log`'s when `RUST_LOG` is unset.
 pub(crate) const DEFAULT_LOG_FILTER: &str = "info";
 
@@ -118,11 +129,17 @@ pub enum Setting {
     /// `editor.key_mode`.
     #[serde(rename = "editor.key_mode")]
     KeyMode,
+    /// `updates.check`.
+    #[serde(rename = "updates.check")]
+    UpdateCheck,
+    /// `updates.skip_version`.
+    #[serde(rename = "updates.skip_version")]
+    SkipVersion,
 }
 
 impl Setting {
     /// Every setting, in the order the reference lists them.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::Theme,
         Self::LogFilter,
         Self::GameFolder,
@@ -130,6 +147,8 @@ impl Setting {
         Self::ToolPermissions,
         Self::AgentExternal,
         Self::KeyMode,
+        Self::UpdateCheck,
+        Self::SkipVersion,
     ];
 
     /// The key the files and the commands name it by.
@@ -143,6 +162,8 @@ impl Setting {
             Self::ToolPermissions => "agent.tool_permissions",
             Self::AgentExternal => "agent.external",
             Self::KeyMode => "editor.key_mode",
+            Self::UpdateCheck => "updates.check",
+            Self::SkipVersion => "updates.skip_version",
         }
     }
 
@@ -156,6 +177,8 @@ impl Setting {
             Self::ToolPermissions => ("agent", "tool_permissions"),
             Self::AgentExternal => ("agent", "external"),
             Self::KeyMode => ("editor", "key_mode"),
+            Self::UpdateCheck => ("updates", "check"),
+            Self::SkipVersion => ("updates", "skip_version"),
         }
     }
 
@@ -187,6 +210,17 @@ impl Setting {
                  `allow`, `ask` and `deny` patterns (`*` and `?`, matched against the call's \
                  paths in the project). A `deny` pattern wins, then `ask`, then `allow`."
             }
+            Self::UpdateCheck => {
+                "Whether the app looks for a later release by itself (P4-19): `off`, when only \
+                 Help, Check for Updates looks, or `daily`, when it also looks as it starts, at \
+                 most once a day. Either way it only says how to update; it installs nothing. Only \
+                 the user's settings are read for it: a project's cannot turn it on."
+            }
+            Self::SkipVersion => {
+                "The release the status bar does not announce, as Skip This Version chose: a \
+                 version such as `2026.12.1`. A later release is announced again. Only the \
+                 user's settings are read for it."
+            }
             Self::AgentExternal => {
                 "The external agents the agent panel can run over the Agent Client Protocol \
                  (P4-14): each a `name`, the `command` that starts it, its `args` and `env`. \
@@ -206,6 +240,8 @@ impl Setting {
             Self::ToolPermissions => json(ToolPermissions::default()),
             Self::AgentExternal => json(Vec::<ExternalAgent>::new()),
             Self::KeyMode => json(KeyMode::default()),
+            Self::UpdateCheck => json(UpdateCheck::default()),
+            Self::SkipVersion => Value::Null,
         }
     }
 }
@@ -251,6 +287,18 @@ pub struct Game {
     pub folder: Option<PathBuf>,
 }
 
+/// `[updates]` of a settings file.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Updates {
+    /// Whether the app looks for a later release by itself.
+    #[serde(default)]
+    pub check: Option<UpdateCheck>,
+    /// The release the status bar does not announce.
+    #[serde(default)]
+    pub skip_version: Option<String>,
+}
+
 /// One settings file: the settings it sets. It is read with serde and written by editing its
 /// text in place ([`SettingsStore::put`]), never serialised whole.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -271,6 +319,9 @@ pub struct SettingsFile {
     /// The agent.
     #[serde(default)]
     pub agent: Agent,
+    /// The update check.
+    #[serde(default)]
+    pub updates: Updates,
 }
 
 impl SettingsFile {
@@ -300,6 +351,8 @@ impl SettingsFile {
             Setting::ToolPermissions => self.agent.tool_permissions.as_ref().map(json),
             Setting::AgentExternal => self.agent.external.as_ref().map(json),
             Setting::KeyMode => self.editor.key_mode.map(json),
+            Setting::UpdateCheck => self.updates.check.map(json),
+            Setting::SkipVersion => self.updates.skip_version.clone().map(Value::from),
         }
     }
 
@@ -337,6 +390,18 @@ impl SettingsFile {
             }
             Setting::KeyMode => {
                 self.editor.key_mode = value
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(invalid)?;
+            }
+            Setting::UpdateCheck => {
+                self.updates.check = value
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(invalid)?;
+            }
+            Setting::SkipVersion => {
+                self.updates.skip_version = value
                     .map(serde_json::from_value)
                     .transpose()
                     .map_err(invalid)?;

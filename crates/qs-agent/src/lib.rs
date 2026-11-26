@@ -43,8 +43,9 @@ use serde_json::{Value, json};
 
 /// The commands the agent may not call: the person's decisions, writes around the staged
 /// edits, and the window's own controls. Any command whose id starts with `view.` is denied
-/// too.
-pub const DENIED: [&str; 21] = [
+/// too. The update check is the person's to ask for: it is the one command that asks the
+/// network for something the task does not need (P4-19, PRIN-9).
+pub const DENIED: [&str; 22] = [
     "edit.accept",
     "edit.reject",
     "map.accept_hunks",
@@ -66,6 +67,7 @@ pub const DENIED: [&str; 21] = [
     "preview.dock",
     "preview.pick",
     "preview.choose_game",
+    "help.check_for_updates",
 ];
 
 /// The rules the model works under, before the task.
