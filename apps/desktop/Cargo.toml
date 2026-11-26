@@ -83,6 +83,10 @@ egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 qs-map-edit = { workspace = true, features = ["testing"] }
 # The PAK that level is in, as the game keeps its levels.
 qs-pak = { workspace = true }
+# id's system globals and fields, which a program the simulation runs must declare (the Logic
+# tab's test project).
+qc-edict = { workspace = true }
+qc-types = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }

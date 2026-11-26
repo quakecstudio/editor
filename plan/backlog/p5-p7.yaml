@@ -3386,3 +3386,30 @@ groups:
     - 'A recorded run in the app: the meters of a corpus map and of a generated large level, in the PR'
     verify:
     - 'cargo nextest run -p qc-engines -p qs-map-edit -p qs-workbench -p qs-tests; cargo xtask engines --check; the recorded run in the PR'
+  - key: L-80
+    title: Make every panel self-evident, so that no control makes the modder think
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: L
+    reqs:
+    - UI-24
+    - UI-14
+    - MAP-27
+    depends: []
+    summary: |
+      Justin, 2026-11-25, looking at the map editor's Properties panel in the Logic tab's screenshot (PR 1141): "what is the target field? is that a drop down of all available targets or a free-form input box?", "what are the key and value options for? shouldn't there be a known set of available keys?", then "file as own issue, but make it more generic, that these interfaces need to be as simple and follow the don't make me think philosophy - the application should be intuitive". Both answers showed the problem. A `target` already set is a free-form text box: the map's names are offered only when a key is being added, and the eyedropper beside it is an icon the modder must discover. The key and value row is free text, with the keys the class reads shown as a row of buttons above it that does not say what it is for. The model followed is Steve Krug's Don't Make Me Think (2000; third edition 2014): a page is self-evident, the obvious choice is the right one, conventions are kept, and needless words go. Editor prior art: TrenchBroom's smart property editors (flags as checkboxes, colours as a picker, choices as a list), Hammer's SmartEdit, which shows each key by its description and type instead of raw key and value, and Roblox Studio's Properties window. The rules apply to every panel, not to Properties alone.
+    deliverable:
+    - 'docs/design/usability.md: the rules every panel follows, each with an example from this app: pick from a known set rather than type (keys a class reads, names in the map, classnames, textures, skills); show a name with what it names (`gate (func_door)`); say what an action will do before it is taken; label in the modder''s words, not the code''s; one obvious way to do each thing; an empty state that says what to do next; nothing that only the manual explains'
+    - 'docs/audits/usability.md: every panel and window of the app (the docks, the map view and its tabs, the dialogs, the agent panel, the toolbar) checked against the rules, each problem found listed with the control, the rule and the fix'
+    - 'apps/desktop: each problem of the audit fixed. At least: a targeting key already set is a list of the map''s `targetname`s, each shown with its classname, that also takes a new name typed, and marks a name no entity has; the key of a new pair is a field that suggests the keys the class reads as it is typed, each with its type, default and comment, and still takes a key the code does not read (a compiler''s, such as `_minlight`); the icon-only controls of the side panels say what they do on hover and to a screen reader'
+    - 'docs/map-editor.md and the user guide: the controls as they now are'
+    acceptance:
+    - 'docs/design/usability.md and docs/audits/usability.md exist, the audit covering every panel and window the app has, checked against the help topics (`Topic::ALL`) by a test'
+    - 'Every problem the audit lists is fixed, each by a UI test in the app''s harness that drives the control as a modder would'
+    - 'A test: a target already set is changed by picking a name from its list, and the list shows each name with its classname; a name no entity has is marked'
+    - 'A test: typing the start of a key the class reads offers it with its type and default, and a key the code does not read is still added'
+    - 'The goldens of the panels that changed rendered again; screenshots of the Properties panel before and after, in the PR'
+    verify:
+    - 'cargo nextest run -p quakec-studio; the screenshots in the PR'

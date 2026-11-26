@@ -36,6 +36,8 @@ qs-workbench = { workspace = true }
 qs-map-edit = { workspace = true }
 qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
+# entity-corpus --logic: four generated levels fired with each codebase (L-76).
+qs-map-gen = { workspace = true }
 qs-mdl = { workspace = true }
 qs-map-light = { workspace = true }
 # A WAD of every texture a map names, for the light differential (LIGHT-11.2).

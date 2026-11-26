@@ -102,6 +102,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.face_align`](#mapface_align) | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
 | [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.find_leaks`](#mapfind_leaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
+| [`map.fire`](#mapfire) | Fires an entity of the open map as the game would, its use or its touch run in the simulation with the project's program, and answers what the QuakeC did about it in order: each use, touch and think the firing reached, each entity looked up by its targetname, removed or spawned, each centerprint and sound, and the fields written. Changes nothing: not the map, not a game that is playing it. |
 | [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
 | [`map.generate`](#mapgenerate) | Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave. One seed gives one level. |
 | [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
@@ -114,6 +115,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.list_entities`](#maplist_entities) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.list_textures`](#maplist_textures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, of the BSP it was opened from, and of the game's own levels, each once with where it comes from, its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
+| [`map.logic_issues`](#maplogic_issues) | Fires every entity of the open map that has targets, each in a copy of the spawned map, and lists what only running shows: a target with no use function, a chain that removes what it then fires, a chain that comes back to the same entity or stops the game, and an entity that fires its targets only at a firing the map cannot reach, such as a counter with too high a count. The issues join map.issues until the map or the code changes. |
 | [`map.make_brush_entity`](#mapmake_brush_entity) | Makes brushes of the world a new brush entity of a class, such as func_door (TrenchBroom's Create Brush Entity). |
 | [`map.make_structural`](#mapmake_structural) | Gives a brush entity's brushes back to the world, in the layer or group the entity was in, and removes the entity (TrenchBroom's Make Structural). |
 | [`map.move_entity`](#mapmove_entity) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
@@ -5434,6 +5436,128 @@ Parameters:
 }
 ```
 
+## `map.fire`
+
+Fires an entity of the open map as the game would, its use or its touch run in the simulation with the project's program, and answers what the QuakeC did about it in order: each use, touch and think the firing reached, each entity looked up by its targetname, removed or spawned, each centerprint and sound, and the fields written. Changes nothing: not the map, not a game that is playing it.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FiredBy": {
+      "description": "Which function fires an entity (FIRE-1.2).",
+      "oneOf": [
+        {
+          "const": "either",
+          "description": "Its `use` when it has one, else its `touch`.",
+          "type": "string"
+        },
+        {
+          "const": "use",
+          "description": "Its `use`, as another entity's targets are fired.",
+          "type": "string"
+        },
+        {
+          "const": "touch",
+          "description": "Its `touch`, as a player walking into it.",
+          "type": "string"
+        }
+      ]
+    },
+    "GameMode": {
+      "description": "The kind of game a map is spawned for: the `coop` and `deathmatch` settings.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "Single player.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Cooperative: `coop 1`.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch 1`.",
+          "type": "string"
+        }
+      ]
+    },
+    "Skill": {
+      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "1, the game's own default.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "3.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.fire`.",
+  "properties": {
+    "by": {
+      "$ref": "#/$defs/FiredBy",
+      "default": "either",
+      "description": "Which function fires it."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity, by its place in the map."
+    },
+    "mode": {
+      "$ref": "#/$defs/GameMode",
+      "default": "single",
+      "description": "The kind of game."
+    },
+    "seconds": {
+      "default": null,
+      "description": "The longest the trace runs, in simulated seconds: 10 when not given, 300 at most.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "skill": {
+      "$ref": "#/$defs/Skill",
+      "default": "normal",
+      "description": "The skill the map is spawned at."
+    }
+  },
+  "required": [
+    "entity"
+  ],
+  "title": "FireParams",
+  "type": "object"
+}
+```
+
 ## `map.flip`
 
 Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip.
@@ -5919,6 +6043,81 @@ Parameters:
     "entities"
   ],
   "title": "EntityListParams",
+  "type": "object"
+}
+```
+
+## `map.logic_issues`
+
+Fires every entity of the open map that has targets, each in a copy of the spawned map, and lists what only running shows: a target with no use function, a chain that removes what it then fires, a chain that comes back to the same entity or stops the game, and an entity that fires its targets only at a firing the map cannot reach, such as a counter with too high a count. The issues join map.issues until the map or the code changes.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "GameMode": {
+      "description": "The kind of game a map is spawned for: the `coop` and `deathmatch` settings.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "Single player.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Cooperative: `coop 1`.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch 1`.",
+          "type": "string"
+        }
+      ]
+    },
+    "Skill": {
+      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "1, the game's own default.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "3.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.logic_issues`.",
+  "properties": {
+    "mode": {
+      "$ref": "#/$defs/GameMode",
+      "default": "single",
+      "description": "The kind of game."
+    },
+    "skill": {
+      "$ref": "#/$defs/Skill",
+      "default": "normal",
+      "description": "The skill the map is spawned at."
+    }
+  },
+  "title": "LogicParams",
   "type": "object"
 }
 ```

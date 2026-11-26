@@ -708,6 +708,23 @@ impl Scene {
     }
 }
 
+impl Scene {
+    /// The lines of the links in `fired`, each from an entity to one its keys fire, in that
+    /// order; a pair no key links has no line (L-76).
+    #[must_use]
+    pub(crate) fn chain(&self, fired: &[(EntityIndex, EntityIndex)]) -> Vec<Line> {
+        fired
+            .iter()
+            .filter_map(|pair| {
+                self.fired
+                    .iter()
+                    .find(|(from, to, _)| (*from, *to) == *pair)
+                    .map(|(_, _, line)| *line)
+            })
+            .collect()
+    }
+}
+
 /// Which links between entities the map view draws.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum LinkView {

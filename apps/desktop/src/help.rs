@@ -72,6 +72,8 @@ pub(crate) enum Topic {
     MapPrefabs,
     /// The map editor's Issues tab.
     MapIssues,
+    /// The map editor's Logic tab.
+    MapLogic,
     /// The window that finds the game's files.
     GameGuide,
     /// The texture import window.
@@ -81,7 +83,7 @@ pub(crate) enum Topic {
 impl Topic {
     /// Every topic.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 24] = [
+    pub(crate) const ALL: [Self; 25] = [
         Self::Toolbar,
         Self::Project,
         Self::Symbols,
@@ -104,6 +106,7 @@ impl Topic {
         Self::MapEntities,
         Self::MapPrefabs,
         Self::MapIssues,
+        Self::MapLogic,
         Self::GameGuide,
         Self::TextureImport,
     ];
@@ -133,6 +136,7 @@ impl Topic {
             Self::MapTextures => Text::MapTextures,
             Self::MapPrefabs => Text::MapPrefabs,
             Self::MapIssues => Text::MapIssues,
+            Self::MapLogic => Text::MapLogic,
             Self::GameGuide => Text::GameGuide,
             Self::TextureImport => Text::MapImportTexture,
         }
@@ -163,6 +167,7 @@ impl Topic {
             Self::MapEntities => Text::HelpMapEntities,
             Self::MapPrefabs => Text::HelpMapPrefabs,
             Self::MapIssues => Text::HelpMapIssues,
+            Self::MapLogic => Text::HelpMapLogic,
             Self::GameGuide => Text::HelpGameGuide,
             Self::TextureImport => Text::HelpTextureImport,
         }
@@ -187,7 +192,7 @@ impl Topic {
             Self::MapView | Self::MapTextures | Self::MapPrefabs | Self::TextureImport => {
                 "map-editor.html#4-build-with-brushes"
             }
-            Self::MapIssues => "map-editor.html#6-find-a-leak",
+            Self::MapIssues | Self::MapLogic => "map-editor.html#6-find-a-leak",
             Self::GameGuide => "troubleshooting.html#play-says-it-cannot-find-quake",
         }
     }

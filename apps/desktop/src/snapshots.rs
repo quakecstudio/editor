@@ -327,6 +327,20 @@ fn scripts() -> Vec<Script> {
                 Step::Click("Check map"),
             ],
         },
+        // L-76: Fire in Properties fires the selected button, and the Logic tab lists what the
+        // QuakeC did, the link it fired lit in the view.
+        Script {
+            name: "map-logic",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": logic_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": logic_fixture().join("maps/logic.map") }),
+                ),
+                Step::Run("map.select", json!({ "entity": 1 })),
+                Step::Click("Fire"),
+            ],
+        },
         Script {
             name: "map-uv",
             steps: vec![
@@ -412,6 +426,11 @@ fn fixture() -> PathBuf {
 /// The project with a map, its entity classes from its QuakeC (P5-06).
 fn keep_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep")
+}
+
+/// The project whose button fires a door through its QuakeC (L-76).
+fn logic_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/logic")
 }
 
 /// The project with two tasks, one that succeeds and one that fails (P4-36).

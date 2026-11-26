@@ -8,6 +8,7 @@ use qs_map_edit::textures::{WadFound, WadState};
 use qs_map_edit::uv::FaceRef;
 use qs_map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_map_edit::{HunkSide, MapHunk};
+use qs_workbench::map_logic::{CallbackKind, FireEnd, Fired, FiredEvent, MapFired};
 
 /// One string the app shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -842,6 +843,24 @@ pub enum Text {
     MapIssuesHint,
     /// What the issue list says of a map with none.
     MapNoIssues,
+    /// The map browser's tab that fires entities and lists what the QuakeC did (L-76).
+    MapLogic,
+    /// The button and menu item that fire the selected entity (L-76).
+    MapFire,
+    /// What Fire does, on hover (L-76).
+    MapFireHint,
+    /// What the trace list says before an entity is fired (L-76).
+    MapFireNone,
+    /// The scrubber over a trace's steps (L-76).
+    MapFireStep,
+    /// What the scrubber does, on hover (L-76).
+    MapFireStepHint,
+    /// The button that lists the issues only running shows (L-76).
+    MapCheckLogic,
+    /// What Check logic does, on hover (L-76).
+    MapCheckLogicHint,
+    /// What the logic issue list says before the map is checked (L-76).
+    MapLogicHint,
     /// The map search's box, for text or a query (P7-08).
     MapSearchQuery,
     /// The map search box's syntax reference, on hover (P7-08).
@@ -1026,6 +1045,8 @@ pub enum Text {
     HelpMapPrefabs,
     /// Help for the map editor's Issues tab.
     HelpMapIssues,
+    /// The help of the map editor's Logic tab (L-76).
+    HelpMapLogic,
     /// Help for the window that finds the game's files.
     HelpGameGuide,
     /// Help for the texture import window.
@@ -1182,7 +1203,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 582] = [
+    pub const ALL: [Self; 592] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1603,6 +1624,15 @@ impl Text {
         Self::MapCheckIssues,
         Self::MapIssuesHint,
         Self::MapNoIssues,
+        Self::MapLogic,
+        Self::MapFire,
+        Self::MapFireHint,
+        Self::MapFireNone,
+        Self::MapFireStep,
+        Self::MapFireStepHint,
+        Self::MapCheckLogic,
+        Self::MapCheckLogicHint,
+        Self::MapLogicHint,
         Self::MapSearchQuery,
         Self::MapSearchSyntax,
         Self::MapFaces,
@@ -1695,6 +1725,7 @@ impl Text {
         Self::HelpMapEntities,
         Self::HelpMapPrefabs,
         Self::HelpMapIssues,
+        Self::HelpMapLogic,
         Self::HelpGameGuide,
         Self::HelpTextureImport,
         Self::PauseHint,
@@ -2243,6 +2274,21 @@ impl Text {
             Self::MapCheckIssues => "Check map",
             Self::MapIssuesHint => "Check the map to list its issues",
             Self::MapNoIssues => "The map has no issues",
+            Self::MapLogic => "Logic",
+            Self::MapFire => "Fire",
+            Self::MapFireHint => {
+                "Runs the selected entity's use, or its touch, with your mod's QuakeC and lists what happened. Changes nothing in the map or a running game."
+            }
+            Self::MapFireNone => "Select an entity and choose Fire to see what its targets do",
+            Self::MapFireStep => "step",
+            Self::MapFireStepHint => {
+                "Steps through the trace: the map view lights the links fired so far"
+            }
+            Self::MapCheckLogic => "Check logic",
+            Self::MapCheckLogicHint => {
+                "Fires every entity that has targets and lists the chains that cannot work"
+            }
+            Self::MapLogicHint => "Check logic to list what only running the map shows",
             Self::MapSearchQuery => "Search: text or a query",
             Self::MapSearchSyntax => {
                 "Text finds names, classnames, keys, values, textures and layer and group names. \
@@ -2384,6 +2430,9 @@ impl Text {
             }
             Self::HelpMapPrefabs => {
                 "Brushes and entities kept to use again. Drag one into the view to copy it in; Save as prefab in Properties keeps the selection."
+            }
+            Self::HelpMapLogic => {
+                "Fire runs the selected entity's use, or its touch, in the simulation with your mod's QuakeC and lists what happened in order: a click on a step selects its entity. Check logic fires every entity that has targets and lists the chains that cannot work."
             }
             Self::HelpMapIssues => {
                 "Check map lists the map's problems against your mod's QuakeC: a key no field of its class reads, or a texture no WAD holds."
@@ -2797,6 +2846,158 @@ pub fn prefab_count(prefabs: usize) -> String {
 pub fn issue_count(issues: usize, fixable: usize) -> String {
     let noun = if issues == 1 { "issue" } else { "issues" };
     format!("{issues} {noun}, {fixable} with a fix")
+}
+
+/// How many logic issues the map has (L-76).
+#[must_use]
+pub fn logic_issue_count(issues: usize) -> String {
+    match issues {
+        0 => "No logic issues".to_owned(),
+        1 => "1 logic issue".to_owned(),
+        count => format!("{count} logic issues"),
+    }
+}
+
+/// An entity a trace names: its place in the map, or its edict for one the game spawned (L-76).
+fn fired_name(entity: Fired, classname: Option<&str>) -> String {
+    let place = entity.entity.map_or_else(
+        || format!("edict {}", entity.edict.get()),
+        |place| entity_place(place.get()),
+    );
+    match classname {
+        Some(classname) if !classname.is_empty() => format!("{place} ({classname})"),
+        _ => place,
+    }
+}
+
+/// One event of a trace as the Logic tab lists it, and the entity of the map a click on it
+/// selects (L-76).
+#[must_use]
+pub fn fired_line(event: &FiredEvent) -> (String, Option<EntityIndex>) {
+    match event {
+        FiredEvent::Ran {
+            time,
+            callback,
+            entity,
+            classname,
+            function,
+        } => {
+            let callback = match callback {
+                CallbackKind::Use => "use",
+                CallbackKind::Touch => "touch",
+                CallbackKind::Think => "think",
+                CallbackKind::Blocked => "blocked",
+            };
+            (
+                format!(
+                    "{time:.2}  {callback}  {}  {function}",
+                    fired_name(*entity, Some(classname))
+                ),
+                entity.entity,
+            )
+        }
+        FiredEvent::Looked {
+            time,
+            by,
+            name,
+            found,
+            ..
+        } => {
+            let found_text = found.map_or_else(
+                || "nothing more".to_owned(),
+                |found| fired_name(found, None),
+            );
+            (
+                format!(
+                    "{time:.2}  {} looks for {name:?}: {found_text}",
+                    fired_name(*by, None)
+                ),
+                found.and_then(|found| found.entity).or(by.entity),
+            )
+        }
+        FiredEvent::Unanswered {
+            time,
+            entity,
+            classname,
+            ..
+        } => (
+            format!(
+                "{time:.2}  {} has no use function: nothing happens",
+                fired_name(*entity, Some(classname))
+            ),
+            entity.entity,
+        ),
+        FiredEvent::Removed {
+            time,
+            entity,
+            classname,
+            by,
+        } => {
+            let removed = fired_name(*entity, Some(classname));
+            let text = match by.filter(|by| by.edict != entity.edict) {
+                Some(by) => format!(
+                    "{time:.2}  {removed} is removed by {}",
+                    fired_name(by, None)
+                ),
+                None => format!("{time:.2}  {removed} is removed"),
+            };
+            (text, entity.entity)
+        }
+        FiredEvent::Spawned {
+            time,
+            edict,
+            classname,
+        } => (
+            format!("{time:.2}  edict {} is spawned ({classname})", edict.get()),
+            None,
+        ),
+        FiredEvent::Print { time, text } => (format!("{time:.2}  prints {text:?}"), None),
+        FiredEvent::Sound {
+            time,
+            entity,
+            sample,
+        } => (
+            format!("{time:.2}  {} plays {sample}", fired_name(*entity, None)),
+            entity.entity,
+        ),
+        FiredEvent::Changed {
+            time,
+            entity,
+            fields,
+        } => {
+            let fields: Vec<String> = fields
+                .iter()
+                .map(|field| format!("{} = {}", field.name, field.value))
+                .collect();
+            (
+                format!(
+                    "{time:.2}  {}: {}",
+                    fired_name(*entity, None),
+                    fields.join(", ")
+                ),
+                entity.entity,
+            )
+        }
+    }
+}
+
+/// What a trace came to: the entity fired, the function it was fired by, and why the trace
+/// ended (L-76).
+#[must_use]
+pub fn fire_summary(entity: EntityIndex, trace: &MapFired) -> String {
+    let by = match trace.fired_by {
+        CallbackKind::Use => "use",
+        CallbackKind::Touch => "touch",
+        CallbackKind::Think => "think",
+        CallbackKind::Blocked => "blocked",
+    };
+    let end = match &trace.end {
+        FireEnd::Quiet => format!("settled after {:.1} s", trace.seconds),
+        FireEnd::Length => format!("still running after {:.1} s", trace.seconds),
+        FireEnd::Host { command } => format!("the game asks for {command:?}"),
+        FireEnd::Error { message } => format!("the game stops: {message}"),
+    };
+    format!("{} fired by its {by}: {end}", entity_place(entity.get()))
 }
 
 /// One issue as the issue browser lists it: its line, when it has one, and what is wrong

@@ -11,6 +11,8 @@ use std::collections::BTreeSet;
 use qc_progs::Progs;
 use qc_vm::{Machine, Observer, RunError};
 
+use crate::world::Tracer;
+
 /// Whether [`Debugger::set_breakpoint`] sets the breakpoint or clears it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BreakpointEdit {
@@ -327,19 +329,30 @@ pub fn resolve(progs: &Progs<'_>, lines: &[i32], file: &str, line: i32) -> Optio
 /// The observer of a frame's runs (WORLD-9.6, PHYS-13.7): each statement counted against its
 /// function, as id's `pr_xfunction->profile++` counts it, then the debugger asked, when there
 /// is one.
-pub(crate) struct Watch<'a> {
+pub(crate) struct Watch<'a, 'p> {
     pub(crate) debugger: Option<&'a mut Debugger>,
     pub(crate) profile: &'a mut Vec<u64>,
+    /// The recorder of a firing, when one is traced (FIRE-2).
+    pub(crate) tracer: Option<&'a mut Tracer>,
+    /// The progs the runs execute, whose statements the recorder reads.
+    pub(crate) progs: &'a Progs<'p>,
 }
 
-impl Observer for Watch<'_> {
+impl Observer for Watch<'_, '_> {
     fn run(&mut self, machine: &Machine, _function: i32) {
         if let Some(debugger) = self.debugger.as_mut() {
             debugger.begin_run(machine.depth());
         }
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.run();
+        }
     }
 
-    fn step(&mut self, _m: &Machine, _f: i32, _s: i32, _o: u16, _b: Option<u32>) {}
+    fn step(&mut self, machine: &Machine, _f: i32, statement: i32, opcode: u16, b: Option<u32>) {
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.step(machine, self.progs, statement, opcode, b);
+        }
+    }
 
     fn exit(&mut self, _machine: &Machine) {}
 
@@ -353,6 +366,9 @@ impl Observer for Watch<'_> {
             if let Some(count) = self.profile.get_mut(index) {
                 *count = count.saturating_add(1);
             }
+        }
+        if let Some(tracer) = self.tracer.as_mut() {
+            tracer.before(machine, function);
         }
         self.debugger
             .as_mut()

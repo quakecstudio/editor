@@ -754,7 +754,8 @@ impl Expected {
 
 impl QcValue {
     /// A value as a scenario writes it.
-    fn shown(&self) -> String {
+    #[must_use]
+    pub fn shown(&self) -> String {
         match self {
             QcValue::Float(f) => f.to_string(),
             QcValue::Vector([x, y, z]) => format!("'{x} {y} {z}'"),

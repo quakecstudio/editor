@@ -13,6 +13,13 @@
 //! diagnostics counted; and in each, the first key of a field is misspelt, and the check must
 //! report it with that field as the fix (MAP-8.2).
 //!
+//! With `--logic` too, each map is opened with each codebase and its triggers fired as
+//! `map.logic_issues` fires them (L-76, FIRE-4): the issues found are printed by kind and
+//! counted, and a map the codebase's program cannot spawn is listed. A corpus map's issues fail
+//! nothing: the corpus is not ours to put right, and the counts are the record of a run. Four
+//! levels `qs-map-gen` makes are fired too, and any issue in one of them, or one that does not
+//! spawn, fails the check: the generator is ours.
+//!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,8 +29,10 @@ use std::path::{Path, PathBuf};
 use qc_entities::{EntitySchema, MapDiagnosticKind};
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::MapFile;
+use qs_map_edit::MAP_OPEN;
 use qs_pak::Pak;
 use qs_workbench::entity_classes::PROJECT_ENTITIES;
+use qs_workbench::map_logic::MAP_LOGIC_ISSUES;
 use qs_workbench::{Config, Dialect, FsLoader, OPEN_PROJECT, Workbench, register};
 
 /// Where the golden files are, under the repository root.
@@ -42,6 +51,10 @@ pub(crate) struct Args {
     /// classnames each codebase must define; repeated for several.
     #[arg(long = "maps")]
     maps: Vec<PathBuf>,
+    /// Also fire each map's triggers with each codebase's program and count the logic
+    /// issues (`map.logic_issues`).
+    #[arg(long)]
+    logic: bool,
     /// Each codebase directory.
     #[arg(required = true)]
     codebases: Vec<PathBuf>,
@@ -50,20 +63,30 @@ pub(crate) struct Args {
 pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     let mut used: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut maps = Vec::new();
+    let mut compiled = Vec::new();
     for dir in &args.maps {
-        for (label, map) in read_maps(dir)? {
+        for (label, map, bsp) in read_maps(dir)? {
             for classname in map.entities.iter().filter_map(|e| e.classname()) {
                 let classname = String::from_utf8_lossy(classname).into_owned();
                 used.entry(classname).or_default().insert(label.clone());
             }
+            if args.logic {
+                compiled.push((label.clone(), bsp));
+            }
             maps.push((label, map));
         }
+    }
+    if args.logic {
+        compiled.extend(generated_levels()?);
     }
     let mut ok = true;
     for codebase in &args.codebases {
         ok &= check(root, codebase, args.write, &used)?;
         if !maps.is_empty() {
             ok &= check_maps(codebase, &maps)?;
+        }
+        if args.logic {
+            ok &= check_logic(codebase, &compiled)?;
         }
     }
     println!(
@@ -245,6 +268,147 @@ fn check_maps(dir: &Path, maps: &[(String, MapFile)]) -> Result<bool, String> {
     }
 }
 
+/// Fires the triggers of every map with one codebase's program, as `map.logic_issues` does
+/// (FIRE-4), and prints what it found: the issues by kind, each issue, and the maps the
+/// program could not spawn. It is a record, not a verdict.
+fn check_logic(dir: &Path, maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
+    let mut registry = qs_commands::Registry::new();
+    register(&mut registry).map_err(|e| e.to_string())?;
+    let config = Config {
+        dialect: Some(dialect_of(dir)?),
+        ..Config::default()
+    };
+    let mut session = qs_commands::Session::new(Workbench::new(FsLoader, config), registry);
+    session
+        .execute(OPEN_PROJECT, serde_json::json!({ "path": dir }))
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    let scratch = std::env::temp_dir().join(format!("xtask-logic-corpus-{}", std::process::id()));
+    fs::create_dir_all(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    let fired = fire_maps(&mut session, &scratch, dir, maps);
+    // The scratch directory holds nothing else, and goes whether the firing finished or not.
+    fs::remove_dir_all(&scratch).ok();
+    fired
+}
+
+/// [`check_logic`]'s firing of each map, in `scratch`.
+fn fire_maps(
+    session: &mut qs_commands::Session<Workbench<FsLoader>>,
+    scratch: &Path,
+    dir: &Path,
+    maps: &[(String, Vec<u8>)],
+) -> Result<bool, String> {
+    let name = dir.display();
+    // A generated level with an issue, or one that does not spawn, fails the check.
+    let mut ours_ok = true;
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut fired = 0_u64;
+    let mut unspawned = Vec::new();
+    for (label, bsp) in maps {
+        let path = scratch.join("map.bsp");
+        fs::write(&path, bsp).map_err(|e| format!("{}: {e}", path.display()))?;
+        session
+            .execute(MAP_OPEN, serde_json::json!({ "path": path }))
+            .map_err(|e| format!("{label}: {e}"))?;
+        match session.execute(MAP_LOGIC_ISSUES, serde_json::json!({})) {
+            Ok(found) => {
+                fired = fired.saturating_add(
+                    found
+                        .get("fired")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0),
+                );
+                let issues = found.get("issues").and_then(serde_json::Value::as_array);
+                for issue in issues.into_iter().flatten() {
+                    let text = |key: &str| {
+                        issue
+                            .get(key)
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned()
+                    };
+                    if label.starts_with(GENERATED) {
+                        ours_ok = false;
+                        println!("FAIL  {name}: {label}: {}", text("message"));
+                    } else {
+                        println!("info  {name}: {label}: {}", text("message"));
+                    }
+                    let count = counts.entry(text("kind")).or_default();
+                    *count = count.saturating_add(1);
+                }
+            }
+            Err(error) => {
+                ours_ok &= !label.starts_with(GENERATED);
+                unspawned.push(format!("{label}: {error}"));
+            }
+        }
+    }
+    let found: Vec<String> = counts.iter().map(|(k, n)| format!("{n} {k}")).collect();
+    println!(
+        "info  {name}: map.logic_issues over {} maps, {fired} entities fired: {}",
+        maps.len(),
+        if found.is_empty() {
+            "no issue".to_owned()
+        } else {
+            found.join(", ")
+        }
+    );
+    if !unspawned.is_empty() {
+        println!(
+            "info  {name}: {} maps were not fired: {}",
+            unspawned.len(),
+            unspawned.join("; ")
+        );
+    }
+    if ours_ok {
+        println!("ok    {name}: no logic issue in the {GENERATED_LEVELS} generated levels");
+    }
+    Ok(ours_ok)
+}
+
+/// The label of a level `qs-map-gen` made, before its seed.
+const GENERATED: &str = "generated-";
+/// How many generated levels `--logic` fires (L-76).
+const GENERATED_LEVELS: u64 = 4;
+/// The textures the generated levels are painted from: names of id's, which the firing does
+/// not read.
+const LEVEL_TEXTURES: &[&str] = &[
+    "tech04_1",
+    "sfloor4_1",
+    "tech01_1",
+    "tech03_1",
+    "adoor01_2",
+    "*water1",
+    "sky1",
+    "trigger",
+];
+
+/// [`GENERATED_LEVELS`] medium levels, seeds 1 and up, each compiled by id's qbsp as
+/// `qs-map-bsp` ports it, labelled with its seed.
+fn generated_levels() -> Result<Vec<(String, Vec<u8>)>, String> {
+    let textures: Vec<String> = LEVEL_TEXTURES
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    let mut levels = Vec::new();
+    for seed in 1..=GENERATED_LEVELS {
+        let level = qs_map_gen::Request {
+            seed,
+            size: qs_map_gen::Size::Medium,
+            textures: &textures,
+            classes: &qs_map_gen::Classes::Any,
+            name: "random",
+        }
+        .generate()
+        .map_err(|e| format!("generated level {seed}: {e}"))?;
+        let bsp = qs_map_bsp::Compiler::default()
+            .compile(&level.map.to_bytes(), None)
+            .map_err(|e| format!("generated level {seed}: {e}"))?
+            .bsp;
+        levels.push((format!("{GENERATED}{seed}"), bsp));
+    }
+    Ok(levels)
+}
+
 /// Misspells the first key of `map` that names a field of four bytes or more, as its last
 /// byte doubled; what the check said instead of that field as the fix, or `None` when it did.
 fn misspelling_missed(schema: &EntitySchema, map: &MapFile) -> Option<String> {
@@ -290,7 +454,7 @@ fn misspelling_missed(schema: &EntitySchema, map: &MapFile) -> Option<String> {
 }
 
 /// Each map under `dir`, its BSP's entity lump read as a `.map`.
-fn read_maps(dir: &Path) -> Result<Vec<(String, MapFile)>, String> {
+fn read_maps(dir: &Path) -> Result<Vec<(String, MapFile, Vec<u8>)>, String> {
     let mut found = Vec::new();
     let mut pending = vec![dir.to_path_buf()];
     let mut files = Vec::new();
@@ -324,13 +488,14 @@ fn read_maps(dir: &Path) -> Result<Vec<(String, MapFile)>, String> {
                         .entry_data(&bytes, entry)
                         .map_err(|e| format!("{}: {name}: {e}", path.display()))?;
                     let label = format!("{}:{name}", path.display());
-                    found.push((label.clone(), entity_lump(&label, data)?));
+                    found.push((label.clone(), entity_lump(&label, data)?, data.to_vec()));
                 }
             }
             Some("bsp") => {
                 let data = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
                 let label = path.display().to_string();
-                found.push((label.clone(), entity_lump(&label, &data)?));
+                let lump = entity_lump(&label, &data)?;
+                found.push((label, lump, data));
             }
             _ => {}
         }

@@ -41,6 +41,7 @@ mod map_fields;
 mod map_groups;
 mod map_issues;
 mod map_leaks;
+mod map_logic;
 mod map_outline;
 mod map_panes;
 mod map_prefabs;

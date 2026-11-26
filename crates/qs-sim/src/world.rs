@@ -260,6 +260,20 @@ pub enum HostCommand {
     Quit,
 }
 
+impl core::fmt::Display for HostCommand {
+    /// The command as the console reads it.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Changelevel(map) => write!(f, "changelevel {map}"),
+            Self::Restart => f.write_str("restart"),
+            Self::Map(map) => write!(f, "map {map}"),
+            Self::Save(name) => write!(f, "save {name}"),
+            Self::Load(name) => write!(f, "load {name}"),
+            Self::Quit => f.write_str("quit"),
+        }
+    }
+}
+
 /// A command the client runs, not the server: id's `console.c` and `menu.c` register them
 /// with the client's console (CON-6.1). The console hands them to the host in order.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1284,6 +1298,7 @@ pub fn command_words(text: &[u8]) -> Vec<Vec<Vec<u8>>> {
 mod changes;
 mod edit;
 mod evaluate;
+mod fire;
 mod inspect;
 mod map_entities;
 mod reload;
@@ -1296,6 +1311,11 @@ pub(crate) mod tests;
 pub use changes::EdictChange;
 pub use edit::{EditError, LineHit};
 pub use evaluate::EvalError;
+pub(crate) use fire::Tracer;
+pub use fire::{
+    Callback, FIRE_MAX_SECONDS, FIRE_SECONDS, FireBy, FireError, FireOptions, FireTrace, TraceEnd,
+    TraceEvent,
+};
 pub use inspect::{NamedValue, QcValue};
 pub use map_entities::MapPlace;
 pub use qc_edict::Tracking;

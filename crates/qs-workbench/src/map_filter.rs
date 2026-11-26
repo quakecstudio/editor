@@ -4,11 +4,12 @@
 //! found by spawning the open map in `qs-sim` against the project's server program, compiled in
 //! memory, so the answer is the game's, the spawnflags test (EDICT-8.4) and the entities the QuakeC
 //! removes itself included (BRIDGE-4.13). A map read from a BSP spawns its entity lump in that BSP;
-//! a `.map` spawns the entity lump qbsp would write for it (MAP-2.6, MAP-6.2) in the BSP beside it
-//! when there is one, else in an empty world.
+//! a `.map` spawns the entity lump qbsp would write for it (MAP-2.6, MAP-6.2) in the map compiled
+//! in memory as id's qbsp compiles it, so each brush entity has the model its `model` key names;
+//! when the map does not compile, in the BSP beside it when there is one, else in an empty world.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use qc_codegen::compile_module;
@@ -99,14 +100,104 @@ pub struct MapFiltered {
     pub removed: Vec<EntityIndex>,
 }
 
-impl<L: crate::Loader> Workbench<L> {
-    /// The entities of the open map the game removes at `skill` in a game of `mode`: the
-    /// project built, and the map's entities spawned in `qs-sim` with those settings.
-    fn map_removed(
-        &mut self,
+/// The open map as the game spawns it (DIFF-3.5): the project's server program, compiled in
+/// memory, the entity lump, and the BSP it spawns in.
+pub(crate) struct MapSpawn {
+    program: Vec<u8>,
+    entities: Vec<u8>,
+    /// The compiled map, `None` for a `.map` that does not compile and has no BSP beside it,
+    /// which spawns in an empty world.
+    compiled: Option<Vec<u8>>,
+    /// The place in the document of each entity the lump holds, in the lump's order.
+    places: Vec<usize>,
+    path: PathBuf,
+    root: Option<PathBuf>,
+}
+
+impl MapSpawn {
+    /// The place in the document of each entity the lump holds, in the lump's order.
+    pub(crate) fn places(&self) -> &[usize] {
+        &self.places
+    }
+
+    /// Runs `with` on the map's world, spawned at `skill` in a game of `mode`, and the progs
+    /// it runs.
+    pub(crate) fn world<T>(
+        &self,
         skill: Skill,
         mode: GameMode,
-    ) -> Result<Vec<EntityIndex>, WorkbenchError> {
+        with: impl FnOnce(&Progs<'_>, World) -> Result<T, WorkbenchError>,
+    ) -> Result<T, WorkbenchError> {
+        let progs = Progs::read(&self.program).map_err(|_| WorkbenchError::NotBuilt)?;
+        let mut bsp = match &self.compiled {
+            Some(bytes) => Bsp::read(bytes, BspLoader::default()).map_err(|error| {
+                crate::MapEditError::Bsp {
+                    path: self.path.clone(),
+                    error,
+                }
+            })?,
+            None => Bsp::empty(&self.entities),
+        };
+        bsp.entity_lump = &self.entities;
+        let root = self.root.clone();
+        let files: qs_sim::ModelFiles = Rc::new(move |name: &str| {
+            root.as_ref()
+                .and_then(|root| std::fs::read(root.join(name)).ok())
+        });
+        let mut settings = vec![("skill".to_owned(), skill.setting().to_owned())];
+        settings.extend(mode.settings());
+        let options = LoadOptions {
+            settings,
+            ..LoadOptions::default()
+        };
+        let name = self
+            .path
+            .file_stem()
+            .map_or_default(|stem| stem.to_string_lossy().into_owned());
+        let world =
+            World::load(&progs, &name, &bsp, files, options).map_err(|error| self.failed(error))?;
+        with(&progs, world)
+    }
+
+    /// The error of a world of this map that did not spawn or run.
+    pub(crate) fn failed(&self, error: qs_sim::WorldError) -> WorkbenchError {
+        WorkbenchError::Spawn {
+            path: self.path.clone(),
+            error,
+        }
+    }
+}
+
+/// The world a `.map` was last compiled to for spawning, kept for the map's text so that
+/// firing and filtering again do not compile it again (FIRE-5.4).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SpawnWorld {
+    /// The map's text, and its BSP, `None` when it did not compile to one a loader reads.
+    last: Option<(Vec<u8>, Option<Vec<u8>>)>,
+}
+
+impl SpawnWorld {
+    /// The BSP id's qbsp compiles `text` to, compiled once for each text.
+    fn of(&mut self, text: &[u8]) -> Option<Vec<u8>> {
+        if let Some((kept, bsp)) = &self.last
+            && kept == text
+        {
+            return bsp.clone();
+        }
+        let bsp = qs_map_bsp::Compiler::default()
+            .compile(text, None)
+            .ok()
+            .map(|compiled| compiled.bsp)
+            // A map with no brush that has volume compiles to a BSP no loader reads.
+            .filter(|bsp| Bsp::read(bsp, BspLoader::default()).is_ok());
+        self.last = Some((text.to_vec(), bsp.clone()));
+        bsp
+    }
+}
+
+impl<L: crate::Loader> Workbench<L> {
+    /// What the game spawns the open map from: the project built, and the map's entity lump.
+    pub(crate) fn map_spawn(&mut self) -> Result<MapSpawn, WorkbenchError> {
         if self.root().is_none() {
             return Err(WorkbenchError::NoProject);
         }
@@ -125,7 +216,6 @@ impl<L: crate::Loader> Workbench<L> {
             break;
         }
         let program = program.ok_or(WorkbenchError::NotBuilt)?;
-        let progs = Progs::read(&program).map_err(|_| WorkbenchError::NotBuilt)?;
         let root = self.root().map(Path::to_path_buf);
         let document = self.map().ok_or(WorkbenchError::NoMap)?;
         let path = document.path().to_path_buf();
@@ -156,42 +246,45 @@ impl<L: crate::Loader> Workbench<L> {
                     .filter(|(_, entity)| entity.pairs().next().is_some())
                     .map(|(place, _)| place)
                     .collect();
-                let bsp = std::fs::read(path.with_extension(BSP_EXTENSION)).ok();
+                // The world the lump's `*n` models are in: the map compiled in memory as id's qbsp
+                // compiles it, which gives each brush entity the model the lump names (MAP-6.2);
+                // when it does not compile, the BSP beside it, else an empty world.
+                let compiled = self.spawn_world.of(&text);
+                let bsp =
+                    compiled.or_else(|| std::fs::read(path.with_extension(BSP_EXTENSION)).ok());
                 (lump, places, bsp)
             }
         };
-        let mut bsp = match &compiled {
-            Some(bytes) => Bsp::read(bytes, BspLoader::default()).map_err(|error| {
-                crate::MapEditError::Bsp {
-                    path: path.clone(),
-                    error,
-                }
-            })?,
-            None => Bsp::empty(&entities),
-        };
-        bsp.entity_lump = &entities;
-        let files: qs_sim::ModelFiles = Rc::new(move |name: &str| {
-            root.as_ref()
-                .and_then(|root| std::fs::read(root.join(name)).ok())
-        });
-        let mut settings = vec![("skill".to_owned(), skill.setting().to_owned())];
-        settings.extend(mode.settings());
-        let options = LoadOptions {
-            settings,
-            ..LoadOptions::default()
-        };
-        let name = path
-            .file_stem()
-            .map_or_default(|stem| stem.to_string_lossy().into_owned());
-        let world = World::load(&progs, &name, &bsp, files, options)
-            .map_err(|error| WorkbenchError::Spawn { path, error })?;
-        let kept: BTreeSet<usize> = places
-            .iter()
-            .enumerate()
-            .skip(1)
-            .filter(|&(place, _)| world.map_entity(&progs, MapPlace::new(place)).is_some())
-            .map(|(_, &entity)| entity)
-            .collect();
+        Ok(MapSpawn {
+            program,
+            entities,
+            compiled,
+            places,
+            path,
+            root,
+        })
+    }
+
+    /// The entities of the open map the game removes at `skill` in a game of `mode`: the
+    /// project built, and the map's entities spawned in `qs-sim` with those settings.
+    fn map_removed(
+        &mut self,
+        skill: Skill,
+        mode: GameMode,
+    ) -> Result<Vec<EntityIndex>, WorkbenchError> {
+        let spawn = self.map_spawn()?;
+        let kept: BTreeSet<usize> = spawn.world(skill, mode, |_, world| {
+            Ok(spawn
+                .places()
+                .iter()
+                .enumerate()
+                .skip(1)
+                // A spawn function may rename its entity, as id's `func_door` names itself
+                // `door`; it is still kept (BRIDGE-4.18).
+                .filter(|&(place, _)| world.map_edict(MapPlace::new(place)).is_some())
+                .map(|(_, &entity)| entity)
+                .collect())
+        })?;
         let count = self
             .map()
             .map_or(0, |document| document.file().entities.len());

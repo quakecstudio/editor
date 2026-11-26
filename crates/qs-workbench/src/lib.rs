@@ -27,6 +27,7 @@ pub mod ids;
 pub mod map_check;
 pub mod map_compile;
 pub mod map_filter;
+pub mod map_logic;
 pub mod map_profile;
 pub mod models;
 pub mod next_edit;
@@ -366,6 +367,10 @@ pub struct Workbench<L> {
     profile: Option<String>,
     /// What the last `paths.open` opened, until the window takes it.
     opened_paths: Option<open_paths::PathsOpened>,
+    /// The issues `map.logic_issues` last found, which `map.issues` lists (FIRE-5.3).
+    logic: map_logic::LogicFound,
+    /// The world the open `.map` was last compiled to for spawning (FIRE-5.4).
+    spawn_world: map_filter::SpawnWorld,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -392,6 +397,8 @@ impl<L: Loader> Workbench<L> {
             maps: MapStore::default(),
             profile: None,
             opened_paths: None,
+            logic: map_logic::LogicFound::default(),
+            spawn_world: map_filter::SpawnWorld::default(),
         }
     }
 
@@ -837,6 +844,19 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_sim::WorldError,
     },
+    /// The game did not keep the entity at the skill and in the kind of game given, so it
+    /// cannot be fired (FIRE-5.1).
+    NotSpawned {
+        /// The entity.
+        entity: EntityIndex,
+    },
+    /// The entity cannot be fired (FIRE-1.3).
+    NotFired {
+        /// The entity.
+        entity: EntityIndex,
+        /// Why.
+        error: qs_sim::FireError,
+    },
     /// A map command could not open, change or save the open map.
     MapEdit(MapEditError),
     /// A region compile's box has no volume, or its rooms no brushes (MAP-16.1).
@@ -912,6 +932,14 @@ impl fmt::Display for WorkbenchError {
             Self::MapLight { error } => write!(f, "the map does not light: {error}"),
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::NotSpawned { entity } => write!(
+                f,
+                "the game does not keep entity {} at that skill and in that kind of game",
+                entity.get()
+            ),
+            Self::NotFired { entity, error } => {
+                write!(f, "entity {} cannot be fired: {error}", entity.get())
+            }
             Self::MapEdit(error) => error.fmt(f),
             Self::NoRegion => f.write_str("the region has no volume"),
             Self::NotInRoom { entity } => write!(
@@ -962,6 +990,8 @@ impl Error for WorkbenchError {
             Self::MapLight { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
+            Self::NotFired { error, .. } => Some(error),
+            Self::NotSpawned { .. } => None,
             Self::NoRegion
             | Self::NotInRoom { .. }
             | Self::EyeOutsideRegion
