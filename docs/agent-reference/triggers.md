@@ -95,7 +95,9 @@ void() trigger_hurt =
   monster, a grenade and a corpse all touch.
 - The `/*QUAKED` comment is the map editor's, and `project.entities` reads it: id writes `?`
   in place of a box for a brush entity, and after it the names of its spawnflags in the
-  order of their bits (`notouch` is `SPAWNFLAG_NOTOUCH`, 1).
+  order of their bits (`notouch` is `SPAWNFLAG_NOTOUCH`, 1). A line under it that starts with
+  a key in quotes, `"wait" time between fires`, is what the map editor shows beside that key
+  when a mapper adds it; a bare `"sounds"` line takes the lines under it, up to a blank line.
 
 ## Firing targets
 

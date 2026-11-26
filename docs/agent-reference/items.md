@@ -170,7 +170,8 @@ keys and powerups from `items` at a level's end; anything else in `items` is car
 
 - Its file, or `items.qc`, in `progs.src` after the files it uses.
 - A `/*QUAKED classname (r g b) (mins) (maxs) flag1 flag2` comment above the spawn function,
-  as id's have: the map editor reads it for the entity's name, box and spawnflags.
+  as id's have: the map editor reads it for the entity's name, box and spawnflags, and a
+  line starting with a quoted key, `"wait" seconds before it respawns`, for what that key does.
 - Nothing else for a plain item: unlike a monster or a weapon it is named nowhere but in
   its own functions. A weapon's pickup also needs its branch in `weapon_touch`, and ammo in
   `ammo_touch` (the `weapons` topic).
