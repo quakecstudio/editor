@@ -14,7 +14,7 @@ use qc_edict::EdictNumber;
 use qc_progs::Progs;
 
 use super::World;
-use crate::spawn::LoadedEntity;
+use crate::spawn::{LoadedEntity, SpawnCounts};
 
 /// An entity's place in the map editor's list of the map's entities, from 0, the world
 /// (BRIDGE-4.13).
@@ -36,11 +36,13 @@ struct Taken {
     freetime: f32,
 }
 
-/// One of the map's entities: its classname and the edict it took, if any.
+/// One of the map's entities: its classname, the edict it took, if any, and what its spawn
+/// function added to the level's counters.
 #[derive(Clone, Debug, PartialEq)]
 struct Entry {
     classname: String,
     taken: Option<Taken>,
+    counted: SpawnCounts,
 }
 
 /// The map's entities, in the editor's order.
@@ -66,6 +68,7 @@ impl MapEntities {
             list.push(Entry {
                 classname: String::from_utf8_lossy(&entity.classname).into_owned(),
                 taken: entity.edict.and_then(|edict| world.taken(edict.index())),
+                counted: entity.counted,
             });
         }
         Self(list)
@@ -114,6 +117,17 @@ impl World {
             .map(|now| now.edict)
     }
 
+    /// What the spawn function of the map's entity at `place` added to the level's counters
+    /// when the map loaded (BALANCE-1.1): nothing for one not spawned then, one put in the list
+    /// since, and a place past the list.
+    #[must_use]
+    pub fn map_counts(&self, place: MapPlace) -> SpawnCounts {
+        self.map_entities
+            .0
+            .get(place.0)
+            .map_or_default(|entry| entry.counted)
+    }
+
     /// Puts a map entity of `classname` at `place` in the list, in edict `edict` or none: the
     /// entities from `place` on move one later. A place past the end is the end.
     pub fn insert_map_entity(
@@ -129,6 +143,7 @@ impl World {
             Entry {
                 classname: classname.to_owned(),
                 taken,
+                counted: SpawnCounts::default(),
             },
         );
     }

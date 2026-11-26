@@ -66,6 +66,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.apply_fix`](#mapapply_fix) | Applies a quick fix `map.issues` gave, as one step with undo. |
 | [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
 | [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
+| [`map.balance`](#mapbalance) | A balance sheet of the open map for each skill, 0 to 3, in single player, coop and deathmatch, read by spawning the map with the project's program: the monsters by class with the health their spawn functions give them, counted as the program counts total_monsters; the pickups that give weapons; the ammunition by kind with the damage id's weapons do with it (none for a mod's own); the health and armour given, each what touching the pickup gives a player; the secrets; and the damage over the monsters' health. Each for the whole map, each layer and group, and the entities in selection when given, each line with its entities. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
 | [`map.brush_clip`](#mapbrush_clip) | Clips a brush of the open map by the plane through three points, keeping the part behind it, in front of it, or both as two brushes. |
 | [`map.brush_create`](#mapbrush_create) | Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture. |
@@ -2069,6 +2070,40 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.balance`
+
+A balance sheet of the open map for each skill, 0 to 3, in single player, coop and deathmatch, read by spawning the map with the project's program: the monsters by class with the health their spawn functions give them, counted as the program counts total_monsters; the pickups that give weapons; the ammunition by kind with the damage id's weapons do with it (none for a mod's own); the health and armour given, each what touching the pickup gives a player; the secrets; and the damage over the monsters' health. Each for the whole map, each layer and group, and the entities in selection when given, each line with its entities.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.balance`.",
+  "properties": {
+    "selection": {
+      "default": [],
+      "description": "The entities selected, by place in the map, whose own tally each sheet gives; none when\nempty.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    }
+  },
+  "title": "BalanceParams",
   "type": "object"
 }
 ```

@@ -35,6 +35,7 @@ drives the fixed control as a modder would.
 | Prefabs | The prefab browser, the prefab name and Save | None |
 | Issues | Check map, the issue list and its fixes, the map search | None |
 | Logic | Fire, Check logic, the trace and its scrubber, the issue list | U9 |
+| Balance | Count, the kind of game, the table a column a skill, each row's name selecting its entities and each skill's heading the view filter | None |
 | Your Quake files | The window that finds the game's files | None |
 | Import texture | The import preview: the name, the colour matching, Import and Cancel | U10 |
 | Status bar | The panel buttons, the problem counts, the preview host's status | None |

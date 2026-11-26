@@ -24,6 +24,7 @@ pub mod files_changed;
 pub mod full_build;
 pub mod git;
 pub mod ids;
+pub mod map_balance;
 pub mod map_check;
 pub mod map_compile;
 pub mod map_filter;

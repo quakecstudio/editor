@@ -47,6 +47,7 @@ map.add_wad
 map.apply_fix
 map.backup
 map.backups
+map.balance
 map.brush_chamfer
 map.brush_clip
 map.brush_create

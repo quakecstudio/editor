@@ -209,3 +209,48 @@ weapon in single player, select another first to test the impulse. For one shot,
 send `+attack`, `preview.step` one frame, and send `-attack`: `+attack` and `-attack` in
 one console line fire nothing, and held while the game runs it fires again and again.
 `engine.inspect` reads `currentammo`, `weaponmodel` and the health of what you shot.
+
+## What a unit of ammo can do
+
+`map.balance` counts the damage a map's ammunition can do with this table (`ID_WEAPONS` in
+`crates/qs-workbench/src/map_balance.rs`, which a test checks against these rows). It is the
+most one shot does to one target with every pellet or nail hitting, a random part at its
+least, quoted from `weapons.qc` of id 1.01 (`id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73`,
+`qcc/v101qc`) and of the rerelease
+(`id-Software/quake-rerelease-qc@634eefab09a77eb7b5f5ca7078ba3d8784a91142`, `quakec`), which
+give each weapon the same numbers. The lines are id 1.01's, then the rerelease's.
+
+| Weapon | Ammo | Units a shot | Damage a shot |
+| --- | --- | --- | --- |
+| `shotgun` | `ammo_shells` | 1 | 24 |
+| `super_shotgun` | `ammo_shells` | 2 | 56 |
+| `nailgun` | `ammo_nails` | 1 | 9 |
+| `super_nailgun` | `ammo_nails` | 2 | 18 |
+| `grenade_launcher` | `ammo_rockets` | 1 | 120 |
+| `rocket_launcher` | `ammo_rockets` | 1 | 100 |
+| `lightning` | `ammo_cells` | 1 | 30 |
+
+- **Shotgun**: `self.ammo_shells - 1` and `FireBullets (6, dir, '0.04 0.04 0')` (lines 290
+  and 292; 292 and 294), each pellet `TraceAttack (4, direction)` (270; 271), which calls
+  `AddMultiDamage (trace_ent, damage)` (233; 234): six pellets of 4.
+- **Super shotgun**: `self.ammo_shells - 2` and `FireBullets (14, dir, '0.14 0.08 0')` (315
+  and 317; 318 and 320): fourteen pellets of 4 for two shells.
+- **Nailgun**: `self.ammo_nails - 1` (679; 690), and `spike_touch`'s `T_Damage (other, self,
+  self.owner, 9)` (708; 715).
+- **Super nailgun**: `self.ammo_nails - 2` (648; 658), and `superspike_touch`'s `T_Damage
+  (other, self, self.owner, 18)` (748; 757).
+- **Grenade launcher**: `self.ammo_rockets - 1` (567; 576), and `GrenadeExplode`'s `T_RadiusDamage (self, self.owner, 120, world)`
+  (533; 540). `T_RadiusDamage` (`combat.qc`) takes half the distance from the blast to the
+  target's centre from the 120, so 120 is a blast at the target's centre.
+- **Rocket launcher**: `self.ammo_rockets - 1` (395; 397), and `T_MissileTouch`'s `damg = 100 + random()*20` (359; 362) to what it
+  hits, halved for `monster_shambler` ("mostly immune"); its `T_RadiusDamage (self,
+  self.owner, 120, other)` passes over the one hit, so 100 is the least a hit does.
+- **Thunderbolt**: `self.ammo_cells - 1` and `LightningDamage (self.origin, trace_endpos +
+  v_forward*4, self, 30)` (508 and 524; 516 and 531). Fired under water it instead
+  discharges every cell at once in `T_RadiusDamage (self, self, 35*self.ammo_cells, world)`
+  (495; 504, where it is `35*cells`).
+
+A kind of ammunition is counted with the most any weapon does with one unit: a shell 28 (the
+super shotgun), a nail 9, a rocket 120 (the grenade launcher's blast), a cell 30. A mod's
+own kind, a field the engine does not define, is counted in units and with no damage, as is
+any weapon a mod changes: read its `weapons.qc` for what it does.

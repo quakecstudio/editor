@@ -26,6 +26,12 @@
 //! check could not judge, each printed. A corpus map's findings fail nothing, as `--logic`'s
 //! do: each is looked at, and the counts are the record of a run.
 //!
+//! With `--balance`, each map is opened with each codebase and its balance sheets made as
+//! `map.balance` makes them (L-78, BALANCE-2): on every skill and in every kind of game, the
+//! sheet's monsters and secrets must be the program's own `total_monsters` and `total_secrets`
+//! after the spawn, or the check fails; what the sheet of normal skill in single player holds is
+//! printed, the record of a run. A map the program cannot spawn is listed and fails nothing.
+//!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,6 +45,8 @@ use qs_map_edit::{EntityIndex, MAP_OPEN};
 use qs_map_gen::playable::{ExitReach, Ground, Moves, Skill};
 use qs_pak::Pak;
 use qs_workbench::entity_classes::PROJECT_ENTITIES;
+use qs_workbench::map_balance::{MAP_BALANCE, MapBalance};
+use qs_workbench::map_filter::GameMode;
 use qs_workbench::map_logic::MAP_LOGIC_ISSUES;
 use qs_workbench::{Config, Dialect, FsLoader, OPEN_PROJECT, Workbench, register};
 
@@ -65,6 +73,9 @@ pub(crate) struct Args {
     /// Also check that each map can be finished (`map.playability`).
     #[arg(long)]
     playable: bool,
+    /// Also make each map's balance sheets with each codebase's program (`map.balance`).
+    #[arg(long)]
+    balance: bool,
     /// Each codebase directory.
     #[arg(required = true)]
     codebases: Vec<PathBuf>,
@@ -80,7 +91,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 let classname = String::from_utf8_lossy(classname).into_owned();
                 used.entry(classname).or_default().insert(label.clone());
             }
-            if args.logic || args.playable {
+            if args.logic || args.playable || args.balance {
                 compiled.push((label.clone(), bsp));
             }
             maps.push((label, map));
@@ -90,6 +101,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     if args.playable {
         check_playable(&compiled)?;
     }
+    let corpus = compiled.clone();
     if args.logic {
         compiled.extend(generated_levels()?);
     }
@@ -100,6 +112,9 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         }
         if args.logic {
             ok &= check_logic(codebase, &compiled)?;
+        }
+        if args.balance {
+            ok &= check_balance(codebase, &corpus)?;
         }
     }
     println!(
@@ -380,6 +395,98 @@ fn fire_maps(
 
 /// The label of a level `qs-map-gen` made, before its seed.
 const GENERATED: &str = "generated-";
+/// Makes the balance sheets of every map with one codebase's program, as `map.balance` does
+/// (L-78), and checks that each sheet's monsters and secrets are the program's own counters.
+fn check_balance(dir: &Path, maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
+    let mut registry = qs_commands::Registry::new();
+    register(&mut registry).map_err(|e| e.to_string())?;
+    let config = Config {
+        dialect: Some(dialect_of(dir)?),
+        ..Config::default()
+    };
+    let mut session = qs_commands::Session::new(Workbench::new(FsLoader, config), registry);
+    session
+        .execute(OPEN_PROJECT, serde_json::json!({ "path": dir }))
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    let scratch = std::env::temp_dir().join(format!("xtask-balance-corpus-{}", std::process::id()));
+    fs::create_dir_all(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    let made = balance_maps(&mut session, &scratch, dir, maps);
+    // The scratch directory holds nothing else, and goes whether the sheets were made or not.
+    fs::remove_dir_all(&scratch).ok();
+    made
+}
+
+/// [`check_balance`]'s sheets of each map, in `scratch`.
+fn balance_maps(
+    session: &mut qs_commands::Session<Workbench<FsLoader>>,
+    scratch: &Path,
+    dir: &Path,
+    maps: &[(String, Vec<u8>)],
+) -> Result<bool, String> {
+    let name = dir.display();
+    let mut ok = true;
+    let mut sheets = 0_usize;
+    for (label, bsp) in maps {
+        let path = scratch.join("map.bsp");
+        fs::write(&path, bsp).map_err(|e| format!("{}: {e}", path.display()))?;
+        session
+            .execute(MAP_OPEN, serde_json::json!({ "path": path }))
+            .map_err(|e| format!("{label}: {e}"))?;
+        let found = match session.execute(MAP_BALANCE, serde_json::json!({})) {
+            Ok(found) => found,
+            Err(error) => {
+                println!("info  {name}: {label}: not spawned: {error}");
+                continue;
+            }
+        };
+        let balance: MapBalance =
+            serde_json::from_value(found).map_err(|e| format!("{label}: {e}"))?;
+        for sheet in &balance.sheets {
+            sheets = sheets.saturating_add(1);
+            // BALANCE-2.5: the sheet's totals are the program's counters.
+            #[expect(clippy::float_cmp, reason = "spec BALANCE-2.5: counts summed exactly")]
+            let counted = sheet.map.monster_count == sheet.total_monsters
+                && sheet.map.secrets.amount == sheet.total_secrets;
+            if !counted {
+                ok = false;
+                println!(
+                    "FAIL  {name}: {label}: {:?} {:?}: {} monsters and {} secrets counted, the \
+                     program's total_monsters {} and total_secrets {}",
+                    sheet.skill,
+                    sheet.mode,
+                    sheet.map.monster_count,
+                    sheet.map.secrets.amount,
+                    sheet.total_monsters,
+                    sheet.total_secrets
+                );
+            }
+            if sheet.skill == Skill::Normal && sheet.mode == GameMode::Single {
+                let ratio = sheet
+                    .ratio
+                    .map_or_else(|| "no ratio".to_owned(), |r| format!("ratio {r:.2}"));
+                println!(
+                    "info  {name}: {label}: {} monsters of {} health, {} damage, {} health, {} \
+                     armour, {} secrets, {ratio}",
+                    sheet.map.monster_count,
+                    sheet.map.monster_health,
+                    sheet.map.damage,
+                    sheet.map.health.amount,
+                    sheet.map.armour.amount,
+                    sheet.map.secrets.amount
+                );
+            }
+        }
+    }
+    if ok {
+        println!(
+            "ok    {name}: each of {sheets} balance sheets over {} maps counts the program's \
+             total_monsters and total_secrets",
+            maps.len()
+        );
+    }
+    Ok(ok)
+}
+
 /// Checks that each of `maps` can be finished, as `map.playability` does with a player's moves
 /// (L-77), and prints what each gives.
 fn check_playable(maps: &[(String, Vec<u8>)]) -> Result<(), String> {

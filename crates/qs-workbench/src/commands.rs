@@ -19,6 +19,7 @@ use crate::editing::{Saved, TextStep};
 use crate::entity_classes::register_entities;
 use crate::export::ExportProject;
 use crate::files_changed::FilesChangedCommand;
+use crate::map_balance::register_map_balance;
 use crate::map_check::register_map;
 use crate::map_filter::MapFilter;
 use crate::map_logic::register_map_logic;
@@ -165,6 +166,7 @@ pub fn register<C: HasWorkbench + 'static>(
     register_map_edit(registry)?;
     registry.register(FilesChangedCommand)?;
     registry.register(MapFilter)?;
+    register_map_balance(registry)?;
     register_map_logic(registry)?;
     register_open_paths(registry)?;
     register_search(registry)?;
