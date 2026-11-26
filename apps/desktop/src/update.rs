@@ -33,9 +33,6 @@ pub(crate) enum Asked {
     Background,
 }
 
-/// How a check is run: on a thread of its own in the app, at once in a test.
-pub(crate) type Run = fn(Box<dyn FnOnce() + Send>);
-
 /// What the update window shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Shown {
@@ -72,7 +69,6 @@ pub(crate) struct UpdateNotice {
     current: Result<Version, String>,
     channel: Channel,
     clock: Box<dyn Fn() -> SystemTime>,
-    run: Run,
     /// Where the background check keeps when it last asked (`qs_update::state_path`).
     state_file: Option<PathBuf>,
     /// The user's settings file, which keeps the release skipped.
@@ -97,20 +93,16 @@ impl UpdateNotice {
             env!("CARGO_PKG_VERSION"),
             Install::current().map_or(Channel::Unpackaged, |install| install.channel()),
             Box::new(SystemTime::now),
-            |check| {
-                std::thread::spawn(check);
-            },
         )
     }
 
     /// A notice reading the feed through `fetch`, for an install of `channel` running
-    /// `version`, telling the time by `clock` and running each check with `run`.
+    /// `version`, telling the time by `clock`.
     pub(crate) fn with(
         fetch: Arc<dyn Fetch>,
         version: &str,
         channel: Channel,
         clock: Box<dyn Fn() -> SystemTime>,
-        run: Run,
     ) -> Self {
         Self {
             fetch,
@@ -119,7 +111,6 @@ impl UpdateNotice {
                 .map_err(|error: qs_update::NotAVersion| error.to_string()),
             channel,
             clock,
-            run,
             state_file: None,
             settings_file: None,
             mode: UpdateCheck::default(),
@@ -161,8 +152,8 @@ impl UpdateNotice {
         }
     }
 
-    /// Asks the feed for the latest release, off the frame; [`UpdateNotice::poll`] takes the
-    /// answer. A person's check opens the window at once. While a check waits no second one
+    /// Asks the feed for the latest release on a thread of its own, as the agent's inline edit
+    /// asks its model, so the frame never waits; [`UpdateNotice::poll`] takes the answer. A person's check opens the window at once. While a check waits no second one
     /// is made: a person who asks during the background's is answered by it.
     pub(crate) fn check(&mut self, asked: Asked, ctx: &egui::Context) {
         if asked == Asked::Person {
@@ -186,27 +177,46 @@ impl UpdateNotice {
         let (answer, answered) = channel();
         let fetch = Arc::clone(&self.fetch);
         let ctx = ctx.clone();
-        (self.run)(Box::new(move || {
+        std::thread::spawn(move || {
             // The window may have closed since: then nobody takes the answer.
             let _unsent = answer.send(Found::check(fetch.as_ref(), current));
             ctx.request_repaint();
-        }));
+        });
         self.pending = Some((asked, answered));
     }
 
-    /// Takes the answer of a check, once it has one: a later release is announced and kept
-    /// for the next start, and a person who asked is told whatever was found.
+    /// Takes the answer of a check, once it has one.
     pub(crate) fn poll(&mut self) {
-        let Some((asked, answered)) = &self.pending else {
+        let Some((_, answered)) = &self.pending else {
             return;
         };
-        let asked = *asked;
-        let result = match answered.try_recv() {
-            Ok(result) => result.map_err(|error| error.to_string()),
-            Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => Err(Text::UpdateNoAnswer.get().to_owned()),
+        match answered.try_recv() {
+            Ok(result) => self.answered(result.map_err(|error| error.to_string())),
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.answered(Err(Text::UpdateNoAnswer.get().to_owned()));
+            }
+        }
+    }
+
+    /// Waits for the check that is out, so a test sees its answer without waiting on a clock.
+    #[cfg(test)]
+    pub(crate) fn wait(&mut self) {
+        if let Some((_, answered)) = &self.pending {
+            let result = answered
+                .recv()
+                .map_err(|error| error.to_string())
+                .and_then(|result| result.map_err(|error| error.to_string()));
+            self.answered(result);
+        }
+    }
+
+    /// Does what a check's answer calls for: a later release is announced and kept for the
+    /// next start, and a person who asked is told whatever was found.
+    fn answered(&mut self, result: Result<Found, String>) {
+        let Some((asked, _)) = self.pending.take() else {
+            return;
         };
-        self.pending = None;
         match result {
             Ok(found) => {
                 self.record(&found);

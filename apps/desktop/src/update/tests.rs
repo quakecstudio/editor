@@ -147,11 +147,7 @@ fn window(spec: &Spec, dir: &Path, feed: &Arc<Feed>, clock: &Clock) -> Window {
         );
     let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     let fetch: Arc<dyn Fetch> = Arc::<Feed>::clone(feed);
-    // Each check runs at once, where the app runs it on a thread: no test waits on one.
-    app.shell_mut().update =
-        UpdateNotice::with(fetch, RUNNING, spec.channel, clock.reader(), |check| {
-            check()
-        });
+    app.shell_mut().update = UpdateNotice::with(fetch, RUNNING, spec.channel, clock.reader());
     let settings = dir.join("settings.toml");
     if let Some(text) = spec.settings
         && !settings.exists()
@@ -163,6 +159,8 @@ fn window(spec: &Spec, dir: &Path, feed: &Arc<Feed>, clock: &Clock) -> Window {
     }
     app.shell_mut()
         .start_update_check(state_path(dir), &harness.ctx);
+    // The check runs on a thread: its answer is waited for, not a clock.
+    app.shell_mut().update.wait();
     *harness.state_mut() = Some(app);
     harness.run();
     harness
@@ -174,7 +172,10 @@ fn check_for_updates(harness: &mut Window) {
     app.shell_mut()
         .execute(qs_layout::CHECK_FOR_UPDATES, serde_json::json!({}))
         .unwrap();
+    // The frame carries the command out, starting the check; its answer is waited for.
     harness.run();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().update.wait();
     harness.run();
 }
 
@@ -467,7 +468,6 @@ fn this_builds_version_is_a_releases() {
         "2026.11.3-dev",
         Channel::Unpackaged,
         Clock::at(START).reader(),
-        |check| check(),
     );
     let ctx = egui::Context::default();
     notice.check(super::Asked::Background, &ctx);
