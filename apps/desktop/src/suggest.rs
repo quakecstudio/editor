@@ -39,7 +39,8 @@ pub(crate) struct Suggest<'a> {
 /// The list's state between frames.
 #[derive(Clone, Copy, Debug, Default)]
 struct Shown {
-    /// The row the arrow keys marked, among those shown.
+    /// The row the arrow keys marked, among those shown; cleared by typing, which changes the
+    /// rows.
     marked: Option<usize>,
     /// Where the list was drawn last frame.
     at: Option<egui::Rect>,
@@ -79,8 +80,12 @@ impl Suggest<'_> {
                 .at
                 .zip(ui.ctx().pointer_interact_pos())
                 .is_some_and(|(rect, pointer)| rect.contains(pointer));
+        if response.changed() || response.gained_focus() {
+            shown.marked = None;
+        }
         let matching = self.matching(typed);
         let mut done = None;
+        let mut moved = false;
         // Enter takes the keyboard from a one-line field in the frame it is pressed, so the
         // keys are read while the field has it or has just lost it.
         if (response.has_focus() || response.lost_focus()) && !matching.is_empty() {
@@ -98,6 +103,7 @@ impl Suggest<'_> {
             if up {
                 shown.marked = shown.marked.and_then(|m| m.checked_sub(1));
             }
+            moved = down || up;
             if let Some(offer) = shown.marked.and_then(|m| matching.get(m))
                 && enter
             {
@@ -137,7 +143,8 @@ impl Suggest<'_> {
                                     let row = ui.add(egui::Button::selectable(marked, job));
                                     let row =
                                         row.accessible_name(offer_name(&offer.name, &offer.detail));
-                                    if marked {
+                                    // Only as the mark moves, so the wheel still scrolls.
+                                    if marked && moved {
                                         row.scroll_to_me(None);
                                     }
                                     if row.clicked() {
@@ -152,7 +159,7 @@ impl Suggest<'_> {
             shown.at = None;
         }
         if done.is_none() && response.lost_focus() && !on_list {
-            done = Some(typed.clone());
+            done = Some(typed.trim().to_owned());
         }
         if let Some(value) = &done {
             typed.clone_from(value);

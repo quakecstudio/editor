@@ -6818,7 +6818,7 @@ fn a_new_key_is_offered_as_it_is_typed() {
     assert_eq!(map_value(&harness, 2, "_minlight").as_deref(), Some("8"));
 }
 
-// spec EDICT-8.4: UI-24: the Properties panel says what each control is: the class is picked
+// No spec statement: UI-24: the Properties panel says what each control is: the class is picked
 // from the project's classes, each said to be a point or a brush entity; the engine's skill
 // flags are ticked rather than typed as numbers; the compile profile and the camera's fields
 // are labelled; Fire says what it will do on hover

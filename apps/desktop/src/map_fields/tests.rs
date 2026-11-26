@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{Field, Scale, color, color_text};
+use super::{Scale, Typed, color, color_text};
 
 // No spec statement: P5-13, MAP-27: the field follows the key and its type: angle, a
 // colour, a float the map gives several values, else text
@@ -15,23 +15,23 @@ use super::{Field, Scale, color, color_text};
 fn each_key_gets_its_field() {
     let values = BTreeSet::from(["1".to_owned(), "3".to_owned()]);
     let one = BTreeSet::from(["1".to_owned()]);
-    assert_eq!(Field::of("angle", Some("float"), None), Field::Angle);
-    assert_eq!(Field::of("_color", None, None), Field::Color);
-    assert_eq!(Field::of("Color", Some("vector"), None), Field::Color);
+    assert_eq!(Typed::of("angle", Some("float"), None), Typed::Angle);
+    assert_eq!(Typed::of("_color", None, None), Typed::Color);
+    assert_eq!(Typed::of("Color", Some("vector"), None), Typed::Color);
     assert_eq!(
-        Field::of("sounds", Some("float"), Some(&values)),
-        Field::Choice(&values)
+        Typed::of("sounds", Some("float"), Some(&values)),
+        Typed::Choice(&values)
     );
-    assert_eq!(Field::of("sounds", Some("float"), Some(&one)), Field::Text);
+    assert_eq!(Typed::of("sounds", Some("float"), Some(&one)), Typed::Text);
     assert_eq!(
-        Field::of("message", Some("string"), Some(&values)),
-        Field::Text
+        Typed::of("message", Some("string"), Some(&values)),
+        Typed::Text
     );
     assert_eq!(
-        Field::of("spawnflags", Some("float"), Some(&values)),
-        Field::Text
+        Typed::of("spawnflags", Some("float"), Some(&values)),
+        Typed::Text
     );
-    assert_eq!(Field::of("speed", None, Some(&values)), Field::Text);
+    assert_eq!(Typed::of("speed", None, Some(&values)), Typed::Text);
 }
 
 // No spec statement: P5-13: a colour keeps the scale it was written in, 0 to 255 or 0 to 1

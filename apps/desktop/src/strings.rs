@@ -3219,16 +3219,15 @@ pub fn help_for(title: &str) -> String {
     format!("Help: {title}")
 }
 
-/// What an offer of a field names, shown muted after its value (UI-24).
+/// What an offer of a field names, shown muted after its value (UI-24); nothing when it names
+/// nothing known.
 #[must_use]
 pub fn offer_detail(detail: &str) -> String {
-    format!("   {detail}")
-}
-
-/// What an offered targetname names: the classnames of the entities that have it.
-#[must_use]
-pub fn targetname_detail(classnames: &[String]) -> String {
-    classnames.join(", ")
+    if detail.is_empty() {
+        String::new()
+    } else {
+        format!("   {detail}")
+    }
 }
 
 /// What an offered key is: its type, the class's default when it has one, and what the
@@ -3240,8 +3239,12 @@ pub fn key_detail(ty: &str, default: Option<&str>, comment: Option<&str>) -> Str
     format!("{ty}{default}{comment}")
 }
 
-/// An offer as a screen reader names it: its value, then what it names.
+/// An offer as a screen reader names it: its value, then what it names, when that is known.
 #[must_use]
 pub fn offer_name(name: &str, detail: &str) -> String {
-    format!("{name}, {detail}")
+    if detail.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{name}, {detail}")
+    }
 }

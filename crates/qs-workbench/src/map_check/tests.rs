@@ -161,7 +161,7 @@ fn the_project_answers_the_map_editor_from_its_quakec() {
                 { "value": 2, "name": "SILENT" },
                 { "value": 256, "name": "Not in easy" },
                 { "value": 512, "name": "Not in normal" },
-                { "value": 1024, "name": "Not in hard" },
+                { "value": 1024, "name": "Not in hard or nightmare" },
                 { "value": 2048, "name": "Not in deathmatch" },
             ],
         })

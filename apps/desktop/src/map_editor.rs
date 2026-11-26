@@ -35,7 +35,7 @@ use crate::help::{self, Topic};
 use crate::icons::{self, Icon, Toggled};
 use crate::keymap;
 use crate::map_browser::{ClassDrag, EntityBrowser};
-use crate::map_fields::{Field, spawnflags};
+use crate::map_fields::{Field, Typed, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
 use crate::map_issues::IssueBrowser;
 use crate::map_leaks::LeakView;
@@ -1804,7 +1804,7 @@ impl MapEditor {
             .iter()
             .map(|named| Offer {
                 name: named.name.clone(),
-                detail: strings::targetname_detail(&named.classnames),
+                detail: named.classnames.join(", "),
             })
             .collect();
         egui::Grid::new(ui.scope_id().with(entity))
@@ -1827,7 +1827,7 @@ impl MapEditor {
                     } else if key == CLASSNAME {
                         Field::Class(&self.class_offers)
                     } else {
-                        Field::of(key, ty, self.scene.values.get(key))
+                        Field::Typed(Typed::of(key, ty, self.scene.values.get(key)))
                     };
                     ui.horizontal(|ui| {
                         if let Some(set) = field.ui(ui, theme, key, typed, value) {

@@ -24,8 +24,9 @@ Typing is still allowed where a value outside the set is legitimate, but the set
 - `classname` offers the project's classes.
 - A new key offers the keys the entity's class reads and does not set yet. A compiler's key
   such as `_minlight`, which no QuakeC reads, is still typed and added.
-- A skill or deathmatch exclusion is a checkbox (Not in easy, Not in normal, Not in hard, Not in
-  deathmatch), not the number 256, 512, 1024 or 2048 typed into `spawnflags`.
+- A skill or deathmatch exclusion is a checkbox (Not in easy, Not in normal, Not in hard or
+  nightmare, Not in deathmatch), not the number 256, 512, 1024 or 2048 typed into
+  `spawnflags`.
 - The grid size, the pane layout and the entity filter are pickers.
 
 Where the set is open (a new name, a commit message, a QuakeC expression to watch, a model id

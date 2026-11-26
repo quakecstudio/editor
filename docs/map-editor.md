@@ -35,8 +35,8 @@ it too.
     number, and moves the numbers of its target keys on by as many, so a copied link in a
     chain names the next one. Zero padding is kept: `t09` becomes `t10`, `t010` becomes `t011`.
 - **The fields (P5-13, UI-24):** spawnflags are checkboxes named as the QuakeC names them,
-  with the engine's own after them (Not in easy, Not in normal, Not in hard, Not in deathmatch,
-  EDICT-8.4), `angle` has Up and Down, a key ending in `color` has a colour picker that keeps
+  with the engine's own after them on every class but `worldspawn` (Not in easy, Not in
+  normal, Not in hard or nightmare, Not in deathmatch, EDICT-8.4), `angle` has Up and Down, a key ending in `color` has a colour picker that keeps
   the key's scale (0 to 1 or 0 to 255), and a float the map gives several values offers those
   values. A targeting key offers the map's targetnames as it is typed, each with the classnames
   of the entities that have it, and marks a name no entity has; `classname` offers the

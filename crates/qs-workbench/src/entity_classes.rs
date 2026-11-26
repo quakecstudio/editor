@@ -83,16 +83,21 @@ pub(crate) fn class_info(class: &EntityClass) -> ClassInfo {
 }
 
 /// The flags the engine itself tests on every entity (EDICT-8.4), each named as the modder
-/// reads it: freed on a skill, or in deathmatch.
+/// reads it: freed on a skill, or in deathmatch. `SPAWNFLAG_NOT_HARD` frees it on skill "2 or
+/// more", so on nightmare too.
 const ENGINE_FLAGS: [(i32, &str); 4] = [
     (EDICT_SPAWNFLAG_NOT_EASY, "Not in easy"),
     (EDICT_SPAWNFLAG_NOT_MEDIUM, "Not in normal"),
-    (EDICT_SPAWNFLAG_NOT_HARD, "Not in hard"),
+    (EDICT_SPAWNFLAG_NOT_HARD, "Not in hard or nightmare"),
     (EDICT_SPAWNFLAG_NOT_DEATHMATCH, "Not in deathmatch"),
 ];
 
+/// The world's class, which is the level itself: no skill or game mode leaves it out.
+const WORLDSPAWN: &str = "worldspawn";
+
 /// `class`'s spawnflags by value, then the engine's (EDICT-8.4) where the class uses none of
-/// their bits, so a monster is kept off a skill by a tick rather than a number typed.
+/// their bits, so a monster is kept off a skill by a tick rather than a number typed; the
+/// world's class has its own alone.
 fn spawnflags(class: &EntityClass) -> Vec<FlagInfo> {
     let mut flags: Vec<FlagInfo> = class
         .spawnflags
@@ -102,6 +107,9 @@ fn spawnflags(class: &EntityClass) -> Vec<FlagInfo> {
             name: flag.name.clone(),
         })
         .collect();
+    if class.name == WORLDSPAWN {
+        return flags;
+    }
     for (value, name) in ENGINE_FLAGS {
         let value = value.unsigned_abs();
         if !flags.iter().any(|flag| flag.value == value) {

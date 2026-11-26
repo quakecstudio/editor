@@ -59,13 +59,20 @@ const COMPONENTS: usize = 3;
 /// How a key's value is edited.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Field<'a> {
-    /// As text.
-    Text,
+    /// Typed, with controls beside it for the kind of value.
+    Typed(Typed<'a>),
     /// The name of an entity to fire, from the map's targetnames, beside the eyedropper; a
     /// name no entity has is marked.
     Target(&'a [Offer]),
     /// The entity's class, from the project's classes.
     Class(&'a [Offer]),
+}
+
+/// A value typed, and what is beside its field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Typed<'a> {
+    /// As text.
+    Text,
     /// An angle in degrees, or up or down.
     Angle,
     /// A colour of three numbers.
@@ -74,7 +81,7 @@ pub(crate) enum Field<'a> {
     Choice(&'a BTreeSet<String>),
 }
 
-impl<'a> Field<'a> {
+impl<'a> Typed<'a> {
     /// The field for `key`, of the type `ty` its class reads it as, which the map gives the
     /// values `in_use`.
     pub(crate) fn of(key: &str, ty: Option<&str>, in_use: Option<&'a BTreeSet<String>>) -> Self {
@@ -91,7 +98,9 @@ impl<'a> Field<'a> {
             Some(_) | None => Self::Text,
         }
     }
+}
 
+impl Field<'_> {
     /// Draws the field over `typed`, the value being typed, for the value `value`; the value
     /// to set once an edit is done.
     /// The field is named `key` to a screen reader.
@@ -126,19 +135,19 @@ impl<'a> Field<'a> {
                 };
                 field.show(ui, theme, typed).filter(|done| done != value)
             }
-            Self::Text | Self::Angle | Self::Color | Self::Choice(_) => {
-                self.typed_ui(ui, key, typed, value)
-            }
+            Self::Typed(field) => field.ui(ui, key, typed, value),
         })
         .inner
     }
+}
 
+impl Typed<'_> {
     /// A field typed as text, with the angle's, the colour's or the choice's controls beside
     /// it; the value to set once an edit is done.
-    fn typed_ui(self, ui: &mut Ui, key: &str, typed: &mut String, value: &str) -> Option<String> {
+    fn ui(self, ui: &mut Ui, key: &str, typed: &mut String, value: &str) -> Option<String> {
         let mut set = None;
         let width = match self {
-            Self::Text | Self::Target(_) | Self::Class(_) => VALUE_WIDTH,
+            Self::Text => VALUE_WIDTH,
             Self::Angle | Self::Color | Self::Choice(_) => SHORT_WIDTH,
         };
         let edit = ui.add_sized(
@@ -150,7 +159,7 @@ impl<'a> Field<'a> {
             set = Some(typed.clone());
         }
         match self {
-            Self::Text | Self::Target(_) | Self::Class(_) => {}
+            Self::Text => {}
             Self::Angle => {
                 if Icon::Up.tool(ui, Text::MapAngleUp).clicked() {
                     set = Some(UP.to_owned());
