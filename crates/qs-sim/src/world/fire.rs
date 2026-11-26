@@ -658,7 +658,9 @@ impl World {
     /// Fires edict `n` and traces what the program does about it (FIRE-1 to FIRE-3): its
     /// `use` or its `touch` runs with the player as `other` and as the program's `activator`,
     /// then the server's frames, until nothing the firing reached has a think pending, the
-    /// length is up, the program asks the host for a command, or a function fails.
+    /// length is up, the program asks the host for a command, or a function fails. The world
+    /// is left as the firing left it, with the tracking of changes ([`World::track_changes`])
+    /// off: a host that tracks them fires a copy.
     ///
     /// # Errors
     ///

@@ -514,12 +514,24 @@ struct Firer {
     targetname: Option<String>,
 }
 
+/// The issues found so far, each once for its entity and kind, as the first firing showed it
+/// (FIRE-4.2).
+#[derive(Default)]
+struct Found(BTreeMap<(EntityIndex, LogicKind), LogicIssue>);
+
+impl Found {
+    /// Keeps `issue` unless its entity already has one of its kind.
+    fn keep(&mut self, issue: LogicIssue) {
+        self.0.entry((issue.entity, issue.kind)).or_insert(issue);
+    }
+}
+
 /// The issues of one map, gathered trace by trace (FIRE-4).
 struct Finder<'s, 'p, 'a> {
     stage: &'s Stage<'p, 'a>,
     /// The `targetname` of each entity of the map that has one.
     targetnames: BTreeMap<EntityIndex, String>,
-    issues: BTreeSet<LogicIssue>,
+    issues: Found,
 }
 
 impl Finder<'_, '_, '_> {
@@ -545,7 +557,7 @@ impl Finder<'_, '_, '_> {
                     classname,
                     ..
                 } => {
-                    self.issues.insert(LogicIssue {
+                    self.issues.keep(LogicIssue {
                         entity: *entity,
                         kind: LogicKind::NothingToUse,
                         fired,
@@ -575,7 +587,7 @@ impl Finder<'_, '_, '_> {
                     ..
                 } => {
                     if let Some(&entity) = removed.get(name.as_str()) {
-                        self.issues.insert(LogicIssue {
+                        self.issues.keep(LogicIssue {
                             entity,
                             kind: LogicKind::RemovedThenFired,
                             fired,
@@ -606,7 +618,7 @@ impl Finder<'_, '_, '_> {
         // FIRE-4.4: a chain that comes back to an entity, and one that stops the game.
         for (entity, (count, classname)) in uses {
             if count > FIRE_LOOP_USES {
-                self.issues.insert(LogicIssue {
+                self.issues.keep(LogicIssue {
                     entity,
                     kind: LogicKind::Loop,
                     fired,
@@ -621,7 +633,7 @@ impl Finder<'_, '_, '_> {
             }
         }
         if let FireEnd::Error { message } = &trace.end {
-            self.issues.insert(LogicIssue {
+            self.issues.keep(LogicIssue {
                 entity: fired,
                 kind: LogicKind::Error,
                 fired,
@@ -649,7 +661,7 @@ impl Finder<'_, '_, '_> {
             });
             if fires {
                 if firing > firers {
-                    self.issues.insert(LogicIssue {
+                    self.issues.keep(LogicIssue {
                         entity: firer.entity,
                         kind: LogicKind::NeverReached,
                         fired: firer.entity,
@@ -743,7 +755,7 @@ impl<L: crate::Loader> Workbench<L> {
             let mut finder = Finder {
                 stage: &stage,
                 targetnames,
-                issues: BTreeSet::new(),
+                issues: Found::default(),
             };
             let options = FireOptions {
                 by: FireBy::Either,
@@ -773,7 +785,7 @@ impl<L: crate::Loader> Workbench<L> {
                 }
             }
             Ok(LogicIssues {
-                issues: finder.issues.into_iter().collect(),
+                issues: finder.issues.0.into_values().collect(),
                 fired,
             })
         })?;

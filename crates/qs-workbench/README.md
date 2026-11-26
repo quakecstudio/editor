@@ -12,7 +12,9 @@ Problems panels list, the commands that open a project or a file, `project.open`
   refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
   behaviour. A diagnostic's line counts LF bytes only, as the lexer does (QC-1.2). QCT-1 to
   QCT-4 ([`qc-tests.md`](../../docs/spec/qc-tests.md)), a project's tests and `project.test`.
-  PRJ-2.11, how a task runs.
+  PRJ-2.11, how a task runs. FIRE-4 and FIRE-5 ([`fire.md`](../../docs/spec/fire.md)),
+  `map.fire` and `map.logic_issues`: an entity of the open map fired in `qs-sim` and the
+  issues only running shows.
 - **Shipped:** yes.
 
 ## Prior art

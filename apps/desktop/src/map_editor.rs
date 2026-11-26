@@ -1769,7 +1769,18 @@ impl MapEditor {
         };
         let entity = *entity;
         let also: Vec<EntityIndex> = self.also.iter().copied().collect();
-        ui.label(RichText::new(keys.classname.clone().unwrap_or_default()).strong());
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(keys.classname.clone().unwrap_or_default()).strong());
+            // L-76: fire the one entity selected and see what its targets do.
+            if also.is_empty()
+                && ui
+                    .small_button(Text::MapFire.get())
+                    .on_hover_text(Text::MapFireHint.get())
+                    .clicked()
+            {
+                actions.push(MapAction::Fire(entity));
+            }
+        });
         if !also.is_empty() {
             ui.label(RichText::new(also_selected(also.len())).color(theme.color(Token::TextMuted)));
         }

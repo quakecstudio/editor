@@ -214,7 +214,7 @@ when a trigger fires is in the QuakeC, so run it rather than read it:
 - `map.logic_issues` fires every entity that has targets and lists the chains that cannot
   work: a target with no `use` function, a chain that removes what it then fires, a chain that
   loops or stops the game, and a counter fired by fewer entities than its count. Run it after
-  wiring buttons, doors, counters and relays, and before `map.review`.
+  wiring buttons, doors, counters and relays, before the map is played.
 
 Both need the project's server QuakeC to compile, and neither changes the map or a running
 game. The rules are [`docs/spec/fire.md`](../spec/fire.md).

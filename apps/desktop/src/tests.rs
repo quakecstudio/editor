@@ -5105,6 +5105,7 @@ fn every_panel_tab_and_tool_has_help() {
     for (tab, topic) in [
         (Text::MapPrefabs, Topic::MapPrefabs),
         (Text::MapIssues, Topic::MapIssues),
+        (Text::MapLogic, Topic::MapLogic),
         (Text::Entities, Topic::MapEntities),
     ] {
         harness
@@ -5310,7 +5311,12 @@ fn every_map_editor_control_has_a_name() {
                 .map(|c| format!("{tool:?}: {c}")),
         );
     }
-    for tab in [Text::Entities, Text::MapPrefabs, Text::MapIssues] {
+    for tab in [
+        Text::Entities,
+        Text::MapPrefabs,
+        Text::MapIssues,
+        Text::MapLogic,
+    ] {
         harness
             .get_by_role_and_label(Role::Button, tab.get())
             .click();
@@ -6580,4 +6586,108 @@ fn a_random_map_is_made_from_the_menu_and_the_map_tab() {
         shell.session().context().workbench.map().unwrap().path(),
         made
     );
+}
+
+/// A project whose program the simulation runs: id's system globals and fields with an empty
+/// body for each function the engine calls, a button that fires its targets as id's
+/// `SUB_UseTargets` does, and a door; and a map where the button, entity 1, targets the door,
+/// entity 2.
+fn logic_project(name: &str) -> PathBuf {
+    use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
+    use qc_types::Etype;
+    use std::fmt::Write as _;
+
+    let type_name = |etype: Etype| match etype {
+        Etype::String => "string",
+        Etype::Float => "float",
+        Etype::Vector => "vector",
+        Etype::Entity => "entity",
+        _ => "void()",
+    };
+    let mut defs = String::new();
+    for var in SYSTEM_GLOBALS {
+        writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();
+    }
+    defs.push_str("void end_sys_globals;\n");
+    for var in SYSTEM_FIELDS {
+        writeln!(defs, ".{} {};", type_name(var.etype), var.name).unwrap();
+    }
+    defs.push_str("void end_sys_fields;\n");
+    for var in SYSTEM_GLOBALS
+        .iter()
+        .filter(|var| var.etype == Etype::Function)
+    {
+        writeln!(defs, "void() {} = {{}};", var.name).unwrap();
+    }
+    let code = "entity(entity start, .string fld, string match) find = #18;\n\
+        string(string s) precache_model = #20;\n\
+        void() worldspawn = { precache_model(\"progs/player.mdl\"); };\n\
+        void() button_use = {\n\
+        \tlocal entity t, stemp;\n\
+        \tt = find(world, targetname, self.target);\n\
+        \twhile (t) {\n\
+        \t\tstemp = self;\n\
+        \t\tself = t;\n\
+        \t\tif (self.use) self.use();\n\
+        \t\tself = stemp;\n\
+        \t\tt = find(t, targetname, self.target);\n\
+        \t}\n\
+        };\n\
+        void() func_button = { self.use = button_use; };\n\
+        void() door_use = { self.frame = 1; };\n\
+        void() func_door = { self.use = door_use; };\n";
+    let map = "{\n\"classname\" \"worldspawn\"\n}\n\
+        {\n\"classname\" \"func_button\"\n\"origin\" \"0 0 32\"\n\"target\" \"gate\"\n}\n\
+        {\n\"classname\" \"func_door\"\n\"origin\" \"64 0 32\"\n\"targetname\" \"gate\"\n}\n";
+    let dir = std::env::temp_dir().join(format!("qs-desktop-logic-{name}-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("maps")).unwrap();
+    fs::write(dir.join("defs.qc"), defs).unwrap();
+    fs::write(dir.join("world.qc"), code).unwrap();
+    fs::write(dir.join("progs.src"), "progs.dat\ndefs.qc\nworld.qc\n").unwrap();
+    fs::write(dir.join("maps/logic.map"), map).unwrap();
+    dir
+}
+
+// No spec statement: L-76, MAP-35: Fire in Properties fires the selected entity in the
+// simulation with the project's QuakeC and shows the Logic tab with what the code did, each
+// step naming its entity; Check logic there lists the issues, here none; and the map is as it
+// was
+#[test]
+fn fire_shows_what_the_quakec_did() {
+    use crate::strings::logic_issue_count;
+
+    let dir = logic_project("fire");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/logic.map") }))
+        .unwrap();
+    shell.execute("map.select", json!({ "entity": 1 })).unwrap();
+    harness.run();
+    harness.run();
+    let before = map_text(&harness);
+    harness
+        .get_by_role_and_label(Role::Button, Text::MapFire.get())
+        .click();
+    harness.run();
+    harness.run();
+    let step = |text: &str| harness.query_all_by_label_contains(text).next().is_some();
+    assert!(step("use  entity 1 (func_button)  button_use"));
+    assert!(step("entity 1 looks for \"gate\": entity 2"));
+    assert!(step("use  entity 2 (func_door)  door_use"));
+    assert!(step("entity 1 fired by its use: settled"));
+    lowest(&harness, Text::MapCheckLogic.get()).click();
+    harness.run();
+    harness.run();
+    assert!(
+        harness
+            .query_all_by_label(&logic_issue_count(0))
+            .next()
+            .is_some()
+    );
+    assert_eq!(map_text(&harness), before, "firing changes nothing");
 }

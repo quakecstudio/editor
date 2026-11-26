@@ -64,6 +64,14 @@ it too.
     `trigger_counter` whose `count` is above the entities that target it.
 
   The issues join the issue browser's until the map or the code changes.
+
+  In the window, Fire is on the selected entity's context menu, beside its classname in
+  Properties, and in the Logic tab below the view, which lists the trace step by step: a click
+  on a step selects its entity, and the scrubber steps through the trace while the view draws
+  the links fired so far in the warning colour. Check logic, in the same tab, lists the
+  issues. The entity is fired at the skill and in the kind of game the view shows, normal
+  single player when it shows every entity. A `.map` is compiled in memory first, as id's qbsp
+  compiles it, so doors and other brush entities have their models; nothing is written.
 - **Groups and layers (P5-14, MAP-26):** a map made in TrenchBroom keeps its groups, linked
   groups and layers as written ([MAP-9](spec/map.md)).
   - An edit inside a linked group is copied into every group linked to it, moved by each

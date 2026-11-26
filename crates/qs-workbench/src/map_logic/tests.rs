@@ -318,9 +318,11 @@ fn a_target_with_no_use_is_reported() {
     let map = [
         entity("func_button", &[("target", "n")]),
         entity("info_null", &[("targetname", "n")]),
+        entity("func_button", &[("target", "n")]),
     ];
     let (mut session, _) = session("nouse", &map);
     let found = issues(&mut session);
+    assert_eq!(found.fired, 2);
     assert_eq!(kinds(&found), [(2, LogicKind::NothingToUse)]);
     assert_eq!(found.issues[0].fired.get(), 1);
     assert_eq!(

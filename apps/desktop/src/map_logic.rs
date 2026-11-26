@@ -206,3 +206,6 @@ impl LogicPane {
         actions
     }
 }
+
+#[cfg(test)]
+mod tests;
