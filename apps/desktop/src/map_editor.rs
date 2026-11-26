@@ -311,6 +311,8 @@ pub struct MapEditor {
     classes: HashMap<String, ClassLook>,
     /// The classnames, sorted, as the browser lists them.
     names: Vec<String>,
+    /// The classnames as `classname` offers them, each a point or a brush entity (UI-24).
+    class_offers: Vec<Offer>,
     models: HashMap<String, Vec<Line>>,
     /// The class models' files, which the textured and lit views draw (P7-08).
     model_files: HashMap<String, std::sync::Arc<[u8]>>,
@@ -480,6 +482,17 @@ impl MapEditor {
             .collect();
         self.names = self.classes.keys().cloned().collect();
         self.names.sort();
+        self.class_offers = self
+            .names
+            .iter()
+            .map(|name| Offer {
+                name: name.clone(),
+                detail: self
+                    .classes
+                    .get(name)
+                    .map_or_default(|class| class.kind().get().to_owned()),
+            })
+            .collect();
         let models = load_models(&self.classes, project, game);
         self.models = models.lines;
         self.model_files = models.files;
@@ -1794,17 +1807,6 @@ impl MapEditor {
                 detail: strings::targetname_detail(&named.classnames),
             })
             .collect();
-        let classes: Vec<Offer> = self
-            .names
-            .iter()
-            .map(|name| Offer {
-                name: name.clone(),
-                detail: self
-                    .classes
-                    .get(name)
-                    .map_or_default(|class| class.kind().get().to_owned()),
-            })
-            .collect();
         egui::Grid::new(ui.scope_id().with(entity))
             .num_columns(KEY_COLUMNS)
             .striped(true)
@@ -1823,7 +1825,7 @@ impl MapEditor {
                     let field = if self.targeting.contains(key) {
                         Field::Target(&targets)
                     } else if key == CLASSNAME {
-                        Field::Class(&classes)
+                        Field::Class(&self.class_offers)
                     } else {
                         Field::of(key, ty, self.scene.values.get(key))
                     };

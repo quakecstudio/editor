@@ -40,7 +40,6 @@ pub struct KeyInfo {
     /// The value the class gives it when the map does not.
     pub default: Option<String>,
     /// What the class's comment says of it, when it says anything.
-    #[serde(default)]
     pub comment: Option<String>,
 }
 
