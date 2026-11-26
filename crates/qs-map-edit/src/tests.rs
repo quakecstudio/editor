@@ -25,6 +25,7 @@ fn thing_project() -> TestProject {
         name: name.to_owned(),
         ty: ty.to_owned(),
         default: default.map(str::to_owned),
+        comment: None,
     };
     TestProject {
         classes: vec![ClassInfo {
@@ -279,8 +280,8 @@ fn the_selection_follows_and_keys_are_typed() {
     assert_eq!(
         keys["keys"],
         json!([
-            { "name": "speed", "ty": "float", "default": "100" },
-            { "name": "target", "ty": "string", "default": null },
+            { "name": "speed", "ty": "float", "default": "100", "comment": null },
+            { "name": "target", "ty": "string", "default": null, "comment": null },
         ])
     );
     assert_eq!(keys["brush"], false);
@@ -291,7 +292,10 @@ fn the_selection_follows_and_keys_are_typed() {
         )
         .unwrap();
     let keys = session.execute(MAP_ENTITY, json!({ "entity": 2 })).unwrap();
-    assert_eq!(keys["targetnames"], json!(["door"]));
+    assert_eq!(
+        keys["targetnames"],
+        json!([{ "name": "door", "classnames": ["func_door"] }])
+    );
     assert_eq!(
         keys["keys"],
         json!([]),

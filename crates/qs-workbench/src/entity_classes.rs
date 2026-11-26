@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 use qs_map_edit::{ClassInfo, FlagInfo, KeyInfo};
+use qs_sim::spawn::{
+    EDICT_SPAWNFLAG_NOT_DEATHMATCH, EDICT_SPAWNFLAG_NOT_EASY, EDICT_SPAWNFLAG_NOT_HARD,
+    EDICT_SPAWNFLAG_NOT_MEDIUM,
+};
 
 /// The id of `project.entities`.
 pub const PROJECT_ENTITIES: &str = "project.entities";
@@ -71,17 +75,43 @@ pub(crate) fn class_info(class: &EntityClass) -> ClassInfo {
                 }
                 .to_owned(),
                 default: key.default.clone(),
+                comment: key.comment.clone(),
             })
             .collect(),
-        spawnflags: class
-            .spawnflags
-            .iter()
-            .map(|flag| FlagInfo {
-                value: flag.value,
-                name: flag.name.clone(),
-            })
-            .collect(),
+        spawnflags: spawnflags(class),
     }
+}
+
+/// The flags the engine itself tests on every entity (EDICT-8.4), each named as the modder
+/// reads it: freed on a skill, or in deathmatch.
+const ENGINE_FLAGS: [(i32, &str); 4] = [
+    (EDICT_SPAWNFLAG_NOT_EASY, "Not in easy"),
+    (EDICT_SPAWNFLAG_NOT_MEDIUM, "Not in normal"),
+    (EDICT_SPAWNFLAG_NOT_HARD, "Not in hard"),
+    (EDICT_SPAWNFLAG_NOT_DEATHMATCH, "Not in deathmatch"),
+];
+
+/// `class`'s spawnflags by value, then the engine's (EDICT-8.4) where the class uses none of
+/// their bits, so a monster is kept off a skill by a tick rather than a number typed.
+fn spawnflags(class: &EntityClass) -> Vec<FlagInfo> {
+    let mut flags: Vec<FlagInfo> = class
+        .spawnflags
+        .iter()
+        .map(|flag| FlagInfo {
+            value: flag.value,
+            name: flag.name.clone(),
+        })
+        .collect();
+    for (value, name) in ENGINE_FLAGS {
+        let value = value.unsigned_abs();
+        if !flags.iter().any(|flag| flag.value == value) {
+            flags.push(FlagInfo {
+                value,
+                name: Some(name.to_owned()),
+            });
+        }
+    }
+    flags
 }
 
 impl<L: crate::Loader> Workbench<L> {

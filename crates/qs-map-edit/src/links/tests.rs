@@ -23,6 +23,7 @@ fn corner_project() -> TestProject {
         name: name.to_owned(),
         ty: "string".to_owned(),
         default: None,
+        comment: None,
     };
     let flag = |value: u32, name: &str| FlagInfo {
         value,
