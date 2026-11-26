@@ -153,7 +153,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
 | [`map.staged_hunks`](#mapstaged_hunks) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
-| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them. |
+| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them as the file has them, and map.balance counts what the game spawns on each skill. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | [`map.unlink_group`](#mapunlink_group) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
@@ -7694,7 +7694,7 @@ Parameters:
 
 ## `map.summary`
 
-A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them.
+A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them as the file has them, and map.balance counts what the game spawns on each skill.
 
 Parameters:
 
