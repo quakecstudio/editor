@@ -155,15 +155,22 @@ fn a_button_fired_opens_its_door() {
         .iter()
         .filter_map(|event| match event {
             TraceEvent::Looked {
-                by, name, found, ..
-            } => Some((*by, name.as_str(), *found)),
+                by,
+                name,
+                from_start,
+                found,
+                ..
+            } => Some((*by, name.as_str(), *from_start, *found)),
             _ => None,
         })
         .collect();
     assert_eq!(
         looked,
-        [(FIRST, "d", Some(FIRST + 1)), (FIRST, "d", None)],
-        "the lookup that found the door, then the one that found no more"
+        [
+            (FIRST, "d", true, Some(FIRST + 1)),
+            (FIRST, "d", false, None)
+        ],
+        "the lookup from the world that found the door, then the one after it that found no more"
     );
     assert!(trace.events.iter().any(|event| matches!(event,
         TraceEvent::Sound { entity, sample, .. } if *entity == FIRST + 1 && sample == "doors/open.wav")));

@@ -83,6 +83,7 @@ map.extract_linked
 map.face_align
 map.face_uv
 map.find_leaks
+map.fire
 map.flip
 map.generate
 map.group
@@ -95,6 +96,7 @@ map.link_target
 map.list_entities
 map.list_textures
 map.lock
+map.logic_issues
 map.make_brush_entity
 map.make_structural
 map.move_entity

@@ -8,7 +8,7 @@
 //! when there is one, else in an empty world.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use qc_codegen::compile_module;
@@ -99,14 +99,77 @@ pub struct MapFiltered {
     pub removed: Vec<EntityIndex>,
 }
 
-impl<L: crate::Loader> Workbench<L> {
-    /// The entities of the open map the game removes at `skill` in a game of `mode`: the
-    /// project built, and the map's entities spawned in `qs-sim` with those settings.
-    fn map_removed(
-        &mut self,
+/// The open map as the game spawns it (DIFF-3.5): the project's server program, compiled in
+/// memory, the entity lump, and the BSP it spawns in.
+pub(crate) struct MapSpawn {
+    program: Vec<u8>,
+    entities: Vec<u8>,
+    /// The compiled map, `None` for a `.map` with no BSP beside it, which spawns in an empty
+    /// world.
+    compiled: Option<Vec<u8>>,
+    /// The place in the document of each entity the lump holds, in the lump's order.
+    places: Vec<usize>,
+    path: PathBuf,
+    root: Option<PathBuf>,
+}
+
+impl MapSpawn {
+    /// The place in the document of each entity the lump holds, in the lump's order.
+    pub(crate) fn places(&self) -> &[usize] {
+        &self.places
+    }
+
+    /// Runs `with` on the map's world, spawned at `skill` in a game of `mode`, and the progs
+    /// it runs.
+    pub(crate) fn world<T>(
+        &self,
         skill: Skill,
         mode: GameMode,
-    ) -> Result<Vec<EntityIndex>, WorkbenchError> {
+        with: impl FnOnce(&Progs<'_>, World) -> Result<T, WorkbenchError>,
+    ) -> Result<T, WorkbenchError> {
+        let progs = Progs::read(&self.program).map_err(|_| WorkbenchError::NotBuilt)?;
+        let mut bsp = match &self.compiled {
+            Some(bytes) => Bsp::read(bytes, BspLoader::default()).map_err(|error| {
+                crate::MapEditError::Bsp {
+                    path: self.path.clone(),
+                    error,
+                }
+            })?,
+            None => Bsp::empty(&self.entities),
+        };
+        bsp.entity_lump = &self.entities;
+        let root = self.root.clone();
+        let files: qs_sim::ModelFiles = Rc::new(move |name: &str| {
+            root.as_ref()
+                .and_then(|root| std::fs::read(root.join(name)).ok())
+        });
+        let mut settings = vec![("skill".to_owned(), skill.setting().to_owned())];
+        settings.extend(mode.settings());
+        let options = LoadOptions {
+            settings,
+            ..LoadOptions::default()
+        };
+        let name = self
+            .path
+            .file_stem()
+            .map_or_default(|stem| stem.to_string_lossy().into_owned());
+        let world =
+            World::load(&progs, &name, &bsp, files, options).map_err(|error| self.failed(error))?;
+        with(&progs, world)
+    }
+
+    /// The error of a world of this map that did not spawn or run.
+    pub(crate) fn failed(&self, error: qs_sim::WorldError) -> WorkbenchError {
+        WorkbenchError::Spawn {
+            path: self.path.clone(),
+            error,
+        }
+    }
+}
+
+impl<L: crate::Loader> Workbench<L> {
+    /// What the game spawns the open map from: the project built, and the map's entity lump.
+    pub(crate) fn map_spawn(&mut self) -> Result<MapSpawn, WorkbenchError> {
         if self.root().is_none() {
             return Err(WorkbenchError::NoProject);
         }
@@ -125,7 +188,6 @@ impl<L: crate::Loader> Workbench<L> {
             break;
         }
         let program = program.ok_or(WorkbenchError::NotBuilt)?;
-        let progs = Progs::read(&program).map_err(|_| WorkbenchError::NotBuilt)?;
         let root = self.root().map(Path::to_path_buf);
         let document = self.map().ok_or(WorkbenchError::NoMap)?;
         let path = document.path().to_path_buf();
@@ -160,38 +222,34 @@ impl<L: crate::Loader> Workbench<L> {
                 (lump, places, bsp)
             }
         };
-        let mut bsp = match &compiled {
-            Some(bytes) => Bsp::read(bytes, BspLoader::default()).map_err(|error| {
-                crate::MapEditError::Bsp {
-                    path: path.clone(),
-                    error,
-                }
-            })?,
-            None => Bsp::empty(&entities),
-        };
-        bsp.entity_lump = &entities;
-        let files: qs_sim::ModelFiles = Rc::new(move |name: &str| {
-            root.as_ref()
-                .and_then(|root| std::fs::read(root.join(name)).ok())
-        });
-        let mut settings = vec![("skill".to_owned(), skill.setting().to_owned())];
-        settings.extend(mode.settings());
-        let options = LoadOptions {
-            settings,
-            ..LoadOptions::default()
-        };
-        let name = path
-            .file_stem()
-            .map_or_default(|stem| stem.to_string_lossy().into_owned());
-        let world = World::load(&progs, &name, &bsp, files, options)
-            .map_err(|error| WorkbenchError::Spawn { path, error })?;
-        let kept: BTreeSet<usize> = places
-            .iter()
-            .enumerate()
-            .skip(1)
-            .filter(|&(place, _)| world.map_entity(&progs, MapPlace::new(place)).is_some())
-            .map(|(_, &entity)| entity)
-            .collect();
+        Ok(MapSpawn {
+            program,
+            entities,
+            compiled,
+            places,
+            path,
+            root,
+        })
+    }
+
+    /// The entities of the open map the game removes at `skill` in a game of `mode`: the
+    /// project built, and the map's entities spawned in `qs-sim` with those settings.
+    fn map_removed(
+        &mut self,
+        skill: Skill,
+        mode: GameMode,
+    ) -> Result<Vec<EntityIndex>, WorkbenchError> {
+        let spawn = self.map_spawn()?;
+        let kept: BTreeSet<usize> = spawn.world(skill, mode, |progs, world| {
+            Ok(spawn
+                .places()
+                .iter()
+                .enumerate()
+                .skip(1)
+                .filter(|&(place, _)| world.map_entity(progs, MapPlace::new(place)).is_some())
+                .map(|(_, &entity)| entity)
+                .collect())
+        })?;
         let count = self
             .map()
             .map_or(0, |document| document.file().entities.len());

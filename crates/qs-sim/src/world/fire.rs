@@ -29,6 +29,10 @@ use crate::scenario::{SCN_FRAMETIME, Seconds};
 const FIND: u32 = 18;
 /// `sound` in id's builtin table (BUILTIN-12).
 const SOUND: u32 = 8;
+/// `spawn` in id's builtin table (BUILTIN-8).
+const SPAWN: u32 = 14;
+/// `remove` in id's builtin table (BUILTIN-8).
+const REMOVE: u32 = 15;
 /// `centerprint` in id's builtin table (BUILTIN-11.2).
 const CENTERPRINT: u32 = 73;
 /// How long a trace runs when the caller gives no length, in seconds (FIRE-3.1).
@@ -93,6 +97,9 @@ pub enum TraceEvent {
         by: usize,
         /// The name looked for.
         name: String,
+        /// Whether the search began at the world, so that finding none means no entity has
+        /// the name.
+        from_start: bool,
         /// The entity found, `None` when there was none, or no more.
         found: Option<usize>,
     },
@@ -110,7 +117,7 @@ pub enum TraceEvent {
     },
     /// An entity was removed (FIRE-2.5).
     Removed {
-        /// The `time` global when the run that removed it began.
+        /// The `time` global then.
         time: f32,
         /// The entity.
         entity: usize,
@@ -119,7 +126,7 @@ pub enum TraceEvent {
     },
     /// An entity was spawned (FIRE-2.5).
     Spawned {
-        /// The `time` global when the run that spawned it began.
+        /// The `time` global then.
         time: f32,
         /// The entity.
         entity: usize,
@@ -249,6 +256,7 @@ enum Raw {
         time: f32,
         by: usize,
         name: Slot,
+        from_start: bool,
         found: Option<usize>,
     },
     Unanswered {
@@ -350,6 +358,9 @@ pub(crate) struct Tracer {
     run_time: f32,
     raw: Vec<Raw>,
     lookup: Option<Lookup>,
+    /// The edicts the run under way spawned or removed by a builtin, recorded where it
+    /// happened (FIRE-2.5).
+    placed: BTreeSet<usize>,
     /// Every edict event since the trace's events were last taken, for the frame's changes.
     events: Vec<EdictEvent>,
     slots: Slots,
@@ -364,6 +375,7 @@ impl Tracer {
             run_time: 0.0,
             raw: Vec::new(),
             lookup: None,
+            placed: BTreeSet::new(),
             events: Vec::new(),
             slots: Slots::new(),
         }
@@ -384,6 +396,7 @@ impl Tracer {
         self.recording = reached(self.slots.self_global) || reached(self.slots.other_global);
         self.entering = false;
         self.lookup = None;
+        self.placed.clear();
         self.run_time = self.time(machine);
     }
 
@@ -396,17 +409,19 @@ impl Tracer {
             match *event {
                 EdictEvent::Allocated(n) if self.recording => {
                     self.affected.insert(n.index());
-                    self.raw.push(Raw::Spawned {
-                        time: self.run_time,
-                        entity: n.index(),
-                    });
+                    if !self.placed.contains(&n.index()) {
+                        self.raw.push(Raw::Spawned {
+                            time: self.run_time,
+                            entity: n.index(),
+                        });
+                    }
                 }
                 // An edict taken again by a run the firing did not reach is a new entity.
                 EdictEvent::Allocated(n) => {
                     self.affected.remove(&n.index());
                 }
                 EdictEvent::Freed(n) => {
-                    if self.recording {
+                    if self.recording && !self.placed.contains(&n.index()) {
                         self.raw.push(Raw::Removed {
                             time: self.run_time,
                             entity: n.index(),
@@ -493,6 +508,26 @@ impl Tracer {
                     });
                 }
             }
+            // FIRE-2.5: where it happens, so that the trace keeps the order.
+            Some(SPAWN) => {
+                if let Some(entity) = edict_at(machine, i32::from(PROGS_OFS_RETURN)) {
+                    self.placed.insert(entity);
+                    self.raw.push(Raw::Spawned {
+                        time: self.time(machine),
+                        entity,
+                    });
+                }
+            }
+            Some(REMOVE) => {
+                if let Some(entity) = ofs_parm(PARM0).and_then(|s| edict_at(machine, i32::from(s)))
+                {
+                    self.placed.insert(entity);
+                    self.raw.push(Raw::Removed {
+                        time: self.time(machine),
+                        entity,
+                    });
+                }
+            }
             Some(_) => {}
             None => self.stepped(machine, progs, statement, opcode),
         }
@@ -509,10 +544,12 @@ impl Tracer {
         let by = edict_at(machine, self.slots.self_global).unwrap_or(0);
         // BUILTIN-8.3: the world when no edict matches.
         let found = edict_at(machine, i32::from(PROGS_OFS_RETURN)).filter(|&n| n != 0);
+        let from_start = ofs_parm(PARM0).and_then(|slot| edict_at(machine, i32::from(slot)));
         self.raw.push(Raw::Looked {
             time,
             by,
             name: parm(machine, PARM2),
+            from_start: from_start == Some(0),
             found,
         });
         self.lookup = found.map(|entity| Lookup {
@@ -787,11 +824,13 @@ impl World {
                     time,
                     by,
                     name,
+                    from_start,
                     found,
                 } => TraceEvent::Looked {
                     time,
                     by,
                     name: text(self, name),
+                    from_start,
                     found,
                 },
                 Raw::Unanswered { time, by, entity } => TraceEvent::Unanswered {

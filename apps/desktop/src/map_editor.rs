@@ -29,6 +29,7 @@ use qs_map_edit::{
 };
 use qs_render::Camera;
 use qs_workbench::map_filter::{GameMode, Skill};
+use qs_workbench::map_logic::{LogicIssues, MapFired};
 
 use crate::help::{self, Topic};
 use crate::icons::{self, Icon, Toggled};
@@ -38,6 +39,7 @@ use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
 use crate::map_issues::IssueBrowser;
 use crate::map_leaks::LeakView;
+use crate::map_logic::LogicPane;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
 use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
@@ -78,6 +80,8 @@ const MIN_BROWSER_HEIGHT: f32 = 120.0;
 const PLACE_DISTANCE: f32 = 256.0;
 /// The radius of the dot at the end of a link that is fired, in points.
 const LINK_END: f32 = 3.0;
+/// The width of a link the trace in the Logic tab has fired, in points (L-76).
+const LIT_LINK_WIDTH: f32 = 2.5;
 /// How strongly a light's preview is drawn, so it does not hide the brushes behind it.
 const LIGHT_ALPHA: f32 = 0.6;
 /// The brightest a light's every channel may be and still be drawn in the muted colour, so a
@@ -162,6 +166,10 @@ pub enum MapAction {
     Clipboard(ClipboardAction),
     /// List the map's issues (P6-19).
     CheckIssues,
+    /// Fire an entity in the simulation and show what the QuakeC did (L-76).
+    Fire(EntityIndex),
+    /// List the issues only running the map shows (L-76).
+    CheckLogic,
     /// Apply an issue's quick fix (P6-19).
     Fix(QuickFix),
     /// Search the map's entities and brushes (P6-19).
@@ -386,6 +394,8 @@ pub struct MapEditor {
     prefabs: PrefabBrowser,
     /// The issue browser and search (P6-19).
     issues: IssueBrowser,
+    /// The Logic tab: the last trace and the logic issues (L-76).
+    logic: LogicPane,
     /// The compile profiles, the last run and the portals (P6-20).
     profiles: ProfileView,
     /// The map edits waiting for review (P6-21).
@@ -426,6 +436,8 @@ pub(crate) enum BottomTab {
     Prefabs,
     /// The issue browser and search (P6-19).
     Issues,
+    /// Firing entities and the issues only running shows (L-76).
+    Logic,
 }
 
 impl MapEditor {
@@ -613,6 +625,13 @@ impl MapEditor {
         self.hidden_read = Some(edits);
     }
 
+    /// The skill and the kind of game the view shows, normal single player when it shows
+    /// every entity: what an entity is fired at (L-76).
+    #[must_use]
+    pub fn shown_game(&self) -> (Skill, GameMode) {
+        self.show.game().unwrap_or_default()
+    }
+
     /// The key an Alt-drag sets: the eyedropper's last, else the shortest the code fires by,
     /// the plain one (`target` in id's QuakeC).
     fn link_key(&self) -> Option<String> {
@@ -723,6 +742,20 @@ impl MapEditor {
         self.camera = None;
         self.plans.clear();
         self.issues.clear();
+        self.logic.clear();
+    }
+
+    /// Takes the trace of `entity` fired in the map at `at`, and shows the Logic tab (L-76).
+    pub fn set_fired(&mut self, entity: EntityIndex, trace: MapFired, at: MapRevision) {
+        self.logic.set_fired(entity, trace, at);
+        self.bottom = BottomTab::Logic;
+    }
+
+    /// Takes the issues `map.logic_issues` found in the map at `at`, and shows the Logic tab
+    /// (L-76).
+    pub fn set_logic_issues(&mut self, found: LogicIssues, at: MapRevision) {
+        self.logic.set_issues(found, at);
+        self.bottom = BottomTab::Logic;
     }
 
     /// Takes the issues `map.issues` found in the map at `at` (P6-19).
@@ -770,6 +803,9 @@ impl MapEditor {
         actions.extend(self.view(&mut view_ui, theme, document, (layout, shading, state)));
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
         self.issues.follow(document.edits());
+        self.logic.follow(document.edits());
+        // The one entity selected, which the Logic tab's Fire fires.
+        let one_selected = document.selected().filter(|_| self.also.is_empty());
         browser_ui.horizontal(|ui| {
             ui.selectable_value(
                 &mut self.bottom,
@@ -779,11 +815,13 @@ impl MapEditor {
             ui.selectable_value(&mut self.bottom, BottomTab::Entities, Text::Entities.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Prefabs, Text::MapPrefabs.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Issues, Text::MapIssues.get());
+            ui.selectable_value(&mut self.bottom, BottomTab::Logic, Text::MapLogic.get());
             let topic = match self.bottom {
                 BottomTab::Textures => Topic::MapTextures,
                 BottomTab::Entities => Topic::MapEntities,
                 BottomTab::Prefabs => Topic::MapPrefabs,
                 BottomTab::Issues => Topic::MapIssues,
+                BottomTab::Logic => Topic::MapLogic,
             };
             help::button(ui, theme, topic);
             ui.separator();
@@ -792,6 +830,7 @@ impl MapEditor {
                 BottomTab::Entities => self.browser.header(ui, theme, &self.names),
                 BottomTab::Prefabs => actions.extend(self.prefabs.header(ui, theme)),
                 BottomTab::Issues => actions.extend(self.issues.header(ui, theme)),
+                BottomTab::Logic => actions.extend(self.logic.header(ui, theme, one_selected)),
             }
         });
         browser_ui.separator();
@@ -818,6 +857,7 @@ impl MapEditor {
             ),
             BottomTab::Prefabs => self.prefabs.body(&mut browser_ui, theme),
             BottomTab::Issues => actions.extend(self.issues.body(&mut browser_ui, theme)),
+            BottomTab::Logic => actions.extend(self.logic.body(&mut browser_ui, theme)),
         }
         if let Some((path, name, dither)) = self.textures.import_window(ui.ctx(), theme) {
             actions.push(MapAction::ImportTexture(path, name, dither));
@@ -1484,6 +1524,14 @@ impl MapEditor {
             projection.line(&painter, line, link);
             if let Some(end) = projection.point(line[1]) {
                 painter.circle_filled(end, LINK_END, link.color);
+            }
+        }
+        // L-76: the links the trace in the Logic tab has fired up to its scrubber's step.
+        let lit = Stroke::new(LIT_LINK_WIDTH, theme.color(Token::StatusWarn));
+        for line in self.scene.chain(&self.logic.lit()) {
+            projection.line(&painter, line, lit);
+            if let Some(end) = projection.point(line[1]) {
+                painter.circle_filled(end, LINK_END, lit.color);
             }
         }
         // LIGHT-7.4: each light's reach in its colour, and a spotlight's cone.
@@ -2259,6 +2307,15 @@ impl MapEditor {
         let in_group = self.keys.as_ref().is_some_and(|(_, keys)| keys.in_group());
         let mut asked = Vec::new();
         let _menu = response.clone().context_menu(|ui| {
+            // L-76: fire the one entity selected and see what its targets do.
+            if let Some(entity) = selected.filter(|_| selection.len() == 1)
+                && ui
+                    .button(Text::MapFire.get())
+                    .on_hover_text(Text::MapFireHint.get())
+                    .clicked()
+            {
+                asked.push(MapAction::Fire(entity));
+            }
             if ui
                 .add_enabled(grouping.any(), egui::Button::new(Text::MapGroup.get()))
                 .clicked()

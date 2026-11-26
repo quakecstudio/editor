@@ -64,6 +64,9 @@ use qs_workbench::map_compile::{
     MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
 };
 use qs_workbench::map_filter::{FilterParams, MAP_FILTER, MapFiltered};
+use qs_workbench::map_logic::{
+    FireParams, FiredBy, LogicIssues, LogicParams, MAP_FIRE, MAP_LOGIC_ISSUES, MapFired,
+};
 use qs_workbench::map_profile::{
     MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
 };
@@ -366,6 +369,8 @@ impl MapFeature {
                 ),
                 MapAction::Clipboard(action) => self.clipboard_action(commands, action),
                 MapAction::CheckIssues => self.check_map_issues(commands),
+                MapAction::Fire(entity) => self.fire_entity(commands, entity),
+                MapAction::CheckLogic => self.check_map_logic(commands),
                 MapAction::Fix(fix) => {
                     let fixed =
                         commands.attempt::<_, serde_json::Value>(MAP_FIX, &MapFixParams { fix });
@@ -434,6 +439,43 @@ impl MapFeature {
             });
             self.map_editor.set_refused(refused);
         }
+    }
+
+    /// Fires `entity` of the open map in the simulation, at the skill and in the kind of game
+    /// the view shows, normal single player when it shows every entity, and shows the trace in
+    /// the Logic tab (L-76).
+    fn fire_entity(
+        &mut self,
+        commands: &mut Commands<'_>,
+        entity: EntityIndex,
+    ) -> Result<serde_json::Value, ShellError> {
+        let (skill, mode) = self.map_editor.shown_game();
+        let fired: MapFired = commands.attempt(
+            MAP_FIRE,
+            &FireParams {
+                entity,
+                skill,
+                mode,
+                by: FiredBy::Either,
+                seconds: None,
+            },
+        )?;
+        let at = commands.session().context().map_edits();
+        self.map_editor.set_fired(entity, fired, at);
+        Ok(serde_json::Value::Null)
+    }
+
+    /// Lists the issues only running the open map shows in the Logic tab (L-76).
+    fn check_map_logic(
+        &mut self,
+        commands: &mut Commands<'_>,
+    ) -> Result<serde_json::Value, ShellError> {
+        let (skill, mode) = self.map_editor.shown_game();
+        let found: LogicIssues =
+            commands.attempt(MAP_LOGIC_ISSUES, &LogicParams { skill, mode })?;
+        let at = commands.session().context().map_edits();
+        self.map_editor.set_logic_issues(found, at);
+        Ok(serde_json::Value::Null)
     }
 
     /// Lists the open map's issues in the map editor's issue browser (P6-19).

@@ -75,6 +75,7 @@ map.duplicate_entity
 map.entities_removed_by_skill
 map.export
 map.extract_linked
+map.fire
 map.flip
 map.generate
 map.group
@@ -86,6 +87,7 @@ map.link_target
 map.list_entities
 map.list_textures
 map.lock
+map.logic_issues
 map.make_brush_entity
 map.make_structural
 map.move_entity

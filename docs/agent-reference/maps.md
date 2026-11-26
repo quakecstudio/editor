@@ -197,3 +197,24 @@ Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md) (L-48, L-74).
   walking, steps of 18, falls, swimming, climbing out within 28, lifts and teleporters.
 - The level is a map like any other: edit it with the map tools, and `map.compile` and
   `map.issues` check it.
+
+## Checking what a map's triggers do
+
+A key that names nothing, and a `targetname` nothing names, are in `map.issues`. What happens
+when a trigger fires is in the QuakeC, so run it rather than read it:
+
+- `map.fire` with `entity` (its place in the map) fires one entity in the simulation, its `use`
+  or, when it has none, its `touch`, with the player as `other` and `activator`, and answers
+  the trace: each `use`, `touch` and `think` the firing reached with the entity and the time,
+  each lookup by `targetname` with what it found, each entity removed or spawned, each
+  `centerprint` and sound, and the fields written. `skill` and `mode` choose what is spawned,
+  `by` is `use`, `touch` or `either`, and `seconds` is the longest the trace runs (10 when not
+  given). A door that should open shows its `use` and then its `think`s; a door that does not
+  shows where the chain stopped.
+- `map.logic_issues` fires every entity that has targets and lists the chains that cannot
+  work: a target with no `use` function, a chain that removes what it then fires, a chain that
+  loops or stops the game, and a counter fired by fewer entities than its count. Run it after
+  wiring buttons, doors, counters and relays, and before `map.review`.
+
+Both need the project's server QuakeC to compile, and neither changes the map or a running
+game. The rules are [`docs/spec/fire.md`](../spec/fire.md).

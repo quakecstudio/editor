@@ -50,16 +50,20 @@ with `self` the target and `other` the entity firing it ([`../agent-reference/tr
   spawned; a freed edict is no longer reached. So the thinks of the map's other entities run and
   are not in the trace.
 - **FIRE-2.3** A `find` (BUILTIN-8) whose field is `targetname` is recorded as a lookup: `self`
-  then, the name looked for, and the entity found, or none when it found the world.
+  then, the name looked for, whether the search began at the world, and the entity found, or
+  none when it found the world.
 - **FIRE-2.4** An entity found by a lookup has answered nothing when, before the next lookup or
   the end of the run, the program read its `use`, which held no function, and read or took the
   address of no other field of it and entered no function with it as `self`. It is recorded
   with `self` at the lookup. This is what id's `SUB_UseTargets` does with a target that has no
   `use` (`if (self.use != SUB_Null) { if (self.use) self.use (); }`); a destination a
   teleporter looks up and reads, or an entity a `killtarget` looks up and removes, is not one.
-- **FIRE-2.5** An entity a recorded run removes or spawns is recorded after the run's other
-  events, in the order it happened, with the `time` global at the run's start. A removed
-  entity's classname is the one it last had; a spawned one's is read at the end of the frame.
+- **FIRE-2.5** An entity a recorded run spawns with `spawn` or removes with `remove`
+  (BUILTIN-8) is recorded where it happens, with the `time` global then, so the trace keeps the
+  order of a removal and what the program did after it. One freed or taken any other way in a
+  recorded run is recorded after the run's other events, with the `time` global at the run's
+  start. A removed entity's classname is the one it last had; a spawned one's is read at the end
+  of the frame.
 - **FIRE-2.6** A `centerprint` in a recorded run is recorded with its text, its strings joined,
   and a `sound` with its entity and its sample.
 - **FIRE-2.7** After the firing's run, and after each frame, each entity reached and still in

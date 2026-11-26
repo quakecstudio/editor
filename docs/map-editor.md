@@ -45,6 +45,24 @@ it too.
   memory, writing nothing, and spawns the entity lump qbsp would write for the map in `qs-sim`
   with those settings, so what the spawnflags rule out and what the QuakeC removes itself are
   both hidden. It is found again after each edit.
+- **Fire (L-76, MAP-35):** `map.fire` fires an entity as the game would, its `use` or, when it
+  has none, its `touch`, in `qs-sim` with the project's server QuakeC, and answers what the code
+  did about it in order ([FIRE](spec/fire.md)): each `use`, `touch` and `think` the firing
+  reached, each entity looked up by its `targetname`, removed or spawned, each `centerprint` and
+  sound, and the fields written, each entity with its place in the map. Time is simulated: a
+  delay of two seconds is two seconds of the trace, which ends when nothing the firing reached
+  has a think pending, or after the length given (10 seconds when none is). Nothing is read from
+  a classname, so a mod's own triggers are traced as id's are. It changes neither the map nor a
+  game that is playing it. `map.logic_issues` fires every entity that has targets, each in a
+  copy of the spawned map, and lists what only running shows:
+  - a target with no `use` function, so that firing it does nothing;
+  - a chain that removes an entity and then fires it;
+  - a chain that comes back to the same entity again and again, or stops the game with an
+    error;
+  - an entity that fires its targets only at a firing the map cannot reach, such as a
+    `trigger_counter` whose `count` is above the entities that target it.
+
+  The issues join the issue browser's until the map or the code changes.
 - **Groups and layers (P5-14, MAP-26):** a map made in TrenchBroom keeps its groups, linked
   groups and layers as written ([MAP-9](spec/map.md)).
   - An edit inside a linked group is copied into every group linked to it, moved by each

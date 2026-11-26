@@ -260,6 +260,20 @@ pub enum HostCommand {
     Quit,
 }
 
+impl core::fmt::Display for HostCommand {
+    /// The command as the console reads it.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Changelevel(map) => write!(f, "changelevel {map}"),
+            Self::Restart => f.write_str("restart"),
+            Self::Map(map) => write!(f, "map {map}"),
+            Self::Save(name) => write!(f, "save {name}"),
+            Self::Load(name) => write!(f, "load {name}"),
+            Self::Quit => f.write_str("quit"),
+        }
+    }
+}
+
 /// A command the client runs, not the server: id's `console.c` and `menu.c` register them
 /// with the client's console (CON-6.1). The console hands them to the host in order.
 #[derive(Clone, Debug, PartialEq, Eq)]
