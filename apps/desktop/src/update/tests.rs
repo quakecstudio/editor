@@ -451,6 +451,55 @@ fn a_skipped_version_is_not_announced_again() {
     restarted.get_by_label(&update_item("2027.1.1"));
 }
 
+/// A feed that answers only once a test lets it.
+struct Held(std::sync::Mutex<std::sync::mpsc::Receiver<()>>);
+
+impl Fetch for Held {
+    fn latest(&self) -> Result<String, CheckError> {
+        // A test that has ended lets every answer through.
+        if let Ok(gate) = self.0.lock() {
+            let _released = gate.recv();
+        }
+        Ok(TEMPLATE.replace("@VERSION@", LATER))
+    }
+}
+
+// No spec statement: P4-19: a window closed while its check waits stays closed when the
+// answer comes; the later release is then said by the status bar alone
+#[test]
+fn a_window_closed_while_checking_stays_closed() {
+    let dir = TempDir::new("closed");
+    let feed = Feed::new(Answer::Release(LATER));
+    let mut harness = window(&Spec::default(), &dir.0, &feed, &Clock::at(START));
+    let (release, gate) = std::sync::mpsc::channel();
+    let held: Arc<dyn Fetch> = Arc::new(Held(std::sync::Mutex::new(gate)));
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().update =
+        UpdateNotice::with(held, RUNNING, Channel::Homebrew, Clock::at(START).reader());
+    app.shell_mut()
+        .execute(qs_layout::CHECK_FOR_UPDATES, serde_json::json!({}))
+        .unwrap();
+    // One frame carries the command out and the next draws its window.
+    harness.run();
+    harness.run();
+    harness.get_by_label(Text::UpdateChecking.get());
+    harness.get_by_label(Text::AboutClose.get()).click();
+    harness.run();
+    assert!(harness.query_by_label(Text::UpdateChecking.get()).is_none());
+
+    release.send(()).unwrap();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().update.wait();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label(&update_available(LATER, RUNNING))
+            .is_none(),
+        "the closed window stays closed"
+    );
+    harness.get_by_label(&item());
+}
+
 // No spec statement: P4-19: the build's own version is a release's, three numbers, so every
 // build can be compared with the feed
 #[test]

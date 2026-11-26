@@ -213,11 +213,13 @@ impl Setting {
             Self::UpdateCheck => {
                 "Whether the app looks for a later release by itself (P4-19): `off`, when only \
                  Help, Check for Updates looks, or `daily`, when it also looks as it starts, at \
-                 most once a day. Either way it only says how to update; it installs nothing."
+                 most once a day. Either way it only says how to update; it installs nothing. Only \
+                 the user's settings are read for it: a project's cannot turn it on."
             }
             Self::SkipVersion => {
                 "The release the status bar does not announce, as Skip This Version chose: a \
-                 version such as `2026.12.1`. A later release is announced again."
+                 version such as `2026.12.1`. A later release is announced again. Only the \
+                 user's settings are read for it."
             }
             Self::AgentExternal => {
                 "The external agents the agent panel can run over the Agent Client Protocol \

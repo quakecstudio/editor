@@ -98,6 +98,9 @@ impl Found {
 pub enum CheckError {
     /// The request failed, or its answer could not be read.
     Request(ureq::Error),
+    /// The feed's host answered with this status and not the feed: a redirect, which is not
+    /// followed.
+    Status(u16),
     /// The answer is not a feed.
     Malformed(serde_json::Error),
     /// The feed names a page that is not one of the app's release pages.
@@ -108,6 +111,7 @@ impl fmt::Display for CheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Request(error) => write!(f, "{FEED_URL}: {error}"),
+            Self::Status(status) => write!(f, "{FEED_URL} answered with status {status}"),
             Self::Malformed(error) => write!(f, "{FEED_URL} is not a release feed: {error}"),
             Self::NotAReleasePage(url) => {
                 write!(f, "{FEED_URL} names {url}, which is not a release page")
@@ -121,7 +125,7 @@ impl std::error::Error for CheckError {
         match self {
             Self::Request(error) => Some(error),
             Self::Malformed(error) => Some(error),
-            Self::NotAReleasePage(_) => None,
+            Self::Status(_) | Self::NotAReleasePage(_) => None,
         }
     }
 }
@@ -132,12 +136,13 @@ pub trait Fetch: Send + Sync {
     ///
     /// # Errors
     ///
-    /// [`CheckError::Request`] when it could not be read.
+    /// [`CheckError::Request`] when it could not be read, [`CheckError::Status`] when what
+    /// answered is not the feed.
     fn latest(&self) -> Result<String, CheckError>;
 }
 
 /// The feed over HTTPS: one GET of [`FEED_URL`], with no query and no body, saying only
-/// [`USER_AGENT`] of where it comes from.
+/// [`USER_AGENT`] of where it comes from. A redirect is not followed.
 pub struct Https {
     agent: ureq::Agent,
     url: String,
@@ -158,6 +163,8 @@ impl Https {
     fn config() -> ureq::config::ConfigBuilder<ureq::typestate::AgentScope> {
         ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(TIMEOUT_SECONDS)))
+            // A redirect is an error: a check asks the feed's host and no other.
+            .max_redirects(0)
             .user_agent(USER_AGENT)
     }
 
@@ -181,10 +188,17 @@ impl Default for Https {
 
 impl Fetch for Https {
     fn latest(&self) -> Result<String, CheckError> {
-        self.agent
+        let mut response = self
+            .agent
             .get(&self.url)
             .call()
-            .map_err(CheckError::Request)?
+            .map_err(CheckError::Request)?;
+        // An error status is the request's error already; what is left that is not the feed
+        // is a redirect.
+        if response.status() != ureq::http::StatusCode::OK {
+            return Err(CheckError::Status(response.status().as_u16()));
+        }
+        response
             .body_mut()
             .with_config()
             .limit(MAX_FEED_BYTES)

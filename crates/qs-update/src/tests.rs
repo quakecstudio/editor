@@ -283,6 +283,28 @@ fn an_unreachable_feed_is_an_error() {
     assert_eq!(server.join().unwrap().1, 0, "no second try");
 }
 
+// No spec statement: P4-19, PRIN-9: a redirect is not followed, so a check asks the feed's
+// host and no other; it is an error, as an unreachable feed is
+#[test]
+fn a_redirect_is_not_followed() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let elsewhere = format!("http://{}/elsewhere.json", listener.local_addr().unwrap());
+    let status: &'static str =
+        Box::leak(format!("302 Found\r\nLocation: {elsewhere}").into_boxed_str());
+    let (url, server) = serve_once(status, String::new());
+    let error = Found::check(&Https::at(url), version("2026.11.3")).unwrap_err();
+    assert!(matches!(error, CheckError::Status(302)), "{error}");
+    assert!(error.to_string().ends_with("answered with status 302"));
+    assert_eq!(server.join().unwrap().1, 0);
+    // Nothing asked the address the redirect named.
+    listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        ErrorKind::WouldBlock,
+        "the redirect was followed"
+    );
+}
+
 /// What of a machine a test sets: the ordinary case is a Linux machine with nothing of the
 /// app's on it, the app run from a build directory.
 struct Machine {
@@ -406,6 +428,14 @@ fn the_portable_zip_runs_from_anywhere_else() {
         assert_eq!(channel.command(), None);
         assert_eq!(channel.download(), Download::Offered);
     }
+    // A path started in another case is the same folder to Windows.
+    let machine = Machine {
+        os: Os::Windows,
+        exe: "program files/quakec studio/QUAKEC-STUDIO.EXE",
+        program_files: &["Program Files"],
+        ..Machine::default()
+    };
+    assert_eq!(machine.channel("msi-case"), Channel::Msi);
     // With no program folder named in the environment, nothing is the MSI's.
     let machine = Machine {
         os: Os::Windows,
@@ -500,8 +530,9 @@ fn the_flatpak_is_found_by_its_sandbox_file() {
 }
 
 // No spec statement: P4-19: a build run from where it was made is no package's, on a system
-// with dpkg's list or an rpm database as on one with neither, and a copy under /usr with
-// neither is none's too; the release page is where it is sent
+// with dpkg's list or an rpm database as on one with neither, a copy under /usr with neither
+// is none's too, and so is one under /usr/local with either; the release page is where it is
+// sent
 #[test]
 fn a_build_run_in_place_is_unpackaged() {
     for machine in [
@@ -511,7 +542,18 @@ fn a_build_run_in_place_is_unpackaged() {
             ..Machine::default()
         },
         Machine {
+            exe: "usr/bin/quakec-studio",
+            ..Machine::default()
+        },
+        // /usr/local is the machine's own, whatever packages the system has.
+        Machine {
             exe: "usr/local/bin/quakec-studio",
+            present: &["var/lib/rpm", "usr/bin/dnf"],
+            ..Machine::default()
+        },
+        Machine {
+            exe: "usr/local/bin/quakec-studio",
+            present: &["var/lib/dpkg/info/quakec-studio.list"],
             ..Machine::default()
         },
     ] {

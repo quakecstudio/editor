@@ -66,6 +66,8 @@ const DPKG_LIST: &str = "var/lib/dpkg/info/quakec-studio.list";
 const RPM_DATABASES: [&str; 2] = ["var/lib/rpm", "usr/lib/sysimage/rpm"];
 /// Where a package manager installs, below the root; the deb and the rpm put the app there.
 const SYSTEM_PREFIX: &str = "usr";
+/// Where what was built on the machine is installed, below the root: no package's.
+const LOCAL_PREFIX: &str = "usr/local";
 /// dnf, below the root; a system with an rpm database and no dnf has yum.
 const DNF: &str = "usr/bin/dnf";
 /// The file Flatpak puts at the root of every sandbox.
@@ -110,20 +112,33 @@ impl Install {
         self.root.join(path).exists()
     }
 
+    /// Whether the executable is in one of Windows' program folders, its folders' names
+    /// compared without regard to case, as Windows compares them: the path a program was
+    /// started by keeps the case it was typed in.
+    fn in_program_files(&self) -> bool {
+        self.program_files.iter().any(|dir| {
+            let mut exe = self.exe.components();
+            dir.components().all(|part| {
+                exe.next()
+                    .is_some_and(|under| under.as_os_str().eq_ignore_ascii_case(part.as_os_str()))
+            })
+        })
+    }
+
+    /// Whether the executable is where a package manager installs: under `/usr`, and not
+    /// under `/usr/local`, which is the machine's own.
+    fn in_system_prefix(&self) -> bool {
+        self.exe.starts_with(self.root.join(SYSTEM_PREFIX))
+            && !self.exe.starts_with(self.root.join(LOCAL_PREFIX))
+    }
+
     /// How the app was installed.
     #[must_use]
     pub fn channel(&self) -> Channel {
         match self.os {
             Os::Mac if self.has(HOMEBREW_CASK) => Channel::Homebrew,
             Os::Mac => Channel::MacPackage,
-            Os::Windows
-                if self
-                    .program_files
-                    .iter()
-                    .any(|dir| self.exe.starts_with(dir)) =>
-            {
-                Channel::Msi
-            }
+            Os::Windows if self.in_program_files() => Channel::Msi,
             Os::Windows => Channel::PortableZip,
             Os::Linux => self.linux_channel(),
         }
@@ -138,7 +153,7 @@ impl Install {
         if self.appimage == AppImage::Running {
             return Channel::AppImage;
         }
-        if !self.exe.starts_with(self.root.join(SYSTEM_PREFIX)) {
+        if !self.in_system_prefix() {
             return Channel::Unpackaged;
         }
         if self.has(DPKG_LIST) {

@@ -369,11 +369,20 @@ jobs:
       # The release feed the app's update check reads (P4-19): packaging/latest.json with this
       # release's version, served as https://packages.quakecstudio.com/latest.json. A
       # pre-release writes none, so no install is told of one; a dry run writes it and, as
-      # with the packages, does not push it.
+      # with the packages, does not push it. A feed that already names a later release is
+      # left as it is, so a run for an older tag never moves it back.
       - name: Write the release feed
         if: ${{ !(github.ref_type == 'tag' && contains(github.ref_name, '-')) }}
         run: |
           feed=packages-repository/latest.json
+          if [ -f "$feed" ]; then
+            have=$(jq -r .version "$feed")
+            latest=$(printf '%s\n%s\n' "$have" "$VERSION" | sort -V | tail -n 1)
+            if [ "$latest" != "$VERSION" ]; then
+              echo "the feed names $have, later than $VERSION: left as it is"
+              exit 0
+            fi
+          fi
           sed "s/@VERSION@/$VERSION/g" packaging/latest.json > "$feed"
           if grep -n '@[A-Z0-9]*@' "$feed"; then
             echo "::error::the feed still has a placeholder"

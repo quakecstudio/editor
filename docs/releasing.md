@@ -149,9 +149,11 @@ how to update with what installed it, and installs nothing itself:
 | The rpm | `sudo dnf upgrade quakec-studio`, or `sudo yum upgrade quakec-studio` where there is no dnf |
 | The macOS package, the portable zip, the AppImage, the Flatpak bundle, or no package | Download, which opens the release page in the browser |
 
-A pre-release writes no feed, so no install is told of one. The feed goes out with the debs
-and rpms, after the GitHub release is made and before the cask and the winget pull request,
-so for a short while an install may be told of a release its package manager does not have yet.
+A pre-release writes no feed, so no install is told of one, and a run for a tag older than the
+release the feed names leaves the feed as it is. The feed goes out with the debs and rpms,
+after the GitHub release is made, while the cask and the winget pull request go out in jobs of
+their own, so for a short while an install may be told of a release its package manager does
+not have yet.
 
 **The Homebrew tap.** The cask is `packaging/homebrew/quakec-studio.rb`; the job fills in the
 version and the macOS package's SHA-256 from `SHA256SUMS`, checks the result with `ruby -c` and

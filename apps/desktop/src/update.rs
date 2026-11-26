@@ -153,8 +153,9 @@ impl UpdateNotice {
     }
 
     /// Asks the feed for the latest release on a thread of its own, as the agent's inline edit
-    /// asks its model, so the frame never waits; [`UpdateNotice::poll`] takes the answer. A person's check opens the window at once. While a check waits no second one
-    /// is made: a person who asks during the background's is answered by it.
+    /// asks its model, so the frame never waits; [`UpdateNotice::poll`] takes the answer. A
+    /// person's check opens the window at once. While a check waits no second one is made:
+    /// a person who asks during the background's is answered by it.
     pub(crate) fn check(&mut self, asked: Asked, ctx: &egui::Context) {
         if asked == Asked::Person {
             self.shown = Shown::Checking;
@@ -324,7 +325,14 @@ impl UpdateNotice {
                 self.skip(version);
                 self.shown = Shown::Hidden;
             }
-            (Some(Click::Close), _) => self.shown = Shown::Hidden,
+            (Some(Click::Close), _) => {
+                // A window closed while its check waits stays closed: the answer is then
+                // the background's, said by the status bar alone.
+                if let Some((asked, _)) = &mut self.pending {
+                    *asked = Asked::Background;
+                }
+                self.shown = Shown::Hidden;
+            }
             (Some(Click::Page | Click::Skip), None) | (None, _) => {}
         }
     }
