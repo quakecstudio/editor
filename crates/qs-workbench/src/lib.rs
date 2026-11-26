@@ -369,6 +369,8 @@ pub struct Workbench<L> {
     opened_paths: Option<open_paths::PathsOpened>,
     /// The issues `map.logic_issues` last found, which `map.issues` lists (FIRE-5.3).
     logic: map_logic::LogicFound,
+    /// The world the open `.map` was last compiled to for spawning (FIRE-5.4).
+    spawn_world: map_filter::SpawnWorld,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -396,6 +398,7 @@ impl<L: Loader> Workbench<L> {
             profile: None,
             opened_paths: None,
             logic: map_logic::LogicFound::default(),
+            spawn_world: map_filter::SpawnWorld::default(),
         }
     }
 

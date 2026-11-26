@@ -98,12 +98,12 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
 
     fn entity_check(&mut self) -> Option<EntityCheck> {
         let schema = self.entity_schema().ok()?;
-        // FIRE-5.3: what `map.logic_issues` last found, while the map and the code are the same.
+        // FIRE-5.3: what `map.logic_issues` last found, while the map and the sources are the same.
         let logic = self.logic.clone();
-        let generation = self.generation;
+        let sources = self.source_key();
         Some(Box::new(move |map| {
             let mut problems = entity_problems(&schema, map);
-            problems.extend(logic.problems(&map.to_bytes(), generation));
+            problems.extend(logic.problems(&map.to_bytes(), sources));
             problems
         }))
     }

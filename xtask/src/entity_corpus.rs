@@ -68,7 +68,9 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 let classname = String::from_utf8_lossy(classname).into_owned();
                 used.entry(classname).or_default().insert(label.clone());
             }
-            compiled.push((label.clone(), bsp));
+            if args.logic {
+                compiled.push((label.clone(), bsp));
+            }
             maps.push((label, map));
         }
     }
@@ -277,6 +279,19 @@ fn check_logic(dir: &Path, maps: &[(String, Vec<u8>)]) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", dir.display()))?;
     let scratch = std::env::temp_dir().join(format!("xtask-logic-corpus-{}", std::process::id()));
     fs::create_dir_all(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    let fired = fire_maps(&mut session, &scratch, dir, maps);
+    // The scratch directory holds nothing else, and goes whether the firing finished or not.
+    fs::remove_dir_all(&scratch).ok();
+    fired
+}
+
+/// [`check_logic`]'s firing of each map, in `scratch`.
+fn fire_maps(
+    session: &mut qs_commands::Session<Workbench<FsLoader>>,
+    scratch: &Path,
+    dir: &Path,
+    maps: &[(String, Vec<u8>)],
+) -> Result<(), String> {
     let name = dir.display();
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut fired = 0_u64;
@@ -312,7 +327,6 @@ fn check_logic(dir: &Path, maps: &[(String, Vec<u8>)]) -> Result<(), String> {
             Err(error) => unspawned.push(format!("{label}: {error}")),
         }
     }
-    fs::remove_dir_all(&scratch).ok();
     let found: Vec<String> = counts.iter().map(|(k, n)| format!("{n} {k}")).collect();
     println!(
         "info  {name}: map.logic_issues over {} maps, {fired} entities fired: {}",

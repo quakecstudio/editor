@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use super::{
     CallbackKind, FireEnd, FiredEvent, LogicIssues, LogicKind, MAP_FIRE, MAP_LOGIC_ISSUES, MapFired,
 };
+use crate::files_changed::FILES_CHANGED;
 use crate::vm_run::tests::system_defs;
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 use qs_map_edit::{MAP_ISSUES, MAP_OPEN, MAP_SET_KEY, MapIssues};
@@ -417,8 +418,8 @@ fn a_counter_never_reached_is_reported() {
     assert_eq!(kinds(&found), [(3, LogicKind::NeverReached)]);
     assert_eq!(
         found.issues[0].message,
-        "entity 3 fires its targets at its 3th firing, and 2 entities fire it: its targets are \
-         never fired"
+        "entity 3 fires its targets only at firing number 3, and 2 entities fire it: its targets \
+         are never fired"
     );
     let (mut two, _) = session("counter2", &counter("2"));
     assert_eq!(issues(&mut two).issues, []);
@@ -505,4 +506,74 @@ fn a_brush_entity_of_an_uncompiled_map_is_fired() {
         FiredEvent::Ran { function, entity, .. }
             if function == "door_use" && entity.entity.map(|place| place.get()) == Some(2))));
     assert!(!dir.join("maps/brush.bsp").exists(), "nothing is written");
+}
+
+// spec FIRE-4.3: two relays that both killtarget one name remove it once and fire nothing; that
+// is no issue
+#[test]
+fn two_killtargets_of_one_name_are_no_issue() {
+    let map = [
+        entity("func_button", &[("target", "r")]),
+        entity("trigger_relay", &[("targetname", "r"), ("killtarget", "x")]),
+        entity("trigger_relay", &[("targetname", "r"), ("killtarget", "x")]),
+        entity("info_null", &[("targetname", "x")]),
+    ];
+    let (mut session, _) = session("killtwice", &map);
+    assert_eq!(issues(&mut session).issues, []);
+}
+
+// spec FIRE-4.5: an entity that only removes the counter, and one the game does not keep, do not
+// count among the entities that fire it
+#[test]
+fn only_kept_firers_count_toward_a_counter() {
+    let map = [
+        entity("func_button", &[("target", "c")]),
+        entity("func_button", &[("target", "c")]),
+        entity(
+            "trigger_counter",
+            &[("targetname", "c"), ("target", "d"), ("count", "3")],
+        ),
+        entity("func_door", &[("targetname", "d")]),
+        entity("trigger_relay", &[("killtarget", "c")]),
+        entity("func_button", &[("target", "c"), ("spawnflags", "256")]),
+    ];
+    let (mut session, _) = session("keptfirers", &map);
+    let found: LogicIssues = serde_json::from_value(
+        session
+            .execute(MAP_LOGIC_ISSUES, json!({ "skill": "easy" }))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(kinds(&found), [(3, LogicKind::NeverReached)]);
+}
+
+// spec FIRE-5.3: the issues leave map.issues once a file of the project changes, open or not,
+// and stay while nothing changes
+#[test]
+fn the_issues_leave_once_the_code_changes() {
+    let map = [
+        entity("func_button", &[("target", "n")]),
+        entity("info_null", &[("targetname", "n")]),
+    ];
+    let (mut session, dir) = session("codechange", &map);
+    let listed = |session: &mut Session<Workbench<FsLoader>>| {
+        let found: MapIssues =
+            serde_json::from_value(session.execute(MAP_ISSUES, json!({})).unwrap()).unwrap();
+        found
+            .issues
+            .iter()
+            .filter(|issue| issue.message.contains("has no use function"))
+            .count()
+    };
+    issues(&mut session);
+    assert_eq!(listed(&mut session), 1);
+    assert_eq!(listed(&mut session), 1, "asking again changes nothing");
+    let world = dir.join("world.qc");
+    let mut code = std::fs::read_to_string(&world).unwrap();
+    code.push_str("float changed;\n");
+    std::fs::write(&world, code).unwrap();
+    session
+        .execute(FILES_CHANGED, json!({ "paths": [world] }))
+        .unwrap();
+    assert_eq!(listed(&mut session), 0, "the code changed");
 }

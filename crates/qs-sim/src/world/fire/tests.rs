@@ -542,3 +542,38 @@ fn a_trace_is_the_same_every_time() {
     assert_eq!(first, second);
     assert!(first.events.len() > 4);
 }
+
+/// A program whose trigger hurts the player who fires it, and whose player thinks every frame.
+const HURTS: &str = r#"
+.void() think1;
+void() player_frame = { self.frame = self.frame + 1; self.nextthink = time + 0.1; };
+void() PutClientInServer = {
+    self.classname = "player";
+    self.health = 100;
+    self.think = player_frame;
+    self.nextthink = time + 0.1;
+};
+void() hurt_use = { other.health = other.health - 10; };
+void() trigger_hurt = { self.use = hurt_use; };
+"#;
+
+// spec FIRE-2.2: a firing that writes to the player does not reach it: the trace settles and
+// holds none of the player's own frames
+#[test]
+fn the_player_is_never_reached() {
+    let map = entity("trigger_hurt", "0 0 24", "");
+    let mut run = running(&ledge(), HURTS, &map, Vec::new());
+    let bytes = run.progs.clone();
+    let progs = Progs::read(&bytes).unwrap();
+    run.world.enter(&progs, SCN_FRAMETIME).unwrap();
+    let trace = run
+        .world
+        .fire(&progs, FIRST, FireOptions::default())
+        .unwrap();
+    assert_eq!(trace.end, TraceEnd::Quiet);
+    assert!(trace.events.iter().all(|event| match event {
+        TraceEvent::Ran { entity, .. } | TraceEvent::Changed { entity, .. } =>
+            *entity != CLIENT_EDICT,
+        _ => true,
+    }));
+}

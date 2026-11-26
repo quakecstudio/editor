@@ -37,6 +37,8 @@ pub const FIRE_COUNT_USES: usize = 16;
 pub const FIRE_ISSUE_SECONDS: Seconds = Seconds::new(5.0);
 /// The key an entity is fired by (MAP-8.8).
 const TARGETNAME: &[u8] = b"targetname";
+/// The key id's `SUB_UseTargets` removes entities by, rather than firing them (FIRE-4.3).
+const KILLTARGET: &[u8] = b"killtarget";
 
 /// Which function fires an entity (FIRE-1.2).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -323,15 +325,20 @@ pub struct LogicIssues {
 pub(crate) struct LogicFound {
     /// The map's text when they were found.
     map: Vec<u8>,
-    /// The workbench's generation then.
-    generation: u64,
+    /// The project's sources then ([`SourceKey`]).
+    sources: SourceKey,
     problems: Vec<EntityProblem>,
 }
 
+/// What the project's sources were: a hash of each file's path and text, open text included,
+/// so it changes with any change to the code from any source, and with nothing else.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SourceKey(u64);
+
 impl LogicFound {
-    /// The problems, while the map is still `map` and the project's text at `generation`.
-    pub(crate) fn problems(&self, map: &[u8], generation: u64) -> Vec<EntityProblem> {
-        if self.map == map && self.generation == generation {
+    /// The problems, while the map is still `map` and the project's sources `sources`.
+    pub(crate) fn problems(&self, map: &[u8], sources: SourceKey) -> Vec<EntityProblem> {
+        if self.map == map && self.sources == sources {
             self.problems.clone()
         } else {
             Vec::new()
@@ -510,6 +517,11 @@ struct Firer {
     entity: EntityIndex,
     /// The names its keys hold.
     names: BTreeSet<String>,
+    /// The names its keys other than `killtarget` hold: the entities it fires rather than
+    /// removes.
+    fires: BTreeSet<String>,
+    /// The name its `killtarget` holds, when it has one.
+    kills: Option<String>,
     /// Its own `targetname`, when it has one.
     targetname: Option<String>,
 }
@@ -531,6 +543,8 @@ struct Finder<'s, 'p, 'a> {
     stage: &'s Stage<'p, 'a>,
     /// The `targetname` of each entity of the map that has one.
     targetnames: BTreeMap<EntityIndex, String>,
+    /// The name each entity's `killtarget` holds: a search for it removes, it does not fire.
+    kills: BTreeMap<EntityIndex, String>,
     issues: Found,
 }
 
@@ -581,12 +595,19 @@ impl Finder<'_, '_, '_> {
                 }
                 // FIRE-4.3: a search from the world for a name this trace removed, finding none.
                 FiredEvent::Looked {
+                    by,
                     name,
                     from_start: true,
                     found: None,
                     ..
                 } => {
-                    if let Some(&entity) = removed.get(name.as_str()) {
+                    // A search by an entity's own `killtarget` removes; finding nothing left
+                    // to remove is no firing.
+                    let removing = by
+                        .entity
+                        .and_then(|entity| self.kills.get(&entity))
+                        .is_some_and(|kills| kills == name);
+                    if !removing && let Some(&entity) = removed.get(name.as_str()) {
                         self.issues.keep(LogicIssue {
                             entity,
                             kind: LogicKind::RemovedThenFired,
@@ -666,8 +687,8 @@ impl Finder<'_, '_, '_> {
                         kind: LogicKind::NeverReached,
                         fired: firer.entity,
                         message: format!(
-                            "entity {} fires its targets at its {firing}th firing, and {firers} \
-                             {} it: its targets are never fired",
+                            "entity {} fires its targets only at firing number {firing}, and \
+                             {firers} {} it: its targets are never fired",
                             firer.entity.get(),
                             if firers == 1 {
                                 "entity fires"
@@ -687,6 +708,17 @@ impl Finder<'_, '_, '_> {
 }
 
 impl<L: crate::Loader> Workbench<L> {
+    /// What the project's sources are now (FIRE-5.3).
+    pub(crate) fn source_key(&mut self) -> SourceKey {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::hash::DefaultHasher::new();
+        for path in self.host.files() {
+            path.hash(&mut hasher);
+            self.host.text(&path).hash(&mut hasher);
+        }
+        SourceKey(hasher.finish())
+    }
+
     /// The entities of the open map with a key naming entities to fire, and every entity's
     /// `targetname` (MAP-8.8).
     fn firers(&mut self) -> (Vec<Firer>, BTreeMap<EntityIndex, String>) {
@@ -706,16 +738,28 @@ impl<L: crate::Loader> Workbench<L> {
             if let Some(name) = &targetname {
                 targetnames.insert(index, name.clone());
             }
-            let names: BTreeSet<String> = keys
-                .iter()
-                .filter_map(|key| entity.value(key.as_bytes()))
-                .filter(|name| !name.is_empty())
-                .map(text)
-                .collect();
+            let mut names = BTreeSet::new();
+            let mut fires = BTreeSet::new();
+            let mut kills = None;
+            for key in &keys {
+                let Some(name) = entity.value(key.as_bytes()).filter(|name| !name.is_empty())
+                else {
+                    continue;
+                };
+                let name = text(name);
+                if key.as_bytes() == KILLTARGET {
+                    kills = Some(name.clone());
+                } else {
+                    fires.insert(name.clone());
+                }
+                names.insert(name);
+            }
             if !names.is_empty() {
                 firers.push(Firer {
                     entity: index,
                     names,
+                    fires,
+                    kills,
                     targetname,
                 });
             }
@@ -755,6 +799,10 @@ impl<L: crate::Loader> Workbench<L> {
             let mut finder = Finder {
                 stage: &stage,
                 targetnames,
+                kills: firers
+                    .iter()
+                    .filter_map(|firer| Some((firer.entity, firer.kills.clone()?)))
+                    .collect(),
                 issues: Found::default(),
             };
             let options = FireOptions {
@@ -774,10 +822,12 @@ impl<L: crate::Loader> Workbench<L> {
                 };
                 fired = fired.saturating_add(1);
                 finder.read(firer.entity, &stage.answer(trace));
+                // FIRE-4.5: the entities the game kept that fire it, not those that remove it.
                 let firing = firer.targetname.as_ref().map_or(0, |name| {
                     firers
                         .iter()
-                        .filter(|other| other.names.contains(name))
+                        .filter(|other| other.fires.contains(name))
+                        .filter(|other| stage.edict(other.entity).is_some())
                         .count()
                 });
                 if firing > 0 {
@@ -789,7 +839,7 @@ impl<L: crate::Loader> Workbench<L> {
                 fired,
             })
         })?;
-        let generation = self.generation;
+        let sources = self.source_key();
         if let Some(document) = self.map() {
             let file = document.file();
             let problems = found
@@ -807,7 +857,7 @@ impl<L: crate::Loader> Workbench<L> {
                 .collect();
             self.logic = LogicFound {
                 map: file.to_bytes(),
-                generation,
+                sources,
                 problems,
             };
         }

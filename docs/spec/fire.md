@@ -45,8 +45,8 @@ with `self` the target and `other` the entity firing it ([`../agent-reference/tr
   order: its kind, the `time` global, the entity, its classname and the function's name. A
   function entered that is none of the four is not recorded, whoever calls it.
 - **FIRE-2.2** Only what the firing reached is recorded. The run of the fired function is; after
-  it, a run the engine starts is when `self` or `other` is an entity reached, the world never
-  one. The entities reached are the fired one and each entity a recorded run wrote a field of or
+  it, a run the engine starts is when `self` or `other` is an entity reached, the world and the
+  player never one, since the player's own runs go on every frame. The entities reached are the fired one and each entity a recorded run wrote a field of or
   spawned; a freed edict is no longer reached. So the thinks of the map's other entities run and
   are not in the trace.
 - **FIRE-2.3** A `find` (BUILTIN-8) whose field is `targetname` is recorded as a lookup: `self`
@@ -109,12 +109,14 @@ with `self` the target and `other` the entity firing it ([`../agent-reference/tr
 - **FIRE-4.2** An entity that answered nothing in a trace (FIRE-2.4) is reported once for the
   map, with the entity fired and the entity whose targets they were: firing it does nothing.
 - **FIRE-4.3** An entity removed in a trace whose `targetname` a later lookup of the same trace
-  looks for and does not find is reported: the chain removes what it then fires.
+  looks for and does not find is reported: the chain removes what it then fires. A search by an
+  entity for the name its own `killtarget` key holds removes rather than fires, and is not one.
 - **FIRE-4.4** An entity whose `use` ran more than `FIRE_LOOP_USES` times in one trace is
   reported: the chain comes back to it. A trace that ended in an error (FIRE-3.4) is reported
   with the entity fired and the error.
 - **FIRE-4.5** An entity with a key naming entities to fire, that other entities of the map
-  fire, is fired by its `use` as many times as there are entities that fire it, and then until
+  fire, is fired by its `use` as many times as there are entities that fire it (those the game
+  kept at the skill and in the kind of game, by a key other than `killtarget`), and then until
   a firing first looks up one of its own keys' names, `FIRE_COUNT_USES` times at most. When
   that firing is a later one than the entities that fire it give, it is reported with both
   counts: it fires its targets only at a firing the map cannot reach. This is id's
@@ -145,9 +147,11 @@ with `self` the target and `other` the entity firing it ([`../agent-reference/tr
 - **FIRE-5.2** `map.fire` and `map.logic_issues` change nothing: not the map, not a game that is
   playing it. They need a project whose server program builds.
 - **FIRE-5.3** The issues of `map.logic_issues` join `map.issues` once it has run, each with the
-  entity it is about, until the map or the program changes.
+  entity it is about, until the map or the project's sources change: a file's path or text,
+  an unsaved edit included.
 - **FIRE-5.4** A `.map` is spawned in the world id's qbsp compiles from it, compiled in memory
   with nothing written, so each brush entity has the model its `model` key names in the entity
   lump (MAP-6.2); a map that does not compile is spawned in the BSP beside it, else in an empty
   world, where a program that sets a brush model stops the spawn. A map read from a BSP is
-  spawned in that BSP.
+  spawned in that BSP. The compile is kept for the map's text, so a firing or a filter of the
+  same text does not compile it again.

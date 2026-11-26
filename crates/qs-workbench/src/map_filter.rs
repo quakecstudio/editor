@@ -168,6 +168,33 @@ impl MapSpawn {
     }
 }
 
+/// The world a `.map` was last compiled to for spawning, kept for the map's text so that
+/// firing and filtering again do not compile it again (FIRE-5.4).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SpawnWorld {
+    /// The map's text, and its BSP, `None` when it did not compile to one a loader reads.
+    last: Option<(Vec<u8>, Option<Vec<u8>>)>,
+}
+
+impl SpawnWorld {
+    /// The BSP id's qbsp compiles `text` to, compiled once for each text.
+    fn of(&mut self, text: &[u8]) -> Option<Vec<u8>> {
+        if let Some((kept, bsp)) = &self.last
+            && kept == text
+        {
+            return bsp.clone();
+        }
+        let bsp = qs_map_bsp::Compiler::default()
+            .compile(text, None)
+            .ok()
+            .map(|compiled| compiled.bsp)
+            // A map with no brush that has volume compiles to a BSP no loader reads.
+            .filter(|bsp| Bsp::read(bsp, BspLoader::default()).is_ok());
+        self.last = Some((text.to_vec(), bsp.clone()));
+        bsp
+    }
+}
+
 impl<L: crate::Loader> Workbench<L> {
     /// What the game spawns the open map from: the project built, and the map's entity lump.
     pub(crate) fn map_spawn(&mut self) -> Result<MapSpawn, WorkbenchError> {
@@ -222,13 +249,9 @@ impl<L: crate::Loader> Workbench<L> {
                 // The world the lump's `*n` models are in: the map compiled in memory as id's qbsp
                 // compiles it, which gives each brush entity the model the lump names (MAP-6.2);
                 // when it does not compile, the BSP beside it, else an empty world.
-                let bsp = qs_map_bsp::Compiler::default()
-                    .compile(&text, None)
-                    .ok()
-                    .map(|compiled| compiled.bsp)
-                    // A map with no brush that has volume compiles to a BSP no loader reads.
-                    .filter(|bsp| Bsp::read(bsp, BspLoader::default()).is_ok())
-                    .or_else(|| std::fs::read(path.with_extension(BSP_EXTENSION)).ok());
+                let compiled = self.spawn_world.of(&text);
+                let bsp =
+                    compiled.or_else(|| std::fs::read(path.with_extension(BSP_EXTENSION)).ok());
                 (lump, places, bsp)
             }
         };

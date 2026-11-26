@@ -429,7 +429,11 @@ impl Tracer {
                     }
                     self.affected.remove(&n.index());
                 }
-                EdictEvent::Written(n, _) if self.recording && n.index() != 0 => {
+                // FIRE-2.2: the world and the player are never reached: the player's own runs
+                // go on every frame whatever the firing did to it.
+                EdictEvent::Written(n, _)
+                    if self.recording && n.index() != 0 && n.index() != CLIENT_EDICT =>
+                {
                     self.affected.insert(n.index());
                 }
                 EdictEvent::Written(..) => {}
