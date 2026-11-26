@@ -43,7 +43,8 @@ it too.
 - **Show (P5-13):** the view can show only the entities the game spawns on easy, normal, hard or
   nightmare, or in coop or deathmatch. `map.entities_removed_by_skill` compiles the project's server QuakeC in
   memory, writing nothing, and spawns the entity lump qbsp would write for the map in `qs-sim`
-  with those settings, so what the spawnflags rule out and what the QuakeC removes itself are
+  with those settings, in the map compiled in memory so that doors and other brush entities
+  have their models, so what the spawnflags rule out and what the QuakeC removes itself are
   both hidden. It is found again after each edit.
 - **Fire (L-76, MAP-35):** `map.fire` fires an entity as the game would, its `use` or, when it
   has none, its `touch`, in `qs-sim` with the project's server QuakeC, and answers what the code

@@ -25,6 +25,7 @@ use qs_map_edit::{MAP_ISSUES, MAP_OPEN, MAP_SET_KEY, MapIssues};
 const CODE: &str = r#"
 void(entity e) remove = #15;
 entity() spawn = #14;
+void(entity e, string m) setmodel = #3;
 entity(entity start, .string fld, string match) find = #18;
 string(string s) precache_model = #20;
 .string killtarget;
@@ -84,7 +85,7 @@ void() func_button = { self.use = fire_targets; };
 void() trigger_relay = { self.use = fire_targets; };
 void() door_done = { self.frame = 1; };
 void() door_use = { self.think = door_done; self.nextthink = time + 0.5; };
-void() func_door = { self.use = door_use; };
+void() func_door = { setmodel(self, self.model); self.use = door_use; };
 void() info_null = {};
 void() counter_use = {
     self.count = self.count - 1;
@@ -461,4 +462,45 @@ fn the_issues_join_the_maps_until_it_changes() {
         )
         .unwrap();
     assert_eq!(listed(&mut session), [], "the map changed");
+}
+
+/// A box brush from `min` to `max`, as a `.map` writes it.
+fn box_brush(min: [i32; 3], max: [i32; 3]) -> String {
+    let [x0, y0, z0] = min;
+    let [x1, y1, z1] = max;
+    format!(
+        "{{\n( {x0} 0 0 ) ( {x0} 1 0 ) ( {x0} 0 1 ) wall 0 0 0 1 1\n\
+         ( {x1} 0 0 ) ( {x1} 0 1 ) ( {x1} 1 0 ) wall 0 0 0 1 1\n\
+         ( 0 {y0} 0 ) ( 0 {y0} 1 ) ( 1 {y0} 0 ) wall 0 0 0 1 1\n\
+         ( 0 {y1} 0 ) ( 1 {y1} 0 ) ( 0 {y1} 1 ) wall 0 0 0 1 1\n\
+         ( 0 0 {z0} ) ( 1 0 {z0} ) ( 0 1 {z0} ) wall 0 0 0 1 1\n\
+         ( 0 0 {z1} ) ( 0 1 {z1} ) ( 1 0 {z1} ) wall 0 0 0 1 1\n}}\n"
+    )
+}
+
+// spec FIRE-5.4: a map is compiled in memory to be spawned, so a brush entity, whose model the
+// program sets, is fired in a map with no BSP beside it
+#[test]
+fn a_brush_entity_of_an_uncompiled_map_is_fired() {
+    let door = format!(
+        "{{\n\"classname\" \"func_door\"\n\"targetname\" \"d\"\n{}}}\n",
+        box_brush([0, 0, 0], [16, 64, 64])
+    );
+    let floor = format!(
+        "{{\n\"classname\" \"worldspawn\"\n{}}}\n",
+        box_brush([-128, -128, -16], [128, 128, 0])
+    );
+    let (mut session, dir) = session("brush", &[]);
+    let path = dir.join("maps/brush.map");
+    std::fs::write(
+        &path,
+        format!("{floor}{}{door}", entity("func_button", &[("target", "d")])),
+    )
+    .unwrap();
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    let fired = fire(&mut session, json!({ "entity": 1 }));
+    assert!(fired.events.iter().any(|event| matches!(event,
+        FiredEvent::Ran { function, entity, .. }
+            if function == "door_use" && entity.entity.map(|place| place.get()) == Some(2))));
+    assert!(!dir.join("maps/brush.bsp").exists(), "nothing is written");
 }

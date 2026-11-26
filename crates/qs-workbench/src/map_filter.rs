@@ -4,8 +4,9 @@
 //! found by spawning the open map in `qs-sim` against the project's server program, compiled in
 //! memory, so the answer is the game's, the spawnflags test (EDICT-8.4) and the entities the QuakeC
 //! removes itself included (BRIDGE-4.13). A map read from a BSP spawns its entity lump in that BSP;
-//! a `.map` spawns the entity lump qbsp would write for it (MAP-2.6, MAP-6.2) in the BSP beside it
-//! when there is one, else in an empty world.
+//! a `.map` spawns the entity lump qbsp would write for it (MAP-2.6, MAP-6.2) in the map compiled
+//! in memory as id's qbsp compiles it, so each brush entity has the model its `model` key names;
+//! when the map does not compile, in the BSP beside it when there is one, else in an empty world.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -104,8 +105,8 @@ pub struct MapFiltered {
 pub(crate) struct MapSpawn {
     program: Vec<u8>,
     entities: Vec<u8>,
-    /// The compiled map, `None` for a `.map` with no BSP beside it, which spawns in an empty
-    /// world.
+    /// The compiled map, `None` for a `.map` that does not compile and has no BSP beside it,
+    /// which spawns in an empty world.
     compiled: Option<Vec<u8>>,
     /// The place in the document of each entity the lump holds, in the lump's order.
     places: Vec<usize>,
@@ -218,7 +219,16 @@ impl<L: crate::Loader> Workbench<L> {
                     .filter(|(_, entity)| entity.pairs().next().is_some())
                     .map(|(place, _)| place)
                     .collect();
-                let bsp = std::fs::read(path.with_extension(BSP_EXTENSION)).ok();
+                // The world the lump's `*n` models are in: the map compiled in memory as id's qbsp
+                // compiles it, which gives each brush entity the model the lump names (MAP-6.2);
+                // when it does not compile, the BSP beside it, else an empty world.
+                let bsp = qs_map_bsp::Compiler::default()
+                    .compile(&text, None)
+                    .ok()
+                    .map(|compiled| compiled.bsp)
+                    // A map with no brush that has volume compiles to a BSP no loader reads.
+                    .filter(|bsp| Bsp::read(bsp, BspLoader::default()).is_ok())
+                    .or_else(|| std::fs::read(path.with_extension(BSP_EXTENSION)).ok());
                 (lump, places, bsp)
             }
         };

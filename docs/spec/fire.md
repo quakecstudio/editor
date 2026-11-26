@@ -146,3 +146,8 @@ with `self` the target and `other` the entity firing it ([`../agent-reference/tr
   playing it. They need a project whose server program builds.
 - **FIRE-5.3** The issues of `map.logic_issues` join `map.issues` once it has run, each with the
   entity it is about, until the map or the program changes.
+- **FIRE-5.4** A `.map` is spawned in the world id's qbsp compiles from it, compiled in memory
+  with nothing written, so each brush entity has the model its `model` key names in the entity
+  lump (MAP-6.2); a map that does not compile is spawned in the BSP beside it, else in an empty
+  world, where a program that sets a brush model stops the spawn. A map read from a BSP is
+  spawned in that BSP.
