@@ -355,6 +355,8 @@ pub const MENUS: &[MenuSpec] = &[
         items: &[
             Item::Command(qs_layout::USER_GUIDE),
             Item::Command(qs_layout::REPORT_ISSUE),
+            Item::Separator,
+            Item::Command(qs_layout::CHECK_FOR_UPDATES),
         ],
     },
 ];

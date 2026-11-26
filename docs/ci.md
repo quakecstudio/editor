@@ -216,7 +216,7 @@ package, so each attestation names the reusable workflow as its signer:
 | `Build / Package on Linux (x86_64, aarch64)` | Linux | makes the deb, rpm, AppImage and Flatpak, signs the rpm with the key of packages.quakecstudio.com and attests them |
 | `Install on macOS`, `Install on Windows (x64, arm64)`, `Install on Linux (x86_64, aarch64)` | each | installs each package on a clean runner and checks it with `quakec-ide doctor` |
 | `Checksums and publish` | Linux | writes `SHA256SUMS`; on a tag, publishes the GitHub release |
-| `Add to packages.quakecstudio.com` | Linux | adds the debs and rpms to a checkout of `quakecstudio/packages` and writes and signs its metadata; on a tag with no `-`, pushes it |
+| `Add to packages.quakecstudio.com` | Linux | adds the debs and rpms to a checkout of `quakecstudio/packages` and writes and signs its metadata, and writes the release feed `latest.json` the app's update check reads (not for a pre-release); on a tag with no `-`, pushes it |
 | `Update the Homebrew tap` | Linux | writes the cask into a checkout of `quakecstudio/homebrew-tap`; on a tag with no `-`, pushes it |
 | `Submit to winget` | Linux | only on a tag with no `-`: opens a pull request against `microsoft/winget-pkgs` with komac; its failure does not fail the run |
 | `Regenerate the compatibility list` | Linux | writes `docs/compatibility.md` from the corpus and fails a tag whose list is out of date |

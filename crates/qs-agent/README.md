@@ -10,8 +10,9 @@ to the result:
 
 - **Every tool:** every command of the registry but `DENIED`. Denied are the person's decisions
   (accepting or rejecting hunks, saving, restoring a checkpoint), writes around the staged
-  edits (`file.update`, `symbol.rename`) and the window's own controls (`view.*`, tabs, the
-  palette). The model can read and search the codebase (`project.files`, `project.search`,
+  edits (`file.update`, `symbol.rename`), the window's own controls (`view.*`, tabs, the
+  palette) and the update check (`help.check_for_updates`), whose network request is the
+  person's to ask for (P4-19). The model can read and search the codebase (`project.files`, `project.search`,
   `file.read`, the symbol tools), compile, test, run QuakeC in the VM, play scenarios and
   drive the running game.
 - **A brief before the first turn:**

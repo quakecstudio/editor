@@ -134,6 +134,27 @@ repository's own workflow, which copies it to the S3 bucket behind packages.quak
 APT checks the signed metadata, so a deb carries no signature of its own; dnf checks both the
 metadata and each rpm (`gpgcheck=1`, `repo_gpgcheck=1`), which is why the build signs the rpm.
 
+**The release feed.** The same job writes `latest.json` at the root of quakecstudio/packages,
+from `packaging/latest.json` with the release's version, and it is served as
+`https://packages.quakecstudio.com/latest.json`: the release's version and the address of its
+release page. It is what the app's update check reads (P4-19, [`privacy.md`](privacy.md)): Help,
+Check for Updates, and the background check once `updates.check = "daily"`. The app then shows
+how to update with what installed it, and installs nothing itself:
+
+| Installed with | The app shows |
+| --- | --- |
+| Homebrew | `brew upgrade --cask quakec-studio` |
+| The MSI, by hand or by winget | `winget upgrade SmokeTurner.QuakeCStudio`, and Download, since Microsoft merges a release in its own time |
+| The deb | `sudo apt update && sudo apt install --only-upgrade quakec-studio` |
+| The rpm | `sudo dnf upgrade quakec-studio`, or `sudo yum upgrade quakec-studio` where there is no dnf |
+| The macOS package, the portable zip, the AppImage, the Flatpak bundle, or no package | Download, which opens the release page in the browser |
+
+A pre-release writes no feed, so no install is told of one, and a run for a tag older than the
+release the feed names leaves the feed as it is. The feed goes out with the debs and rpms,
+after the GitHub release is made, while the cask and the winget pull request go out in jobs of
+their own, so for a short while an install may be told of a release its package manager does
+not have yet.
+
 **The Homebrew tap.** The cask is `packaging/homebrew/quakec-studio.rb`; the job fills in the
 version and the macOS package's SHA-256 from `SHA256SUMS`, checks the result with `ruby -c` and
 writes it to `Casks/quakec-studio.rb` in the tap. The cask installs the same signed and
