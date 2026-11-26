@@ -402,3 +402,32 @@ fn a_field_s_key_type_is_its_value_s() {
         KeyType::Other
     );
 }
+
+// No spec statement: UI-24: a key's comment is what the class's QUAKED text says of it, on the
+// key's own line, or the lines under a bare quoted key up to a blank line or the next key; a
+// key the text does not quote has none
+#[test]
+fn a_key_takes_its_comment_from_the_quaked_text() {
+    let found = classes_of(
+        "/*QUAKED func_door2 (0 .5 .8) ?\nA door.\n\"wait\"\twait before returning\n\
+         \"noise\"\n0) silent\n1) stone\n\"speed\" movement speed\n\"lip\"\n\n*/\n\
+         void() func_door2 = { if (self.wait) self.dmg = 1; if (self.noise) self.dmg = 2; \
+         if (self.speed) self.dmg = 3; if (self.lip) self.dmg = 4; \
+         if (self.health) self.dmg = 5; };\n",
+    );
+    let comments: Vec<(&str, Option<&str>)> = class(&found, "func_door2")
+        .keys
+        .iter()
+        .map(|key| (key.name.as_str(), key.comment.as_deref()))
+        .collect();
+    assert_eq!(
+        comments,
+        [
+            ("health", None),
+            ("lip", None),
+            ("noise", Some("0) silent; 1) stone")),
+            ("speed", Some("movement speed")),
+            ("wait", Some("wait before returning")),
+        ]
+    );
+}

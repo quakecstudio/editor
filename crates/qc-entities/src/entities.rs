@@ -110,6 +110,9 @@ pub struct Key {
     pub ty: KeyType,
     /// The value the class gives it when the map does not, as a map writes it.
     pub default: Option<String>,
+    /// What the class's `/*QUAKED*/` comment says of it: the text after the key's quoted name
+    /// on its line, or when that is empty the lines under it up to the next quoted name.
+    pub comment: Option<String>,
 }
 
 /// The type of a key, the field's (EDICT-8.2 converts the value by it).
@@ -146,6 +149,27 @@ struct Quaked {
     brush: bool,
     flags: Vec<String>,
     doc: Vec<String>,
+}
+
+impl Quaked {
+    /// What the comment's text says of the key `name`, written as id's comments write it: the
+    /// key quoted at the start of a line, then its meaning (`"wait" wait before returning`);
+    /// when nothing follows the name, the lines under it, joined by `; `, up to the next line
+    /// that starts with a quoted name or a blank line (`"sounds"`, then `1) stone`, ...).
+    fn key_comment(&self, name: &str) -> Option<String> {
+        let quoted = format!("\"{name}\"");
+        let mut lines = self.doc.iter();
+        let first = lines.find_map(|line| line.strip_prefix(quoted.as_str()))?;
+        let first = first.trim();
+        if !first.is_empty() {
+            return Some(first.to_owned());
+        }
+        let under: Vec<&str> = lines
+            .map(String::as_str)
+            .take_while(|line| !line.is_empty() && !line.starts_with('"'))
+            .collect();
+        (!under.is_empty()).then(|| under.join("; "))
+    }
 }
 
 impl EntityClass {
@@ -441,6 +465,7 @@ impl Classes<'_> {
             })
             .map(|(name, ty)| Key {
                 default: defaults.get(&name).cloned(),
+                comment: comment.key_comment(&name),
                 name,
                 ty,
             })
