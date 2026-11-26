@@ -10,6 +10,7 @@ mod compile_profile;
 mod deep_nesting;
 mod diagnostics_unified;
 mod inventory;
+mod jump_ledge;
 mod map_entities;
 mod map_tools;
 mod no_trap;

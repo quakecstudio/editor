@@ -171,14 +171,16 @@ fn the_project_answers_the_map_editor_from_its_quakec() {
 }
 
 // No spec statement: P6-40: with no project open the workbench has no folder, no class, no
-// targeting key and no entity check to give the map editor
+// targeting key to give the map editor, and its check of a map finds nothing but what
+// map.playability found, which needs no project (L-77)
 #[test]
 fn no_project_answers_the_map_editor_nothing() {
     let mut workbench = Workbench::new(FsLoader, Config::default());
     assert_eq!(MapProject::project_root(&workbench), None);
     assert_eq!(workbench.entity_class("path_corner"), None);
     assert!(MapProject::targeting_keys(&mut workbench).is_empty());
-    assert!(workbench.entity_check().is_none());
+    let check = workbench.entity_check().unwrap();
+    assert!(check(&MapFile::new()).is_empty());
 }
 
 // spec MAP-8.2: the entity check the workbench gives the map editor finds a misspelled key and
@@ -198,13 +200,19 @@ fn the_entity_check_gives_problems_with_their_fixes() {
     let problems = check(&map);
     let fixes: Vec<_> = problems
         .iter()
-        .map(|problem| (problem.entity.get(), problem.line, problem.fix.clone()))
+        .map(|problem| {
+            (
+                problem.entity.map(EntityIndex::get),
+                problem.line,
+                problem.fix.clone(),
+            )
+        })
         .collect();
     assert_eq!(
         fixes,
         [
             (
-                1,
+                Some(1),
                 6,
                 Some(QuickFix::RenameKey {
                     entity: EntityIndex::new(1),
@@ -213,15 +221,15 @@ fn the_entity_check_gives_problems_with_their_fixes() {
                 })
             ),
             (
-                2,
+                Some(2),
                 9,
                 Some(QuickFix::SetClassname {
                     entity: EntityIndex::new(2),
                     classname: "func_door".to_owned(),
                 })
             ),
-            (3, 11, None),
-            (3, 12, None),
+            (Some(3), 11, None),
+            (Some(3), 12, None),
         ],
         "{problems:?}"
     );

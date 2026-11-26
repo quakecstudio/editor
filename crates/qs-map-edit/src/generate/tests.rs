@@ -3,7 +3,8 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is the test's failure"
+    clippy::panic,
+    reason = "test code: a failed unwrap, index or panic is the test's failure"
 )]
 
 use std::path::PathBuf;
@@ -13,7 +14,11 @@ use serde_json::json;
 
 use std::time::Duration;
 
-use super::{MAP_GENERATE, seed_at};
+use qs_map_gen::playable::Trap;
+use qs_map_gen::{Classes, Level, LockKind, Request, Size};
+
+use super::{MAP_GENERATE, SEEDS_TRIED, checked_level, seed_at};
+use crate::MapEditError;
 use crate::testing::{MapContext, TestGame, TestProject, level_bsp};
 use crate::{ClassInfo, GameFolders, MAP_ENTITY, MAP_ISSUES};
 
@@ -248,4 +253,80 @@ fn no_level_is_made_without_a_project_or_a_texture() {
         error.ends_with("a new map is a .map file in the project"),
         "{error}"
     );
+}
+
+/// The level of `seed`, of the small size, which compiles fastest, from any class and a
+/// handful of textures.
+fn level_of(seed: u64) -> Level {
+    let textures: Vec<String> = ["wall", "floor", "ceiling", "trim", "door", "trigger"]
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    Request {
+        seed,
+        size: Size::Small,
+        textures: &textures,
+        classes: &Classes::Any,
+        name: "random",
+    }
+    .generate()
+    .unwrap()
+}
+
+/// The first seed, from 0, whose level has a lock of `kind`.
+fn seed_with(kind: LockKind) -> u64 {
+    (0..64)
+        .find(|&seed| level_of(seed).report.locks.contains(&kind))
+        .unwrap()
+}
+
+/// `level` without its silver key: its exit is behind the key's door.
+fn without_key(mut level: Level) -> Level {
+    level
+        .map
+        .entities
+        .retain(|entity| entity.classname() != Some(b"item_key1".as_slice()));
+    level
+}
+
+// No spec statement: L-77, a generated level the playability check finds no trap in keeps the
+// seed asked for
+#[test]
+fn a_level_with_no_trap_keeps_its_seed() {
+    let seed = seed_with(LockKind::SilverKey);
+    let (made, _) = checked_level(seed, |at| Ok(level_of(at))).unwrap();
+    assert_eq!(made, seed);
+}
+
+// No spec statement: L-77, a generated level the check finds a trap in gives way to the level
+// of the next seed
+#[test]
+fn a_level_with_a_trap_gives_way_to_the_next_seed() {
+    let seed = seed_with(LockKind::SilverKey);
+    let (made, _) = checked_level(seed, |at| {
+        Ok(if at == seed {
+            without_key(level_of(at))
+        } else {
+            level_of(at)
+        })
+    })
+    .unwrap();
+    assert_eq!(made, seed + 1);
+}
+
+// No spec statement: L-77, when the level of every seed tried holds a trap no level is made,
+// and the error names the seed asked for and the trap
+#[test]
+fn no_level_is_made_when_every_seed_holds_a_trap() {
+    let seed = seed_with(LockKind::SilverKey);
+    let mut tried = 0;
+    let made = checked_level(seed, |_| {
+        tried += 1;
+        Ok(without_key(level_of(seed)))
+    });
+    assert_eq!(tried, SEEDS_TRIED);
+    let Err(MapEditError::Trapped { seed: asked, trap }) = made else {
+        panic!("{:?}", made.map(|(seed, _)| seed));
+    };
+    assert_eq!((asked, trap), (seed, Trap::NoExit));
 }

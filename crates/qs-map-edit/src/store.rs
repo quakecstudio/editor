@@ -80,8 +80,8 @@ pub trait MapProject {
     /// `killtarget`.
     fn targeting_keys(&mut self) -> Vec<String>;
 
-    /// A check of a map's entities against the project's code (MAP-8); `None` with no project
-    /// open.
+    /// A check of a map against the project's code (MAP-8) and what `map.playability` found of
+    /// it (L-77), which needs no project; `None` when there is nothing to check it against.
     fn entity_check(&mut self) -> Option<EntityCheck>;
 }
 
@@ -91,14 +91,16 @@ pub type EntityCheck = Box<dyn Fn(&MapFile) -> Vec<EntityProblem>>;
 /// What is wrong with an entity of a map, by the project's code.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EntityProblem {
-    /// The entity.
-    pub entity: EntityIndex,
+    /// The entity, when the problem is about one.
+    pub entity: Option<EntityIndex>,
     /// The 1-based line it is on.
     pub line: u32,
     /// What is wrong.
     pub message: String,
     /// The edit that puts it right, when there is one.
     pub fix: Option<QuickFix>,
+    /// The point it is at, when it is about a place rather than an entity.
+    pub point: Option<[f64; 3]>,
 }
 
 /// What map editing asks of a game that may be playing the open map.

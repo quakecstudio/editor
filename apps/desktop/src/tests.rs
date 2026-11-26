@@ -30,6 +30,7 @@ use qs_map_edit::EntityIndex;
 use qs_map_edit::texture_import::project_wad;
 use qs_wad::write::WadBuilder;
 use qs_workbench::debug::Location;
+use qs_workbench::map_playable::ExitReach;
 use serde_json::json;
 
 use crate::debugger::place;
@@ -4262,9 +4263,10 @@ fn map_edits_are_reviewed_in_the_map_view() {
     assert_eq!(map_text(&harness), before, "rejecting puts the map back");
 }
 
-// No spec statement: P6-11, QBSP-9.8, MAP-6.8: with a wall gone, Check for leaks reports the leak and
-// draws its trail; Fly along the leak takes the camera from the entity the void reaches along
-// the trail to its end; an edit leaves the report out of date
+// No spec statement: P6-11, QBSP-9.8, MAP-6.8, L-77: with a wall gone, Check for leaks reports the
+// leak and draws its trail; Fly along the leak takes the camera from the entity the void reaches
+// along the trail to its end; an edit leaves the report out of date. Check for leaks also checks
+// that the map can be finished, and says so, until an edit
 #[test]
 fn a_leak_is_found_and_flown_along() {
     let dir = keep_copy("leak");
@@ -4290,12 +4292,36 @@ fn a_leak_is_found_and_flown_along() {
     let sealed = editor(&harness).unwrap();
     assert!(sealed.leak.is_empty(), "{:?}", sealed.leak);
     assert!(harness.query_by_label(Text::MapSealed.get()).is_some());
+    // The check that the map can be finished runs on its own thread; each frame looks for its
+    // answer without waiting.
+    let checked = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.map_editor().playable().found().is_some()
+    };
+    while !checked(&harness) {
+        harness.step();
+        std::thread::yield_now();
+    }
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    let found = shell.map_editor().playable().found().unwrap();
+    assert_eq!(
+        found.exit,
+        ExitReach::NoExit,
+        "the keep has no trigger_changelevel"
+    );
+    assert!(harness.query_by_label(Text::MapNoExit.get()).is_some());
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell
         .execute("map.brush_delete", json!({ "entity": 0, "brush": 2 }))
         .unwrap();
     shell.execute("map.find_leaks", json!({})).unwrap();
     harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert!(
+        shell.map_editor().playable().found().is_none(),
+        "an edit forgets it"
+    );
     let trail = editor(&harness).unwrap().leak;
     assert!(trail.len() >= 2, "{trail:?}");
     harness.get_by_label(Text::MapFlyLeak.get()).click();

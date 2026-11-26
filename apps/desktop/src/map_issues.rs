@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The issue browser and map search (P6-19, MAP-28), in the tab below the map view: what
-//! `map.issues` last found, each issue with the entity it is about, which a click selects, and
+//! `map.issues` last found, each issue with the entity it is about, which a click selects, or
+//! the place it is about, such as a trap (`map.playability`), which a click frames, and
 //! its quick fix as a button; and a search box taking text or a query in TrenchBroom's query
 //! language, whose matches Find selects, each also selecting its own. Each is a [`MapAction`]
 //! the shell runs as a command.
@@ -29,6 +30,9 @@ pub(crate) struct IssueBrowser {
     found: Option<MapFound>,
     /// The map's edits the issues and matches were found at.
     seen: Option<MapRevision>,
+    /// The place of an issue chosen that is about a place rather than an entity, for the view
+    /// to frame.
+    look: Option<[f64; 3]>,
 }
 
 impl IssueBrowser {
@@ -52,6 +56,11 @@ impl IssueBrowser {
         if self.seen.is_some_and(|seen| seen != edits) {
             self.clear();
         }
+    }
+
+    /// The place of the issue last chosen that is about a place, once.
+    pub(crate) const fn take_look(&mut self) -> Option<[f64; 3]> {
+        self.look.take()
     }
 
     /// Forgets the issues and the search's matches.
@@ -90,7 +99,7 @@ impl IssueBrowser {
     }
 
     /// The issues found, or a prompt to check the map; only the rows in view are laid out.
-    fn issue_list(&self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
+    fn issue_list(&mut self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
         let mut actions = Vec::new();
         let Some(issues) = &self.issues else {
             ui.label(RichText::new(Text::MapIssuesHint.get()).color(theme.color(Token::TextMuted)));
@@ -101,6 +110,7 @@ impl IssueBrowser {
             return actions;
         }
         let row = ui.spacing().interact_size.y;
+        let mut look = None;
         egui::ScrollArea::vertical()
             .id_salt(ui.scope_id().with(core::any::TypeId::of::<MapIssue>()))
             .show_rows(ui, row, issues.len(), |ui, shown| {
@@ -112,20 +122,29 @@ impl IssueBrowser {
                             actions.push(MapAction::Fix(fix.clone()));
                         }
                         let text = issue_line(issue.line, &issue.message);
-                        match issue.entity {
-                            Some(entity) => {
+                        match (issue.entity, issue.point) {
+                            (Some(entity), _) => {
                                 let button = egui::Button::new(text).frame(false).truncate();
                                 if ui.add(button).clicked() {
                                     actions.push(MapAction::Select(Some(entity)));
                                 }
                             }
-                            None => {
+                            (None, Some(point)) => {
+                                let button = egui::Button::new(text).frame(false).truncate();
+                                if ui.add(button).clicked() {
+                                    look = Some(point);
+                                }
+                            }
+                            (None, None) => {
                                 ui.add(egui::Label::new(text).truncate());
                             }
                         }
                     });
                 }
             });
+        if look.is_some() {
+            self.look = look;
+        }
         actions
     }
 

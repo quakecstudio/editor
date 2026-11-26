@@ -108,6 +108,8 @@ map.paste
 map.place_entity
 map.place_prefab
 map.play_from_here
+map.playability
+map.playability_found
 map.portals
 map.prefabs
 map.profiles

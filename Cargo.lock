@@ -3875,7 +3875,12 @@ dependencies = [
 name = "qs-map-gen"
 version = "2026.11.3"
 dependencies = [
+ "qs-bsp",
  "qs-map",
+ "qs-map-bsp",
+ "qs-sim",
+ "schemars",
+ "serde",
 ]
 
 [[package]]
@@ -4130,6 +4135,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-map-edit",
+ "qs-map-gen",
  "qs-map-light",
  "qs-map-vis",
  "qs-mdl",

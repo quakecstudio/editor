@@ -24,6 +24,7 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::map_playable::LastCompile;
 use crate::preview::{GameStart, HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map::{Region, Surface, TexDef};
@@ -38,6 +39,9 @@ pub const MAP_COMPILE: &str = "map.compile";
 pub const MAP_PLAY_FROM_HERE: &str = "map.play_from_here";
 /// The id of `map.portals`.
 pub const MAP_PORTALS: &str = "map.portals";
+
+/// The dialect the open map is compiled in: ericw-tools', as the modder's own tools compile it.
+pub(crate) const COMPILE_DIALECT: qs_map_bsp::Dialect = qs_map_bsp::Dialect::Extended;
 
 impl<L: crate::Loader> Workbench<L> {
     /// The open map compiled in memory, its WADs found in the project, beside the map or in
@@ -74,7 +78,7 @@ impl<L: crate::Loader> Workbench<L> {
                 .map_err(WorkbenchError::RegionSeal)?;
         }
         let text = file.to_bytes();
-        let compiler = Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
+        let compiler = Compiler::default().with_dialect(COMPILE_DIALECT);
         let failed = |error| WorkbenchError::MapCompile { error };
         // The world's `_wad` or `wad`, split at `;` as the texture browser and ericw-tools read
         // it (MAP-6.3). The compiler takes one WAD: one found is passed as it is; several are
@@ -116,7 +120,9 @@ impl<L: crate::Loader> Workbench<L> {
         let path = document.path().to_path_buf();
         if region.is_none() {
             let edits = document.edits();
+            let map = document.file().to_bytes();
             self.maps.keep_report(report.clone(), edits)?;
+            self.last_compile = Some(LastCompile::new(map, compiled.bsp.clone()));
         }
         Ok((compiled, report, path))
     }

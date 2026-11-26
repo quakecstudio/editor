@@ -33,6 +33,7 @@ fn issues() -> Vec<MapIssue> {
             entity: Some(EntityIndex::new(2)),
             brush: None,
             fix: Some(rename()),
+            point: None,
         },
         MapIssue {
             line: 0,
@@ -40,6 +41,7 @@ fn issues() -> Vec<MapIssue> {
             entity: None,
             brush: None,
             fix: None,
+            point: None,
         },
     ]
 }
@@ -178,4 +180,36 @@ fn an_edit_drops_the_lists() {
     browser.set_found(MapFound::default(), at.next());
     browser.set_issues(issues(), at.next());
     assert!(browser.issues.is_some() && browser.found.is_some());
+}
+
+// No spec statement: L-77: an issue about a place, a trap map.playability found, is a row whose
+// click gives the view the place to frame, once, and asks for nothing
+#[test]
+fn a_trap_frames_its_place() {
+    let trap = MapIssue {
+        line: 0,
+        message: "a player who comes to 8 16 24 can no longer reach the exit".to_owned(),
+        entity: None,
+        brush: None,
+        fix: None,
+        point: Some([8.0, 16.0, 24.0]),
+    };
+    let mut browser = IssueBrowser::default();
+    browser.set_issues(vec![trap.clone()], MapRevision::default());
+    let theme = Theme::load(Mode::Dark).unwrap();
+    let mut harness = theme.harness().build_ui_state(
+        |ui, (browser, actions): &mut (IssueBrowser, Vec<MapAction>)| {
+            actions.extend(browser.body(ui, &theme));
+        },
+        (browser, Vec::new()),
+    );
+    harness.run();
+    harness
+        .get_by_label(&issue_line(trap.line, &trap.message))
+        .click();
+    harness.run();
+    let (browser, actions) = harness.state_mut();
+    assert_eq!(actions, &Vec::<MapAction>::new());
+    assert_eq!(browser.take_look(), Some([8.0, 16.0, 24.0]));
+    assert_eq!(browser.take_look(), None);
 }

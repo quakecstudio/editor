@@ -67,6 +67,9 @@ use qs_workbench::map_filter::{FilterParams, MAP_FILTER, MapFiltered};
 use qs_workbench::map_logic::{
     FireParams, FiredBy, LogicIssues, LogicParams, MAP_FIRE, MAP_LOGIC_ISSUES, MapFired,
 };
+use qs_workbench::map_playable::{
+    Answer, MAP_PLAYABILITY, MAP_PLAYABILITY_FOUND, Playability, PlayabilityParams,
+};
 use qs_workbench::map_profile::{
     MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
 };
@@ -111,6 +114,8 @@ pub(crate) struct MapFeature {
     requests: Vec<ShellRequest>,
     /// The map text the last copy wrote, which the window puts on the clipboard (P7-08).
     copied: Option<String>,
+    /// The map's edits a playability check running on its own thread started at (L-77).
+    playing: Option<MapRevision>,
 }
 
 impl MapFeature {
@@ -354,9 +359,7 @@ impl MapFeature {
                     self.load_map_textures(commands);
                     imported
                 }
-                MapAction::CheckLeaks => commands
-                    .execute(MAP_LEAKS, serde_json::json!({}))
-                    .map_err(ShellError::from),
+                MapAction::CheckLeaks => self.check_leaks(commands),
                 MapAction::PlayFromHere => self.play_from_here(commands),
                 MapAction::ListPrefabs => self.list_prefabs(commands),
                 MapAction::PlacePrefab(path, origin) => commands.attempt(
@@ -478,6 +481,66 @@ impl MapFeature {
         Ok(serde_json::Value::Null)
     }
 
+    /// Checks the open map for leaks and missing textures, and then that it can be finished
+    /// (P6-11, L-77).
+    fn check_leaks(
+        &mut self,
+        commands: &mut Commands<'_>,
+    ) -> Result<serde_json::Value, ShellError> {
+        let checked = commands
+            .execute(MAP_LEAKS, serde_json::json!({}))
+            .map_err(ShellError::from);
+        if checked.is_ok() {
+            self.check_playability(commands);
+        }
+        checked
+    }
+
+    /// Starts checking that the open map, just compiled, can be finished (L-77), the search on
+    /// its own thread so that the window stays live; [`MapFeature::poll_playability`] takes the
+    /// answer. A map that cannot be checked, such as one with no player start, which its issues
+    /// say, shows nothing of it.
+    fn check_playability(&mut self, commands: &mut Commands<'_>) {
+        let params = PlayabilityParams {
+            answer: Answer::Later,
+            ..PlayabilityParams::default()
+        };
+        let started: Result<Option<Playability<EntityIndex>>, ShellError> =
+            commands.attempt(MAP_PLAYABILITY, &params);
+        self.playing = started
+            .is_ok()
+            .then(|| commands.session().context().map_edits());
+    }
+
+    /// Takes the answer of the check [`MapFeature::check_playability`] started once it is done,
+    /// and lists the map's issues again, which its findings join; whether it is still running.
+    /// An edit since it started drops it: its answer is of another map.
+    pub(crate) fn poll_playability(&mut self, commands: &mut Commands<'_>) -> bool {
+        let Some(started) = self.playing else {
+            return false;
+        };
+        let at = commands.session().context().map_edits();
+        if at != started {
+            self.playing = None;
+            return false;
+        }
+        let found: Result<Option<Playability<EntityIndex>>, ShellError> =
+            commands.attempt(MAP_PLAYABILITY_FOUND, &serde_json::json!({}));
+        match found {
+            Ok(None) => true,
+            Ok(Some(found)) => {
+                self.playing = None;
+                self.map_editor.set_playability(found, at);
+                drop(self.check_map_issues(commands));
+                false
+            }
+            Err(_) => {
+                self.playing = None;
+                false
+            }
+        }
+    }
+
     /// Lists the open map's issues in the map editor's issue browser (P6-19).
     pub(crate) fn check_map_issues(
         &mut self,
@@ -594,6 +657,7 @@ impl MapFeature {
             commands.attempt(MAP_RUN_PROFILE, &RunProfileParams::default());
         let run = ran?;
         self.map_editor.profiles_mut().set_run(run);
+        self.check_playability(commands);
         if self.map_editor.profiles().shows_portals() {
             let read: Result<MapPortals, ShellError> =
                 commands.attempt(MAP_PORTALS, &serde_json::json!({}));

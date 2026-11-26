@@ -693,6 +693,12 @@ pub enum Text {
     MapRestoreBackup,
     /// What the leak check says of a map with no leak (P6-11).
     MapSealed,
+    /// What the playability check says of a map whose exit is reached (L-77).
+    MapExitReached,
+    /// What the playability check says of a map whose exit is not reached (L-77).
+    MapExitNotReached,
+    /// What the playability check says of a map with no exit (L-77).
+    MapNoExit,
     /// What the leak check says of a map with no entity in empty space (P6-11, QBSP-9.2).
     MapNoOccupant,
     /// The map view's layout of the 3D view alone.
@@ -1211,7 +1217,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 596] = [
+    pub const ALL: [Self; 599] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1551,6 +1557,9 @@ impl Text {
         Self::MapShowPortals,
         Self::MapRestoreBackup,
         Self::MapSealed,
+        Self::MapExitReached,
+        Self::MapExitNotReached,
+        Self::MapNoExit,
         Self::MapNoOccupant,
         Self::MapLayoutSingle,
         Self::MapLayoutInset,
@@ -2195,6 +2204,11 @@ impl Text {
             Self::MapShowPortals => "Show portals",
             Self::MapRestoreBackup => "Restore the newest backup",
             Self::MapSealed => "The map is sealed: no entity is in reach of the void.",
+            Self::MapExitReached => "A player can reach the exit from the start.",
+            Self::MapExitNotReached => {
+                "No exit is reached from the start: the map cannot be finished."
+            }
+            Self::MapNoExit => "The map has no exit (trigger_changelevel) to reach.",
             Self::MapNoOccupant => {
                 "No entity stands in empty space, so the map cannot be checked for leaks."
             }
@@ -3137,6 +3151,33 @@ pub fn profile_failed(profile: &str, task: &str, seconds: f64, why: &str) -> Str
 #[must_use]
 pub fn leak_found([x, y, z]: [f32; 3]) -> String {
     format!("The map leaks: the void reaches the entity at {x} {y} {z}.")
+}
+
+/// How many places of the map a player can come to and not leave (L-77).
+#[must_use]
+pub fn trap_count(traps: usize) -> String {
+    match traps {
+        1 => "1 place a player cannot leave, marked in the view".to_owned(),
+        count => format!("{count} places a player cannot leave, marked in the view"),
+    }
+}
+
+/// How many keys, weapons, items and secrets a player never reaches (L-77).
+#[must_use]
+pub fn unreached_count(unreached: usize) -> String {
+    match unreached {
+        1 => "1 key, weapon, item or secret is never reached".to_owned(),
+        count => format!("{count} keys, weapons, items or secrets are never reached"),
+    }
+}
+
+/// How many entities the playability check does not follow (L-77, PRIN-8).
+#[must_use]
+pub fn not_judged_count(entities: usize) -> String {
+    match entities {
+        1 => "1 entity moves a player in a way the check does not follow".to_owned(),
+        count => format!("{count} entities move a player in ways the check does not follow"),
+    }
 }
 
 /// The WAD the map's world names, which was not found (P6-11).

@@ -20,7 +20,7 @@ use qs_map::{Diagnostic, DiagnosticKind};
 use qs_map_gen::{Classes, Level, Request, Size};
 use qs_sim::collision::{Hull, HullSet};
 
-use crate::no_trap::Ground;
+use qs_map_gen::playable::{Ground, Moves, Skill};
 
 /// `CONTENTS_SOLID` (BSP-10.2).
 const SOLID: i32 = -2;
@@ -200,10 +200,10 @@ fn check(level: &Level, what: &str) {
         );
     }
     let exit = stand(level.exit);
-    let ground = Ground::new(&bsp, &level.map);
+    let ground = Ground::new(&bsp, Moves::Generator, Skill::Normal).unwrap();
     assert_eq!(ground.check(stand(0), exit), Ok(()), "{what}: a trap");
     // A player who walks, swims, rides lifts, picks up keys and presses buttons.
-    let reached = ground.reached(stand(0));
+    let reached = ground.reached(stand(0)).unwrap();
     for (place, room) in level.rooms.iter().enumerate() {
         let [x, y, z] = stand(place);
         let near = reached.iter().any(|at| {

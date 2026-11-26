@@ -82,6 +82,9 @@ pub struct MapIssue {
     pub brush: Option<BrushIndex>,
     /// What fixes it, where something does.
     pub fix: Option<QuickFix>,
+    /// The point it is at, when it is about a place rather than an entity or a brush, such as
+    /// a place a player cannot leave (`map.playability`).
+    pub point: Option<[f64; 3]>,
 }
 
 /// What `map.issues` answers.
@@ -270,6 +273,7 @@ impl MapDocument {
                     entity,
                     brush,
                     fix: None,
+                    point: None,
                 }
             })
             .collect();
@@ -286,6 +290,7 @@ impl MapDocument {
                             entity,
                             brush: brush_index,
                         }),
+                        point: None,
                     });
                 }
             }
@@ -297,6 +302,7 @@ impl MapDocument {
                 entity: Some(EntityIndex::new(e)),
                 brush: None,
                 fix: None,
+                point: None,
             });
         }
         let has_start = file
@@ -310,6 +316,7 @@ impl MapDocument {
                 entity: None,
                 brush: None,
                 fix: start_point(file).map(|origin| QuickFix::AddPlayerStart { origin }),
+                point: None,
             });
         }
         issues
@@ -407,9 +414,10 @@ fn entity_issues(places: &[LinePlace], problems: Vec<EntityProblem>) -> Vec<MapI
             MapIssue {
                 line: problem.line,
                 message: problem.message,
-                entity: Some(problem.entity),
+                entity: problem.entity,
                 brush,
                 fix: problem.fix,
+                point: problem.point,
             }
         })
         .collect()
@@ -429,6 +437,7 @@ impl MapDocument {
                 entity: None,
                 brush: None,
                 fix: None,
+                point: None,
             })
             .collect()
     }
