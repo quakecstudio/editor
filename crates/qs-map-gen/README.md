@@ -2,7 +2,8 @@
 
 Makes a random playable level from a seed (L-48, L-74): `Request::generate` gives a `.map`
 on several floors with a start, an exit, loops, locks and what opens them, a secret, lights,
-monsters and weapons, and no trap a player cannot leave. One seed gives one level.
+monsters and weapons, and no trap a player cannot leave. One seed gives one level. Its
+playability check (`playable`, L-77) tells whether any compiled map can be finished.
 
 - **The plan** (`layout`): rooms on a grid of columns, each on a storey 128 apart, joined into
   a path from the start to the exit. The path hooks back onto an atrium's balcony, a place
@@ -32,10 +33,22 @@ monsters and weapons, and no trap a player cannot leave. One seed gives one leve
   floors differ and a door at the higher end.
 - **No traps.** A pit's liquid is within `CLIMB_OUT` (28) of its rim, the most a swimmer
   climbs out over (`client.qc`, `CheckWaterJump`), and a pit of lava, which kills before a
-  player climbs out, has rails along its edge and its bridges. `crates/qs-tests` checks each
-  level compiled: from every place and set of keys the start reaches, the exit can still be
-  reached (`no_trap.rs`), and measures the climb out of water in `qs-sim`
-  (`water_escape.rs`).
+  player climbs out, has rails along its edge and its bridges. `map.generate` (in
+  `qs-map-edit`) compiles each level and checks it with the playability check below and the
+  generator's moves, and a seed whose level holds a trap gives way to the next;
+  `crates/qs-tests` checks the levels of many seeds the same way (`no_trap.rs`,
+  `random_levels.rs`) and measures the climb out of water in `qs-sim` (`water_escape.rs`).
+- **The playability check** (`playable`, L-77, MAP-36) reads a compiled map as the game does,
+  its hulls and entity lump, and searches the places a player reaches from the start: whether
+  the exit is reached, each key, weapon, item and secret never reached, each place from which
+  the exit no longer is, and each entity it could not judge. It follows id's QuakeC
+  (`qcc/v101qc`: `doors.qc`, `plats.qc`, `buttons.qc`, `triggers.qc`, `items.qc`, `subs.qc`)
+  for doors, plats, trains, buttons, triggers, relays, counters, keys, secrets and items, and
+  the engine for what a skill removes (EDICT-8.4). The player's moves are the generator's (no
+  jump) or a player's, whose jump onto a ledge (`JUMP`, 43) and across a gap (`LEAP`, 240) are
+  measured from id's `PlayerJump` in `qs-sim` (`crates/qs-tests/tests/it/jump_ledge.rs`).
+  `map.playability` in `qs-workbench` runs it on the open map; `cargo xtask entity-corpus
+  --playable` on a corpus's maps.
 - **The textures** (`theme`) are a theme's, chosen from the names the game has: themes for
   id's levels and for LibreQuake's, else any plain textures. Each theme paints a floor or a
   wall only with a texture the game's own levels mostly put on such faces, and a ceiling with
@@ -50,6 +63,7 @@ monsters and weapons, and no trap a player cannot leave. One seed gives one leve
   are `map.build_room` and `map.build_passage`, in `qs-map-edit`; the shapes are compiled and
   walked in `crates/qs-tests/tests/it/room_kit.rs`.
 
-Layer: L4. Nothing is ported; the entity rules followed are quoted in
+Layer: L4, on `qs-map`, `qs-bsp` and `qs-sim` (the engine's hulls and skill inhibition).
+Nothing is ported; the entity rules followed are quoted in
 `docs/agent-reference/triggers.md` ("Puzzles from id's entities"). The command is `map.generate`, in `qs-map-edit`; the levels are
 compiled and walked in `crates/qs-tests/tests/it/random_levels.rs`.

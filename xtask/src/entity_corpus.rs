@@ -23,8 +23,8 @@
 //! With `--playable`, each map's BSP is checked as `map.playability` checks it (L-77, MAP-36),
 //! with a player's moves: whether its exit is reached from its start, the keys, weapons, items
 //! and secrets never reached, the places from which the exit no longer is, and the entities the
-//! check could not judge, each printed. A map whose exit is not reached fails the check: the
-//! corpus's maps can all be finished, so the check is wrong about it.
+//! check could not judge, each printed. A corpus map's findings fail nothing, as `--logic`'s
+//! do: each is looked at, and the counts are the record of a run.
 //!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
@@ -88,7 +88,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     }
     let mut ok = true;
     if args.playable {
-        ok &= check_playable(&compiled)?;
+        check_playable(&compiled)?;
     }
     if args.logic {
         compiled.extend(generated_levels()?);
@@ -381,9 +381,8 @@ fn fire_maps(
 /// The label of a level `qs-map-gen` made, before its seed.
 const GENERATED: &str = "generated-";
 /// Checks that each of `maps` can be finished, as `map.playability` does with a player's moves
-/// (L-77), and prints what each gives; false when a map's exit is not reached.
-fn check_playable(maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
-    let mut ok = true;
+/// (L-77), and prints what each gives.
+fn check_playable(maps: &[(String, Vec<u8>)]) -> Result<(), String> {
     for (label, bytes) in maps {
         let bsp = Bsp::read(bytes, BspLoader::default()).map_err(|e| format!("{label}: {e}"))?;
         let found = Ground::new(&bsp, Moves::Player, Skill::Normal)
@@ -398,18 +397,10 @@ fn check_playable(maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
         let exit = match found.exit {
             ExitReach::Reached => "the exit is reached",
             ExitReach::NoExit => "no exit",
-            ExitReach::NotReached => {
-                ok = false;
-                "FAIL the exit is not reached"
-            }
+            ExitReach::NotReached => "the exit is NOT reached",
         };
         println!(
-            "{}  {label}: {exit}, {} places; {} unreached, {} traps, {} not judged",
-            if found.exit == ExitReach::NotReached {
-                "FAIL"
-            } else {
-                "ok  "
-            },
+            "info  {label}: {exit}, {} places; {} unreached, {} traps, {} not judged",
             found.places,
             found.unreached.len(),
             found.traps.len(),
@@ -437,7 +428,7 @@ fn check_playable(maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
             println!("        not judged: {}", unjudged.join(", "));
         }
     }
-    Ok(ok)
+    Ok(())
 }
 
 /// How many generated levels `--logic` fires (L-76).

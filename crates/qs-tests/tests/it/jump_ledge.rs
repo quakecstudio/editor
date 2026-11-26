@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 1996-1997 Id Software, Inc.
-// Copyright (C) 2026 QuakeC Studio contributors
-//
-// Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/v101qc/client.qc, PlayerJump, PlayerPreThink
 
-//! How high a ledge a player gets onto with a jump (L-77): id's `PlayerJump`, whose
+//! How high a ledge a player gets onto with a jump (L-77): id's `PlayerJump`, as
+//! `water_escape.rs` ports it, whose
 //! `self.velocity_z = self.velocity_z + 270` lifts a player on the ground, run in `qs-sim` on
 //! ledges compiled by `qs-map-bsp` at each height, the player running into the ledge with jump
 //! held; and how wide a gap a running jump clears, the player running at it and jumping at its

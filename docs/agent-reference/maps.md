@@ -218,3 +218,29 @@ when a trigger fires is in the QuakeC, so run it rather than read it:
 
 Both need the project's server QuakeC to compile, and neither changes the map or a running
 game. The rules are [`docs/spec/fire.md`](../spec/fire.md).
+
+## Checking that a map can be finished
+
+Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md), `playable` (L-77, MAP-36).
+
+- `map.playability` compiles the open map and searches the places a player reaches from the
+  `info_player_start`. It answers `exit` (`reached`, `not_reached`, or `no_exit` for a map
+  with no `trigger_changelevel`), `unreached` (each key, weapon, item and secret never reached,
+  with its entity), `traps` (each place a player can come to and not leave, `at` a point inside
+  it, `min` and `max` the box of the player's origins there), and `not_judged` (each entity whose
+  effect on a player the check does not follow). Run it after a compile, and fix every finding
+  before the map is played: a trap is a pit or a one-way drop with no way back to the exit.
+- `moves` is `player` (the default: steps of 18, a jump onto a ledge of 43 and across a gap of
+  240, falls, swimming and climbing out over a rim of 28, lifts, trains and teleporters) or
+  `generator` (no jump, so a ledge a player must jump onto counts as a wall). `skill` (`easy`,
+  `normal`, `hard`, `nightmare`) chooses the entities the game keeps (EDICT-8.4).
+- Doors open as id's QuakeC opens them: with their key, when something fires their
+  `targetname`, when shot (`health`), or when touched. An open door is solid where it opened
+  to, so one that sinks into the floor leaves a step; one with `wait` other than -1 comes back.
+  A `func_door_secret` is out of the way once opened. A wall a `killtarget` names is removed
+  when it fires. A monster with a `target` is taken to die once the player sees it, or once its
+  `targetname` fires when it waits in a closet. An item is where `droptofloor` puts it and
+  rides the door under it.
+- The findings join `map.issues` until the map changes. `map.generate` checks each level it
+  makes the same way, with `generator` moves, and moves on to the next seed when it finds a
+  trap.

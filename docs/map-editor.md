@@ -80,6 +80,22 @@ it too.
   issues. The entity is fired at the skill and in the kind of game the view shows, normal
   single player when it shows every entity. A `.map` is compiled in memory first, as id's qbsp
   compiles it, so doors and other brush entities have their models; nothing is written.
+- **Can it be finished (L-77, MAP-36):** `map.playability` compiles the open map as
+  `map.compile` does, or reads the BSP it was opened from, and searches the places a player
+  reaches from the start: walking up steps of 18, falling, swimming, climbing out of water over
+  a rim of 28, riding lifts, trains and teleporters, jumping onto a ledge of 43 and across a gap
+  of 240, and opening doors with keys, buttons, triggers, shot buttons and doors, monsters
+  killed and relays, as id's QuakeC does. It answers whether an exit (`trigger_changelevel`)
+  is reached; each key, weapon, item and secret never reached; each place a player can come to
+  and not leave, with a point inside it; and each entity whose effect on a player it does not
+  follow, such as a `trigger_push`, a mod's class or a train between its corners, which may
+  make its answer wrong. The findings join the issue browser's until the map changes, and the
+  entities the game removes at the skill chosen (normal when none is) are left out.
+
+  In the window, Check for leaks and a compile profile's run also run it: the Properties panel
+  says whether the exit is reached, how many places a player cannot leave and how many things
+  are never reached, every pane draws each such place as a box with a dot where a player comes
+  into it, and a click on its issue frames it in the view.
 - **Groups and layers (P5-14, MAP-26):** a map made in TrenchBroom keeps its groups, linked
   groups and layers as written ([MAP-9](spec/map.md)).
   - An edit inside a linked group is copied into every group linked to it, moved by each
