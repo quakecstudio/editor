@@ -902,6 +902,14 @@ pub enum Text {
     MapBalanceDamage,
     /// The row of the damage over the monsters' health (L-78).
     MapBalanceRatio,
+    /// The Balance tab's picker of what is counted (L-78).
+    MapBalanceScope,
+    /// The picker's choice of the whole map (L-78).
+    MapBalanceWholeMap,
+    /// The picker's choice of the entities selected (L-78).
+    MapBalanceSelection,
+    /// A layer with no name in the picker, before its place (L-78).
+    MapBalanceLayer,
     /// What the logic issue list says before the map is checked (L-76).
     MapLogicHint,
     /// The map search's box, for text or a query (P7-08).
@@ -1248,7 +1256,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 614] = [
+    pub const ALL: [Self; 618] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1698,6 +1706,10 @@ impl Text {
         Self::MapBalanceSecrets,
         Self::MapBalanceDamage,
         Self::MapBalanceRatio,
+        Self::MapBalanceScope,
+        Self::MapBalanceWholeMap,
+        Self::MapBalanceSelection,
+        Self::MapBalanceLayer,
         Self::MapLogicHint,
         Self::MapSearchQuery,
         Self::MapSearchSyntax,
@@ -2390,6 +2402,10 @@ impl Text {
             Self::MapBalanceSecrets => "Secrets",
             Self::MapBalanceDamage => "Ammo damage",
             Self::MapBalanceRatio => "Damage per monster health",
+            Self::MapBalanceScope => "Counted over",
+            Self::MapBalanceWholeMap => "Whole map",
+            Self::MapBalanceSelection => "Selection",
+            Self::MapBalanceLayer => "Layer",
             Self::MapLogicHint => "Check logic to list what only running the map shows",
             Self::MapSearchQuery => "Search: text or a query",
             Self::MapSearchSyntax => {
@@ -2534,7 +2550,7 @@ impl Text {
                 "Brushes and entities kept to use again. Drag one into the view to copy it in; Save as prefab in Properties keeps the selection."
             }
             Self::HelpMapBalance => {
-                "Count spawns the map with your mod's QuakeC on each skill and lists, a column a skill, its monsters by class with the health your code gives them, the weapons, the ammo with the damage id's weapons do with it, the health, armour and secrets, and the damage over the monsters' health. A row's name selects its entities; a skill's heading shows the map as that skill spawns it."
+                "Count spawns the map with your mod's QuakeC on each skill and lists, a column a skill, its monsters by class with the health your code gives them, the weapons, the ammo with the damage id's weapons do with it, the health, armour and secrets, and the damage over the monsters' health. A row's name selects its entities; a skill's heading shows the map as that skill spawns it. Counted over chooses the whole map, the entities selected when you pressed Count, or one layer or group."
             }
             Self::HelpMapLogic => {
                 "Fire runs the selected entity's use, or its touch, in the simulation with your mod's QuakeC and lists what happened in order: a click on a step selects its entity. Check logic fires every entity that has targets and lists the chains that cannot work."

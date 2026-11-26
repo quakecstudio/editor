@@ -3,15 +3,18 @@
 //! The Balance tab below the map view (L-78, MAP-37): Count makes the map's balance sheets
 //! (`map.balance`) and the tab shows them a column a skill for the kind of game chosen: the
 //! monsters by class with their health, the weapons, the ammunition with its damage, the health,
-//! armour and secrets, and the damage over the monsters' health. A row's name selects its
-//! entities, and a skill's heading shows the map as that skill spawns it. Each is a
-//! [`MapAction`] the shell runs as a command.
+//! armour and secrets, and the damage over the monsters' health, for the whole map, the
+//! selection when Count was pressed, or one layer or group. A row's name selects its entities,
+//! and a skill's heading shows the map as that skill spawns it where the view's filter offers
+//! it. Each is a [`MapAction`] the shell runs as a command.
 
 use std::collections::BTreeSet;
 
 use eframe::egui::{self, RichText, Ui};
 use qs_map_edit::{EntityIndex, MapFound, MapRevision};
-use qs_workbench::map_balance::{AmountLine, BalanceSheet, Entry, MapBalance, SKILLS, Tally};
+use qs_workbench::map_balance::{
+    AmountLine, BalanceSheet, Entry, MapBalance, RoomKindName, RoomTally, SKILLS, Tally,
+};
 use qs_workbench::map_filter::{GameMode, Skill};
 
 use crate::map_editor::{MapAction, ShowFilter};
@@ -24,6 +27,42 @@ const MODES: [(GameMode, Text); 3] = [
     (GameMode::Coop, Text::MapCoop),
     (GameMode::Deathmatch, Text::MapDeathmatch),
 ];
+
+/// Which entities the table counts (BALANCE-2.3, BALANCE-2.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Scope {
+    /// The whole map.
+    #[default]
+    Map,
+    /// The entities selected when Count was pressed.
+    Selection,
+    /// The layer or group whose own entity this is.
+    Room(EntityIndex),
+}
+
+impl Scope {
+    /// The tally of `sheet` it counts, `None` when the sheet has none.
+    fn tally(self, sheet: &BalanceSheet) -> Option<&Tally> {
+        match self {
+            Self::Map => Some(&sheet.map),
+            Self::Selection => sheet.selection.as_ref(),
+            Self::Room(entity) => sheet
+                .rooms
+                .iter()
+                .find(|room| room.entity == entity)
+                .map(|room| &room.tally),
+        }
+    }
+
+    /// The ratio of `sheet` it shows: the sheet's own, the player's start counted, for the whole
+    /// map; the tally's own for the rest.
+    fn ratio(self, sheet: &BalanceSheet) -> Option<f32> {
+        match self {
+            Self::Map => sheet.ratio,
+            Self::Selection | Self::Room(_) => self.tally(sheet).and_then(|tally| tally.ratio),
+        }
+    }
+}
 
 /// One row of the table: its name, a cell for each skill, and the entities it names on any.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,12 +87,16 @@ type AmountOf = fn(&Tally) -> &AmountLine;
 /// What a row reads of one tally: its cell, and the entities it names.
 type Reading = Box<dyn Fn(&Tally) -> Option<(String, Vec<EntityIndex>)>>;
 
-/// The rows the sheets of the four skills make, in order: the monsters by class, their count and
-/// health, the weapons by class, the ammunition by kind, health, armour, secrets, damage and the
-/// sheet's ratio.
-pub(crate) fn rows(sheets: &[&BalanceSheet; 4]) -> Vec<Row> {
+/// The rows the tallies `scope` counts of the sheets of the four skills make, in order: the
+/// monsters by class, their count and health, the weapons by class, the ammunition by kind,
+/// health, armour, secrets, damage and the ratio.
+pub(crate) fn rows(sheets: &[&BalanceSheet; 4], scope: Scope) -> Vec<Row> {
     let names = |each: &dyn Fn(&Tally) -> Vec<String>| -> BTreeSet<String> {
-        sheets.iter().flat_map(|sheet| each(&sheet.map)).collect()
+        sheets
+            .iter()
+            .filter_map(|sheet| scope.tally(sheet))
+            .flat_map(each)
+            .collect()
     };
     let mut readings: Vec<(String, Reading)> = Vec::new();
     for class in names(&|tally| tally.monsters.iter().map(|l| l.classname.clone()).collect()) {
@@ -135,7 +178,7 @@ pub(crate) fn rows(sheets: &[&BalanceSheet; 4]) -> Vec<Row> {
         .into_iter()
         .map(|(name, reading)| {
             let mut entities = BTreeSet::new();
-            let cells = sheets.map(|sheet| match reading(&sheet.map) {
+            let cells = sheets.map(|sheet| match scope.tally(sheet).and_then(&reading) {
                 Some((cell, named)) => {
                     entities.extend(named);
                     cell
@@ -151,22 +194,26 @@ pub(crate) fn rows(sheets: &[&BalanceSheet; 4]) -> Vec<Row> {
         .collect();
     out.push(Row {
         name: Text::MapBalanceRatio.get().to_owned(),
-        cells: sheets.map(|sheet| sheet.ratio.map_or_else(|| "-".to_owned(), number)),
+        cells: sheets.map(|sheet| scope.ratio(sheet).map_or_else(|| "-".to_owned(), number)),
         entities: Vec::new(),
     });
     out
 }
 
-/// The filter that shows the map as `skill` spawns it in a game of `mode`: a skill's own in
-/// single player, the kind of game's in coop and deathmatch, which the view offers on normal.
-const fn filter_of(skill: Skill, mode: GameMode) -> ShowFilter {
+/// The view's filter that shows the map as `skill` spawns it in a game of `mode`: each skill's
+/// in single player, and in coop and deathmatch only normal's, the one the view offers; `None`
+/// where the view has no such filter.
+const fn filter_of(skill: Skill, mode: GameMode) -> Option<ShowFilter> {
     match (mode, skill) {
-        (GameMode::Single, Skill::Easy) => ShowFilter::Easy,
-        (GameMode::Single, Skill::Normal) => ShowFilter::Normal,
-        (GameMode::Single, Skill::Hard) => ShowFilter::Hard,
-        (GameMode::Single, Skill::Nightmare) => ShowFilter::Nightmare,
-        (GameMode::Coop, _) => ShowFilter::Coop,
-        (GameMode::Deathmatch, _) => ShowFilter::Deathmatch,
+        (GameMode::Single, Skill::Easy) => Some(ShowFilter::Easy),
+        (GameMode::Single, Skill::Normal) => Some(ShowFilter::Normal),
+        (GameMode::Single, Skill::Hard) => Some(ShowFilter::Hard),
+        (GameMode::Single, Skill::Nightmare) => Some(ShowFilter::Nightmare),
+        (GameMode::Coop, Skill::Normal) => Some(ShowFilter::Coop),
+        (GameMode::Deathmatch, Skill::Normal) => Some(ShowFilter::Deathmatch),
+        (GameMode::Coop | GameMode::Deathmatch, Skill::Easy | Skill::Hard | Skill::Nightmare) => {
+            None
+        }
     }
 }
 
@@ -180,11 +227,12 @@ const fn skill_text(skill: Skill) -> Text {
     }
 }
 
-/// The Balance tab's state: the sheets last made, and the kind of game shown.
+/// The Balance tab's state: the sheets last made, the kind of game shown and what is counted.
 #[derive(Debug, Default)]
 pub(crate) struct BalancePane {
     found: Option<MapBalance>,
     mode: GameMode,
+    scope: Scope,
     /// The map's edits the sheets were made at.
     seen: Option<MapRevision>,
 }
@@ -192,6 +240,14 @@ pub(crate) struct BalancePane {
 impl BalancePane {
     /// Takes the sheets `map.balance` made of the map at `at`.
     pub(crate) fn set(&mut self, found: MapBalance, at: MapRevision) {
+        // What was counted stays chosen while the new sheets still have it.
+        if !found
+            .sheets
+            .iter()
+            .any(|sheet| self.scope.tally(sheet).is_some())
+        {
+            self.scope = Scope::Map;
+        }
         self.found = Some(found);
         self.seen = Some(at);
     }
@@ -240,6 +296,27 @@ impl BalancePane {
         for (mode, text) in MODES {
             ui.selectable_value(&mut self.mode, mode, text.get());
         }
+        if let Some(sheet) = self.found.as_ref().and_then(|found| found.sheets.first()) {
+            let mut scopes = vec![(Scope::Map, Text::MapBalanceWholeMap.get().to_owned())];
+            if sheet.selection.is_some() {
+                scopes.push((Scope::Selection, Text::MapBalanceSelection.get().to_owned()));
+            }
+            for room in &sheet.rooms {
+                scopes.push((Scope::Room(room.entity), room_name(room)));
+            }
+            let shown = scopes
+                .iter()
+                .find(|(scope, _)| *scope == self.scope)
+                .map_or_else(String::new, |(_, name)| name.clone());
+            let picked = egui::ComboBox::from_id_salt(ui.scope_id().with(Text::MapBalanceScope))
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for (scope, name) in scopes {
+                        ui.selectable_value(&mut self.scope, scope, name);
+                    }
+                });
+            picked.response.accessible_name(Text::MapBalanceScope.get());
+        }
         actions
     }
 
@@ -265,16 +342,24 @@ impl BalancePane {
                 .show(ui, |ui| {
                     ui.label("");
                     for skill in SKILLS {
-                        if ui
-                            .button(skill_text(skill).get())
-                            .on_hover_text(Text::MapBalanceShowHint.get())
-                            .clicked()
-                        {
-                            actions.push(MapAction::Filter(filter_of(skill, self.mode)));
+                        let name = skill_text(skill).get();
+                        match filter_of(skill, self.mode) {
+                            Some(filter) => {
+                                if ui
+                                    .button(name)
+                                    .on_hover_text(Text::MapBalanceShowHint.get())
+                                    .clicked()
+                                {
+                                    actions.push(MapAction::Filter(filter));
+                                }
+                            }
+                            None => {
+                                ui.label(name);
+                            }
                         }
                     }
                     ui.end_row();
-                    for row in rows(&sheets) {
+                    for row in rows(&sheets, self.scope) {
                         if row.entities.is_empty() {
                             ui.label(&row.name);
                         } else if ui
@@ -296,6 +381,19 @@ impl BalancePane {
                 });
         });
         actions
+    }
+}
+
+/// A layer's or group's name in the picker: its `_tb_name`, or its kind and place for none.
+fn room_name(room: &RoomTally) -> String {
+    if room.name.is_empty() {
+        let kind = match room.kind {
+            RoomKindName::Layer => Text::MapBalanceLayer,
+            RoomKindName::Group => Text::MapGroup,
+        };
+        format!("{} {}", kind.get(), room.entity.get())
+    } else {
+        room.name.clone()
     }
 }
 

@@ -108,9 +108,11 @@ it too.
   [`spec/balance.md`](spec/balance.md).
 
   In the window, Count in the Balance tab below the view makes the sheets and shows them a
-  column a skill for the kind of game chosen. A row's name selects its entities, and a skill's
-  heading shows the map as that skill spawns it, the view's entity filter (coop and deathmatch
-  on normal).
+  column a skill for the kind of game chosen, counted over the whole map, the entities
+  selected when Count was pressed, or one layer or group. A row's name selects its entities,
+  and a skill's heading shows the map as that skill spawns it with the view's entity filter:
+  every skill in single player, and normal in coop and deathmatch, which is the one the filter
+  offers there.
 - **Groups and layers (P5-14, MAP-26):** a map made in TrenchBroom keeps its groups, linked
   groups and layers as written ([MAP-9](spec/map.md)).
   - An edit inside a linked group is copied into every group linked to it, moved by each

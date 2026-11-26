@@ -30,7 +30,8 @@
 //! `map.balance` makes them (L-78, BALANCE-2): on every skill and in every kind of game, the
 //! sheet's monsters and secrets must be the program's own `total_monsters` and `total_secrets`
 //! after the spawn, or the check fails; what the sheet of normal skill in single player holds is
-//! printed, the record of a run. A map the program cannot spawn is listed and fails nothing.
+//! printed, the record of a run. A map the program cannot spawn is listed and fails nothing, but
+//! a program that gives no map a sheet, as one that does not build, fails the check.
 //!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
@@ -432,6 +433,7 @@ fn balance_maps(
         session
             .execute(MAP_OPEN, serde_json::json!({ "path": path }))
             .map_err(|e| format!("{label}: {e}"))?;
+        let started = std::time::Instant::now();
         let found = match session.execute(MAP_BALANCE, serde_json::json!({})) {
             Ok(found) => found,
             Err(error) => {
@@ -439,6 +441,7 @@ fn balance_maps(
                 continue;
             }
         };
+        let took = started.elapsed().as_millis();
         let balance: MapBalance =
             serde_json::from_value(found).map_err(|e| format!("{label}: {e}"))?;
         for sheet in &balance.sheets {
@@ -466,7 +469,7 @@ fn balance_maps(
                     .map_or_else(|| "no ratio".to_owned(), |r| format!("ratio {r:.2}"));
                 println!(
                     "info  {name}: {label}: {} monsters of {} health, {} damage, {} health, {} \
-                     armour, {} secrets, {ratio}",
+                     armour, {} secrets, {ratio}; twelve sheets in {took} ms",
                     sheet.map.monster_count,
                     sheet.map.monster_health,
                     sheet.map.damage,
@@ -476,6 +479,14 @@ fn balance_maps(
                 );
             }
         }
+    }
+    // A program that spawns no map, as one that does not build, has checked nothing.
+    if sheets == 0 && !maps.is_empty() {
+        ok = false;
+        println!(
+            "FAIL  {name}: no map of {} gave a balance sheet",
+            maps.len()
+        );
     }
     if ok {
         println!(

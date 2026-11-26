@@ -45,7 +45,8 @@ enters (EDICT-11.8). id's `walkmonster_start` (`monsters.qc`) and `trigger_secre
   spawns it (DIFF-3.5), and reading what the spawn left before any frame runs: a monster is an
   entity that added to `total_monsters` (BALANCE-1.1), counted as many times as it added, with
   the `health` it has after its spawn function, which may read the skill; a secret is one that
-  added to `total_secrets`.
+  added to `total_secrets`. An entity whose spawn function added to a counter and then freed
+  its edict still counts, under the classname the map gives it, with no health.
 - **BALANCE-2.2** There is a sheet for each skill 0 to 3 in each of single player, coop and
   deathmatch, twelve in all, skill by skill. An entity is on a sheet exactly when the game keeps
   it at that skill in that kind of game: the engine's spawnflags test (EDICT-8.4), so nightmare's

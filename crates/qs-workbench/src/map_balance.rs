@@ -19,7 +19,8 @@ use qs_commands::{Command, Outcome, RegisterError, Registry};
 use qs_map::{EntityPlace, MapFile, RoomKind};
 use qs_map_edit::EntityIndex;
 use qs_sim::scenario::{SCN_FRAMETIME, Seconds};
-use qs_sim::{CLIENT_EDICT, FireBy, FireOptions, MapPlace, QcValue, World};
+use qs_sim::spawn::SpawnCounts;
+use qs_sim::{CLIENT_EDICT, FireBy, FireOptions, FireTrace, MapPlace, QcValue, TraceEnd, World};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -532,12 +533,13 @@ pub struct MapBalance {
 }
 
 /// The map's entities as one sheet's game spawned them, with what each gives, whether the
-/// player entered, its inventory then, and `total_monsters` and `total_secrets`.
+/// player entered, its inventory then, and the program's counters after the spawn.
 struct Touched {
     spawned: Vec<Spawned>,
     entry: Entry,
     start: Inventory,
-    totals: [f32; 2],
+    total_monsters: f32,
+    total_secrets: f32,
 }
 
 impl MapSpawn {
@@ -559,29 +561,30 @@ impl MapSpawn {
                 })
                 .collect();
             let counter = |name: &str| globals.get(name).copied().unwrap_or(0.0);
-            let totals = [counter("total_monsters"), counter("total_secrets")];
-            // BALANCE-2.1: what the spawn left, before any frame runs.
+            let (total_monsters, total_secrets) =
+                (counter("total_monsters"), counter("total_secrets"));
+            // BALANCE-2.1: what the spawn left, before any frame runs. An entity whose spawn
+            // function counted itself and then freed its edict still counts: the counters keep
+            // it, with no health.
+            let classnames = world.map_classnames();
             let mut spawned = Vec::new();
             for (lump, &place) in self.places().iter().enumerate() {
                 let map_place = MapPlace::new(lump);
-                let Some(edict) = world.map_edict(map_place) else {
-                    continue;
-                };
                 let counts = world.map_counts(map_place);
-                let health = world
-                    .edict_fields(progs, edict)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .find_map(|field| match (field.name.as_str(), field.value) {
-                        ("health", QcValue::Float(health)) => Some(health),
-                        _ => None,
-                    })
-                    .unwrap_or(0.0);
+                let edict = world.map_edict(map_place);
+                if edict.is_none() && counts == SpawnCounts::default() {
+                    continue;
+                }
+                let health = edict.map_or(0.0, |edict| float_field(&world, progs, edict, "health"));
+                let classname = edict.map_or_else(
+                    || classnames.get(lump).cloned().unwrap_or_default(),
+                    |edict| world.classname(progs, edict),
+                );
                 spawned.push((
                     map_place,
                     Spawned {
                         entity: EntityIndex::new(place),
-                        classname: world.classname(progs, edict),
+                        classname,
                         monsters: counts.monsters,
                         secrets: counts.secrets,
                         health,
@@ -598,16 +601,19 @@ impl MapSpawn {
                         error: error.to_string(),
                     },
                     start: Inventory::default(),
-                    totals,
+                    total_monsters,
+                    total_secrets,
                 });
             }
             let start = Inventory::of_player(&world, progs);
             let mut out = Vec::with_capacity(spawned.len());
             for (map_place, mut entity) in spawned {
                 // An entity the frames since freed gives nothing: id's `PlaceItem` removes an
-                // item that falls out of the level.
+                // item that falls out of the level. One with no `touch` is not copied to be
+                // touched.
                 if entity.monsters == 0.0
                     && let Some(edict) = world.map_edict(map_place)
+                    && has_touch(&world, progs, edict)
                 {
                     entity.gives = touched(&world, progs, edict);
                 }
@@ -617,7 +623,8 @@ impl MapSpawn {
                 spawned: out,
                 entry: Entry::Entered,
                 start,
-                totals,
+                total_monsters,
+                total_secrets,
             })
         })
     }
@@ -648,9 +655,42 @@ fn touched(world: &World, progs: &Progs<'_>, edict: usize) -> Inventory {
         frametime: SCN_FRAMETIME,
     };
     match probe.fire(progs, edict, options) {
+        // BALANCE-3.2: a touch that fails gives nothing, whatever it wrote before it failed.
+        Ok(FireTrace {
+            end: TraceEnd::Error(_),
+            ..
+        })
+        | Err(_) => Inventory::default(),
         Ok(_) => Inventory::given(&Inventory::of_player(&probe, progs)),
-        Err(_) => Inventory::default(),
     }
+}
+
+/// Whether edict `edict` has a `touch` function.
+fn has_touch(world: &World, progs: &Progs<'_>, edict: usize) -> bool {
+    world
+        .edict_fields(progs, edict)
+        .unwrap_or_default()
+        .into_iter()
+        .any(|field| field.name == "touch" && field.value != QcValue::Function(String::new()))
+}
+
+/// Float field `name` of edict `edict`, 0 when it has none.
+fn float_field(world: &World, progs: &Progs<'_>, edict: usize, name: &str) -> f32 {
+    world
+        .edict_fields(progs, edict)
+        .unwrap_or_default()
+        .into_iter()
+        .find_map(|field| match field.value {
+            QcValue::Float(value) if field.name == name => Some(value),
+            QcValue::Float(_)
+            | QcValue::Vector(_)
+            | QcValue::String(_)
+            | QcValue::Entity(_)
+            | QcValue::Field(_)
+            | QcValue::Function(_)
+            | QcValue::Void => None,
+        })
+        .unwrap_or(0.0)
 }
 
 /// The places of the layers and groups each entity is in, however deep (BALANCE-2.4).
@@ -697,7 +737,8 @@ impl<L: crate::Loader> Workbench<L> {
                     spawned,
                     entry,
                     start,
-                    totals: [total_monsters, total_secrets],
+                    total_monsters,
+                    total_secrets,
                 } = spawn.balance_of(skill, mode)?;
                 let map = Tally::of(&spawned);
                 let in_room = |room: usize, entity: &Spawned| {

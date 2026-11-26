@@ -46,6 +46,9 @@ void() ssg_touch = { other.items = other.items | 2; other.ammo_shells = other.am
 void() weapon_supershotgun = { self.touch = ssg_touch; };
 void() hurt_touch = { other.health = other.health - 10; };
 void() trigger_hurt = { self.touch = hurt_touch; };
+void() bad_touch = { other.ammo_shells = other.ammo_shells + 20; world.think(); };
+void() item_bad = { self.touch = bad_touch; };
+void() monster_spawner = { total_monsters = total_monsters + 3; remove(self); };
 "#;
 
 /// The world's entity, with a brush.
@@ -393,4 +396,22 @@ fn a_map_with_no_entry_still_counts_its_monsters() {
     assert!(matches!(sheet.entry, super::Entry::NotEntered { .. }));
     assert_eq!(sheet.map.monster_count, 1.0);
     assert_eq!(sheet.map.health.amount, 0.0);
+}
+
+// spec BALANCE-2.1: an entity whose spawn function counted monsters and then freed itself still
+// counts them, with no health, so the sheet's total stays the program's
+// spec BALANCE-3.2: a touch that fails gives nothing, whatever it wrote before it failed
+#[test]
+fn a_freed_spawner_counts_and_a_failed_touch_gives_nothing() {
+    let (mut session, _dir) = session(
+        "freed",
+        &[entity("monster_spawner", &[]), entity("item_bad", &[])],
+    );
+    let found = balance(&mut session, json!({}));
+    let sheet = sheet(&found, Skill::Normal, GameMode::Single);
+    assert_eq!(sheet.map.monster_count, 3.0);
+    assert_eq!(sheet.map.monster_count, sheet.total_monsters);
+    assert_eq!(sheet.map.monsters[0].classname, "monster_spawner");
+    assert_eq!(sheet.map.monster_health, 0.0);
+    assert!(sheet.map.ammo.is_empty(), "{:?}", sheet.map.ammo);
 }
