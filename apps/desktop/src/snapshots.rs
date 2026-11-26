@@ -23,6 +23,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use eframe::egui::accesskit::Role;
 use eframe::egui::{self, Event, Key, Modifiers};
 use eframe::egui_wgpu;
 use egui_kittest::kittest::Queryable as _;
@@ -36,6 +37,7 @@ use crate::App;
 use crate::display::Display;
 use crate::map_view::DEPTH_FORMAT;
 use crate::map_view::tests::DepthRenderer;
+use crate::strings::Text;
 use crate::theme::{Contrast, Mode, Motion};
 
 /// The window's size in points, the play-loop mockup's.
@@ -327,6 +329,21 @@ fn scripts() -> Vec<Script> {
                 Step::Click("Check map"),
             ],
         },
+        // UI-24: a new key offers, as it is typed, the keys the ogre's class reads, each with its
+        // type, default and the class's comment.
+        Script {
+            name: "map-key-offers",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run("map.select", json!({ "entity": 2 })),
+                Step::Click("New key"),
+                Step::Type("s"),
+            ],
+        },
         // L-76: Fire in Properties fires the selected button, and the Logic tab lists what the
         // QuakeC did, the link it fired lit in the view.
         Script {
@@ -585,6 +602,22 @@ fn every_script_matches_its_golden() {
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+// No spec statement: UI-24, ADR-0028: the toolbar's Pop Out and Full Screen are buttons, drawn
+// framed so they are not read as the label beside them; Pop Out moves the game to its own
+// window and becomes Pop In
+#[test]
+fn pop_out_is_a_button_that_says_what_it_does() {
+    let mut harness = harness();
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, Text::FullScreen.get());
+    harness
+        .get_by_role_and_label(Role::Button, Text::PopOut.get())
+        .click();
+    harness.run();
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, Text::PopIn.get());
 }
 
 // QA-3: a script's steps change what is drawn, so a golden pins the state it ran to.

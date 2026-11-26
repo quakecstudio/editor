@@ -34,12 +34,20 @@ it too.
   - Duplicating an entity whose `targetname` ends in a number gives the copy the next free
     number, and moves the numbers of its target keys on by as many, so a copied link in a
     chain names the next one. Zero padding is kept: `t09` becomes `t10`, `t010` becomes `t011`.
-- **The fields (P5-13):** spawnflags are checkboxes named as the QuakeC names them, `angle`
-  has Up and Down, a key ending in `color` has a colour picker that keeps the key's scale
-  (0 to 1 or 0 to 255), and a float the map gives several values offers those values. Shift+click
-  adds an entity to the selection; a key edit then sets every selected entity in one undo step
-  (`map.set_key` with `also`), and a spawnflag ticked or cleared changes that bit alone in each
-  entity's own flags (`map.set_flag`).
+- **The fields (P5-13, UI-24):** spawnflags are checkboxes named as the QuakeC names them, with
+  the engine's own after them on every class but `worldspawn` (Not in easy, Not in normal, Not
+  in hard or nightmare, Not in deathmatch, EDICT-8.4), `angle` has Up and Down, a key ending in
+  `color` has a colour picker that keeps the key's scale (0 to 1 or 0 to 255), and a float the
+  map gives several values offers those values. A targeting key offers the map's targetnames as
+  it is typed, each with the classnames of the entities that have it, and marks a name no entity
+  has; `classname` offers the project's classes, each a point or a brush entity. A new key
+  offers, as it is typed, the keys the class reads and the entity does not set, each with its
+  type, default and what the class's `/*QUAKED*/` comment says of it, and taking one fills in
+  its default; any other key, such as a compiler's `_minlight`, is typed and added as before.
+  The arrow keys and Enter, or a click, take an offer. Shift+click adds an entity to the
+  selection; a key edit then sets every selected entity in one undo step (`map.set_key` with
+  `also`), and a spawnflag ticked or cleared changes that bit alone in each entity's own flags
+  (`map.set_flag`).
 - **Show (P5-13):** the view can show only the entities the game spawns on easy, normal, hard or
   nightmare, or in coop or deathmatch. `map.entities_removed_by_skill` compiles the project's server QuakeC in
   memory, writing nothing, and spawns the entity lump qbsp would write for the map in `qs-sim`

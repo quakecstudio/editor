@@ -95,6 +95,7 @@ impl ProfileView {
         let mut actions = Vec::new();
         ui.horizontal_wrapped(|ui| {
             let mut chosen = self.chosen.clone();
+            ui.label(Text::MapCompileLabel.get());
             let picker = egui::ComboBox::from_id_salt(Text::MapProfilePicker.get())
                 .selected_text(chosen.as_str())
                 .show_ui(ui, |ui| {

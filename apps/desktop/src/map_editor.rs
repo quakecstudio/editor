@@ -35,7 +35,7 @@ use crate::help::{self, Topic};
 use crate::icons::{self, Icon, Toggled};
 use crate::keymap;
 use crate::map_browser::{ClassDrag, EntityBrowser};
-use crate::map_fields::{Field, spawnflags};
+use crate::map_fields::{Field, Typed, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
 use crate::map_issues::IssueBrowser;
 use crate::map_leaks::LeakView;
@@ -45,12 +45,15 @@ use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
 use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_review::{ReviewAction, ReviewView};
-use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
+use crate::map_scene::{
+    CLASSNAME, ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera,
+};
 use crate::map_select::{Picked, Region};
 use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::pick::{Answer, Pick};
-use crate::strings::{Text, also_selected, panes_text, select_all_of};
+use crate::strings::{self, Text, also_selected, panes_text, select_all_of};
+use crate::suggest::{Offer, Suggest};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
 
@@ -308,6 +311,8 @@ pub struct MapEditor {
     classes: HashMap<String, ClassLook>,
     /// The classnames, sorted, as the browser lists them.
     names: Vec<String>,
+    /// The classnames as `classname` offers them, each a point or a brush entity (UI-24).
+    class_offers: Vec<Offer>,
     models: HashMap<String, Vec<Line>>,
     /// The class models' files, which the textured and lit views draw (P7-08).
     model_files: HashMap<String, std::sync::Arc<[u8]>>,
@@ -477,6 +482,17 @@ impl MapEditor {
             .collect();
         self.names = self.classes.keys().cloned().collect();
         self.names.sort();
+        self.class_offers = self
+            .names
+            .iter()
+            .map(|name| Offer {
+                name: name.clone(),
+                detail: self
+                    .classes
+                    .get(name)
+                    .map_or_default(|class| class.kind().get().to_owned()),
+            })
+            .collect();
         let models = load_models(&self.classes, project, game);
         self.models = models.lines;
         self.model_files = models.files;
@@ -908,12 +924,8 @@ impl MapEditor {
                 .accessible_name(Text::MapPanesPicker.get())
                 .on_hover_text(panes_text(layout).get());
             ui.separator();
-            let label = ui
-                .add(egui::Label::new(Icon::Grid.char().to_string()).sense(egui::Sense::hover()))
-                .on_hover_text(Text::MapGrid.get());
-            label.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::Label, true, Text::MapGrid.get())
-            });
+            let text = ui.visuals().text_color();
+            Icon::Grid.sign(ui, text, Text::MapGrid);
             let grid = self.tools.grid;
             let picked = egui::ComboBox::from_id_salt(
                 ui.scope_id().with(core::any::TypeId::of::<MapGrid>()),
@@ -961,12 +973,8 @@ impl MapEditor {
                 // The label is no use apart from its picker.
                 ui.end_row();
             }
-            let label = ui
-                .add(egui::Label::new(Icon::Show.char().to_string()).sense(egui::Sense::hover()))
-                .on_hover_text(Text::MapShow.get());
-            label.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::Label, true, Text::MapShow.get())
-            });
+            let text = ui.visuals().text_color();
+            Icon::Show.sign(ui, text, Text::MapShow);
             let show = egui::ComboBox::from_id_salt(
                 ui.scope_id().with(core::any::TypeId::of::<ShowFilter>()),
             )
@@ -1697,8 +1705,14 @@ impl MapEditor {
         if let Some(camera) = &mut self.camera {
             ui.horizontal_wrapped(|ui| {
                 ui.label(Text::MapCamera.get());
-                for (axis, name) in camera.origin.iter_mut().zip(CAMERA_AXES) {
-                    let field = ui.add(egui::DragValue::new(axis).speed(1.0).max_decimals(1));
+                for ((axis, name), letter) in
+                    camera.origin.iter_mut().zip(CAMERA_AXES).zip(AXIS_LETTERS)
+                {
+                    let field = egui::DragValue::new(axis)
+                        .speed(1.0)
+                        .max_decimals(1)
+                        .prefix(letter.prefix());
+                    let field = ui.add(field);
                     let field = field.accessible_name(name.get());
                     field.on_hover_text(Text::MapCameraHelp.get());
                 }
@@ -1772,13 +1786,27 @@ impl MapEditor {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(keys.classname.clone().unwrap_or_default()).strong());
             // L-76: fire the one entity selected and see what its targets do.
-            if also.is_empty() && Icon::Trigger.tool(ui, Text::MapFire).clicked() {
+            if also.is_empty()
+                && Icon::Trigger
+                    .tool(ui, Text::MapFire)
+                    .on_hover_text(Text::MapFireHint.get())
+                    .clicked()
+            {
                 actions.push(MapAction::Fire(entity));
             }
         });
         if !also.is_empty() {
             ui.label(RichText::new(also_selected(also.len())).color(theme.color(Token::TextMuted)));
         }
+        // UI-24: a value from a known set is offered with what it names as it is typed.
+        let targets: Vec<Offer> = keys
+            .targetnames
+            .iter()
+            .map(|named| Offer {
+                name: named.name.clone(),
+                detail: named.classnames.join(", "),
+            })
+            .collect();
         egui::Grid::new(ui.scope_id().with(entity))
             .num_columns(KEY_COLUMNS)
             .striped(true)
@@ -1795,16 +1823,18 @@ impl MapEditor {
                         .find(|k| k.name == *key)
                         .map(|k| k.ty.as_str());
                     let field = if self.targeting.contains(key) {
-                        Field::Target
+                        Field::Target(&targets)
+                    } else if key == CLASSNAME {
+                        Field::Class(&self.class_offers)
                     } else {
-                        Field::of(key, ty, self.scene.values.get(key))
+                        Field::Typed(Typed::of(key, ty, self.scene.values.get(key)))
                     };
                     ui.horizontal(|ui| {
-                        if let Some(set) = field.ui(ui, key, typed, value) {
+                        if let Some(set) = field.ui(ui, theme, key, typed, value) {
                             let set = MapAction::SetKey(entity, also.clone(), key.clone(), set);
                             actions.push(set);
                         }
-                        if field == Field::Target {
+                        if matches!(field, Field::Target(_)) {
                             let picking = self.picking.as_ref() == Some(key);
                             let state = if picking { Toggled::On } else { Toggled::Off };
                             if Icon::Pick
@@ -1832,54 +1862,51 @@ impl MapEditor {
                 actions.push(MapAction::SetFlag(entity, also.clone(), flag, change));
             }
         }
-        let unset: Vec<_> = keys
+        // A new pair: the key offers those its class reads and the entity does not set, each
+        // with its type, default and comment, and takes any other; the value of a targeting
+        // key offers the map's targetnames.
+        let unset: Vec<Offer> = keys
             .keys
             .iter()
             .filter(|key| !keys.pairs.iter().any(|(k, _)| *k == key.name))
+            .map(|key| Offer {
+                name: key.name.clone(),
+                detail: strings::key_detail(
+                    &key.ty,
+                    key.default.as_deref(),
+                    key.comment.as_deref(),
+                ),
+            })
             .collect();
-        if !unset.is_empty() {
-            ui.label(RichText::new(Text::MapClassKeys.get()).color(theme.color(Token::TextMuted)));
-            ui.horizontal_wrapped(|ui| {
-                for key in unset {
-                    let hint = format!("{} ({})", key.name, key.ty);
-                    // A key its class reads is a row of the list, chosen to fill the fields below.
-                    let button = ui.small_button(&hint);
-                    icons::mark(ui, &button, &hint, icons::ROW);
-                    let button = match &key.default {
-                        Some(default) => button.on_hover_text(default),
-                        None => button,
-                    };
-                    if button.clicked() {
-                        self.adding = (key.name.clone(), key.default.clone().unwrap_or_default());
-                    }
-                }
-            });
-        }
         ui.horizontal(|ui| {
-            let key = ui.add(
-                egui::TextEdit::singleline(&mut self.adding.0)
-                    .hint_text(Text::MapKey.get())
-                    .desired_width(NEW_PAIR_WIDTH),
-            );
-            key.accessible_name(Text::MapKey.get());
-            let value = ui.add(
-                egui::TextEdit::singleline(&mut self.adding.1)
-                    .hint_text(Text::MapValue.get())
-                    .desired_width(NEW_PAIR_WIDTH),
-            );
-            value.accessible_name(Text::MapValue.get());
-            let targets = !keys.targetnames.is_empty() && self.targeting.contains(&self.adding.0);
-            if targets {
-                let picker = egui::ComboBox::from_id_salt(ui.scope_id().with((entity, 1)))
-                    .selected_text(Text::MapTargets.get())
-                    .show_ui(ui, |ui| {
-                        for name in &keys.targetnames {
-                            if ui.selectable_label(false, name).clicked() {
-                                self.adding.1.clone_from(name);
-                            }
-                        }
-                    });
-                picker.response.accessible_name(Text::MapTargets.get());
+            let field = Suggest {
+                name: Text::MapKey.get(),
+                offers: &unset,
+                width: NEW_PAIR_WIDTH,
+            };
+            let picked = field.show(ui, theme, &mut self.adding.0);
+            let default = picked
+                .and_then(|name| keys.keys.iter().find(|key| key.name == name))
+                .and_then(|key| key.default.clone());
+            if let Some(default) = default
+                && self.adding.1.is_empty()
+            {
+                self.adding.1 = default;
+            }
+            if self.targeting.contains(&self.adding.0) {
+                let field = Suggest {
+                    name: Text::MapValue.get(),
+                    offers: &targets,
+                    width: NEW_PAIR_WIDTH,
+                };
+                field.show(ui, theme, &mut self.adding.1);
+            } else {
+                let value = ui.add(
+                    egui::TextEdit::singleline(&mut self.adding.1)
+                        .hint_text(Text::MapValue.get())
+                        .desired_width(NEW_PAIR_WIDTH),
+                );
+                value.accessible_name(Text::MapValue.get());
             }
             let ready = !self.adding.0.trim().is_empty();
             let add = ui
@@ -1951,6 +1978,8 @@ const COMPASS_LABEL_LEAST: f32 = 4.0;
 
 /// The camera position fields' names, x, y and z.
 const CAMERA_AXES: [Text; 3] = [Text::MapCameraX, Text::MapCameraY, Text::MapCameraZ];
+/// The letters shown in the camera position fields, so each says which axis it is.
+const AXIS_LETTERS: [Text; 3] = [Text::CompassX, Text::CompassY, Text::CompassZ];
 
 impl MapEditor {
     /// The camera settings under the camera's place, folded at first: the field of view, the

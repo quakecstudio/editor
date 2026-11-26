@@ -152,13 +152,17 @@ fn the_project_answers_the_map_editor_from_its_quakec() {
             "model": null,
             "doc": [],
             "keys": [
-                { "name": "killtarget", "ty": "string", "default": null },
-                { "name": "speed", "ty": "float", "default": "100" },
-                { "name": "target", "ty": "string", "default": null },
+                { "name": "killtarget", "ty": "string", "default": null, "comment": null },
+                { "name": "speed", "ty": "float", "default": "100", "comment": null },
+                { "name": "target", "ty": "string", "default": null, "comment": null },
             ],
             "spawnflags": [
                 { "value": 1, "name": "START_ON" },
                 { "value": 2, "name": "SILENT" },
+                { "value": 256, "name": "Not in easy" },
+                { "value": 512, "name": "Not in normal" },
+                { "value": 1024, "name": "Not in hard or nightmare" },
+                { "value": 2048, "name": "Not in deathmatch" },
             ],
         })
     );

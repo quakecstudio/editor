@@ -4634,7 +4634,8 @@ impl egui::DroppedFile for Dropped {
 }
 
 // No spec statement: P6-16, MAP-23: a PNG dropped on the texture browser opens its import
-// preview, named after the file; Import writes it into the project's WAD, the map's world
+// preview, named after the file, its choice of how colours are matched labelled (UI-24); Import
+// writes it into the project's WAD, the map's world
 // names the WAD, and the browser lists the texture
 #[test]
 fn a_dropped_png_is_imported_into_the_browser() {
@@ -4676,6 +4677,7 @@ fn a_dropped_png_is_imported_into_the_browser() {
             .map(|i| i.name().to_owned())
     };
     assert_eq!(browser(&harness).as_deref(), Some("brick16"));
+    harness.get_by_label(Text::MapColours.get());
     harness.get_by_label(Text::MapImportSave.get()).click();
     harness.run();
     harness.run();
@@ -6651,7 +6653,8 @@ fn logic_project(name: &str) -> PathBuf {
 
 // No spec statement: L-76, MAP-35: Fire in Properties fires the selected entity in the
 // simulation with the project's QuakeC and shows the Logic tab with what the code did, each
-// step naming its entity; Check logic there lists the issues, here none; and the map is as it
+// step naming its entity, under a scrubber that says it counts the events shown (UI-24);
+// Check logic there lists the issues, here none; and the map is as it
 // was
 #[test]
 fn fire_shows_what_the_quakec_did() {
@@ -6680,6 +6683,7 @@ fn fire_shows_what_the_quakec_did() {
     assert!(step("entity 1 looks for \"gate\": entity 2"));
     assert!(step("use  entity 2 (func_door)  door_use"));
     assert!(step("entity 1 fired by its use: settled"));
+    harness.get_by_role_and_label(Role::Slider, Text::MapFireStep.get());
     lowest(&harness, Text::MapCheckLogic.get()).click();
     harness.run();
     harness.run();
@@ -6690,4 +6694,165 @@ fn fire_shows_what_the_quakec_did() {
             .is_some()
     );
     assert_eq!(map_text(&harness), before, "firing changes nothing");
+}
+
+/// The keep project with its map open, the camera outside the keep and entity `selected`
+/// selected (UI-24's tests).
+fn keep_with_selected(name: &str, selected: usize) -> Harness<'static, Option<App>> {
+    let dir = keep_copy(name);
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    outside_the_keep(&mut harness);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("map.select", json!({ "entity": selected }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    harness
+}
+
+// No spec statement: UI-24, MAP-27: a target already set is changed by picking a name from a
+// list of the map's targetnames, each shown with the classname of what has it; a name no
+// entity has is marked, and a name typed is still taken; a new targeting key's value offers the
+// same names
+#[test]
+fn a_target_is_picked_from_the_names_in_the_map() {
+    let mut harness = keep_with_selected("targets", 1);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 1, "key": "targetname", "value": "start" }),
+        )
+        .unwrap();
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label(Text::MapNoSuchTarget.get())
+            .is_none(),
+        "gate names the door"
+    );
+    harness
+        .get_by_role_and_label(Role::TextInput, "target")
+        .click();
+    harness.run();
+    harness.get_by_label("gate, func_door");
+    harness.get_by_label("start, info_player_start").click();
+    harness.run();
+    harness.run();
+    assert_eq!(map_value(&harness, 2, "target").as_deref(), Some("start"));
+    // A name no entity has yet is taken, and marked.
+    harness
+        .get_by_role_and_label(Role::TextInput, "target")
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    type_text(&mut harness, "nowhere");
+    press(&mut harness, egui::Key::Enter);
+    harness.run();
+    assert_eq!(map_value(&harness, 2, "target").as_deref(), Some("nowhere"));
+    harness.get_by_label(Text::MapNoSuchTarget.get());
+    harness
+        .get_by_role_and_label(Role::TextInput, Text::MapKey.get())
+        .click();
+    harness.run();
+    type_text(&mut harness, "killtarget");
+    harness
+        .get_by_role_and_label(Role::TextInput, Text::MapValue.get())
+        .click();
+    harness.run();
+    harness.get_by_label("gate, func_door").click();
+    harness.run();
+    harness.get_by_label(Text::MapAddKey.get()).click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        map_value(&harness, 2, "killtarget").as_deref(),
+        Some("gate")
+    );
+}
+
+// No spec statement: UI-24, MAP-27: typing the start of a key the class reads offers it with
+// its type, default and comment, and taking it fills in the default; a key the code does not
+// read, such as a compiler's, is still added
+#[test]
+fn a_new_key_is_offered_as_it_is_typed() {
+    let mut harness = keep_with_selected("new-key", 2);
+    harness
+        .get_by_role_and_label(Role::TextInput, Text::MapKey.get())
+        .click();
+    harness.run();
+    type_text(&mut harness, "sp");
+    harness.get_by_label("speed, float, 120 by default: how fast it walks");
+    press(&mut harness, egui::Key::ArrowDown);
+    press(&mut harness, egui::Key::Enter);
+    harness.run();
+    harness.get_by_label(Text::MapAddKey.get()).click();
+    harness.run();
+    harness.run();
+    assert_eq!(map_value(&harness, 2, "speed").as_deref(), Some("120"));
+    harness
+        .get_by_role_and_label(Role::TextInput, Text::MapKey.get())
+        .click();
+    harness.run();
+    type_text(&mut harness, "_minlight");
+    harness
+        .get_by_role_and_label(Role::TextInput, Text::MapValue.get())
+        .click();
+    harness.run();
+    type_text(&mut harness, "8");
+    harness.get_by_label(Text::MapAddKey.get()).click();
+    harness.run();
+    harness.run();
+    assert_eq!(map_value(&harness, 2, "_minlight").as_deref(), Some("8"));
+}
+
+// No spec statement: UI-24: the Properties panel says what each control is: the class is picked
+// from the project's classes, each said to be a point or a brush entity; the engine's skill
+// flags are ticked rather than typed as numbers; the compile profile and the camera's fields
+// are labelled; Fire says what it will do on hover
+#[test]
+fn the_properties_panel_says_what_each_control_is() {
+    let mut harness = keep_with_selected("labels", 3);
+    harness.get_by_label(Text::MapCompileLabel.get());
+    // Fire says what it does, and that it changes nothing, before it is pressed.
+    harness
+        .get_by_role_and_label(Role::Button, Text::MapFire.get())
+        .hover();
+    harness.run();
+    harness.get_by_label(Text::MapFireHint.get());
+    for (letter, value) in [(Text::CompassX, "-320"), (Text::CompassY, "0")] {
+        let shown = format!("{}{value}", letter.prefix());
+        assert!(
+            harness.query_all_by_value(&shown).next().is_some(),
+            "{shown}"
+        );
+    }
+    harness.get_by_label("Not in easy").click();
+    harness.run();
+    harness.run();
+    assert_eq!(map_value(&harness, 3, "spawnflags").as_deref(), Some("256"));
+    harness
+        .get_by_role_and_label(Role::TextInput, "classname")
+        .click();
+    harness.run();
+    harness.get_by_label("func_door, brush entity");
+    harness.get_by_label("monster_ogre, point entity").click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        map_value(&harness, 3, "classname").as_deref(),
+        Some("monster_ogre")
+    );
 }

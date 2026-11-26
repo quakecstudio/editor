@@ -109,3 +109,14 @@ fn the_guide_link_is_taken_to_the_browser_and_nothing_else_is() {
     other.run();
     assert_eq!(*other.state(), (Vec::new(), 1));
 }
+
+// No spec statement: UI-24: the usability audit has a row for every panel and window that has
+// a help button, by the title the help gives it
+#[test]
+fn the_usability_audit_covers_every_panel() {
+    let audit = include_str!("../../../../docs/audits/usability.md");
+    for topic in Topic::ALL {
+        let row = format!("\n| {} |", topic.title().get());
+        assert!(audit.contains(&row), "no row for {topic:?} in the audit");
+    }
+}

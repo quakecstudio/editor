@@ -15,6 +15,7 @@
 //! game through the `HasMap` seam, which `qs-workbench` answers.
 
 use core::fmt;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use qs_bsp::{Bsp, BspLoader, ent_file_names};
@@ -656,6 +657,15 @@ pub struct MapEdited {
     pub entity: Option<EntityIndex>,
 }
 
+/// A targetname of the map and what has it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Targetname {
+    /// The name.
+    pub name: String,
+    /// The classnames of the entities named so, sorted, each once.
+    pub classnames: Vec<String>,
+}
+
 /// What `map.read_entity` answers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct EntityKeys {
@@ -669,8 +679,9 @@ pub struct EntityKeys {
     /// The spawnflags its class tests or its comment names, by value, each named where the
     /// code or the comment names it.
     pub spawnflags: Vec<FlagInfo>,
-    /// The targetnames of the map, the values a `target` or `killtarget` may take.
-    pub targetnames: Vec<String>,
+    /// The targetnames of the map, the values a `target` or `killtarget` may take, each with
+    /// the classnames of the entities that have it.
+    pub targetnames: Vec<Targetname>,
     /// Whether it has brushes.
     pub brush: bool,
 }
@@ -780,16 +791,24 @@ impl MapStore {
             .map(|pair| (text(pair.key()), text(pair.value())))
             .collect();
         let brush = found.is_brush_entity();
-        let mut targetnames: Vec<String> = document
-            .file
-            .entities
-            .iter()
-            .filter_map(|e| e.value(b"targetname"))
-            .map(text)
-            .filter(|name| !name.is_empty())
+        let mut named: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for other in &document.file.entities {
+            let Some(name) = other.value(b"targetname").map(text) else {
+                continue;
+            };
+            if name.is_empty() {
+                continue;
+            }
+            let classes = named.entry(name).or_default();
+            classes.extend(other.classname().map(text));
+        }
+        let targetnames = named
+            .into_iter()
+            .map(|(name, classnames)| Targetname {
+                name,
+                classnames: classnames.into_iter().collect(),
+            })
             .collect();
-        targetnames.sort();
-        targetnames.dedup();
         Ok(EntityKeys {
             classname,
             pairs,

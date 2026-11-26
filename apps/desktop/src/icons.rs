@@ -3,7 +3,7 @@
 //! The Lucide icons the app draws (ADR-0010), as characters of the bundled `lucide.ttf`,
 //! release 1.57.0, whose `codepoints.json` gives each one.
 
-use eframe::egui::{Button, Response, Ui};
+use eframe::egui::{self, Button, Response, Ui};
 
 use crate::strings::{Text, icon_hint};
 
@@ -481,6 +481,17 @@ impl Icon {
             }
             _ => Self::File,
         }
+    }
+
+    /// This icon as a sign that does nothing when clicked, in `color`: named `name` on hover
+    /// and to a screen reader, as a label of that name (UI-24).
+    pub(crate) fn sign(self, ui: &mut Ui, color: egui::Color32, name: Text) -> Response {
+        let icon = egui::RichText::new(self.char().to_string()).color(color);
+        let response = ui
+            .add(egui::Label::new(icon).sense(egui::Sense::hover()))
+            .on_hover_text(name.get());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, name.get()));
+        response
     }
 
     /// A panel's action as this icon alone, bare until hovered (P7-16, as the hover toolbar of

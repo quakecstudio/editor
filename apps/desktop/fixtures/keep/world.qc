@@ -18,6 +18,7 @@ void() info_player_start = {};
 
 /*QUAKED monster_ogre (1 0 0) (-32 -32 -24) (32 32 64)
 An ogre; fires its target when it dies.
+"speed" how fast it walks
 */
 void() monster_ogre = { if (!self.speed) self.speed = 120; if (self.target) SUB_UseTargets(); };
 

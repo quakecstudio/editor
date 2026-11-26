@@ -5,7 +5,8 @@ intermediate layer:
 
 - `EntityClass::of_module`, `EntityClass` and `Fgd` (`entities`, P5-03, MAP-1): the entity
   classes a module's spawn functions define (EDICT-8.5, EDICT-8.6), each with the keys it
-  reads from `self`, their defaults, its spawnflags, its `/*QUAKED*/` comment, model and size
+  reads from `self`, their defaults and what its comment says of each, its spawnflags, its
+  `/*QUAKED*/` comment, model and size
   (BUILTIN-9.2, BUILTIN-9.4); and their export as an FGD file. `cargo xtask entity-corpus`
   holds id 1.01's and the rerelease's to golden files.
 - `EntitySchema::of_module`, `EntitySchema::check` and `MapDiagnostic` (`map_check`, P5-04,

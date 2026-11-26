@@ -36,36 +36,57 @@ fn project(name: &str, text: &str) -> (PathBuf, Session<Workbench<FsLoader>>) {
     (dir, session)
 }
 
-// No spec statement: P5-03: project.entities answers each class of the project's server
-// QuakeC with its keys, defaults and spawnflags, and with fgd writes the FGD file too
+// spec EDICT-8.4: project.entities answers each class of the project's server QuakeC with its
+// keys, defaults, comments and spawnflags, the engine's skill and deathmatch flags, by the
+// values the rule tests, after the class's own except on the world, and with fgd writes the
+// FGD file too (P5-03, UI-24)
 #[test]
 fn project_entities_lists_the_classes_and_writes_an_fgd() {
     let (dir, mut session) = project(
         "fgd",
         "entity self; .float spawnflags, wait; .string target;\n\
-         /*QUAKED trigger_thing (.5 .5 .5) ? ONCE\nFires its targets.\n*/\n\
+         /*QUAKED trigger_thing (.5 .5 .5) ? ONCE\nFires its targets.\n\"wait\" between fires\n*/\n\
          void() trigger_thing = { if (!self.wait) self.wait = 0.2; \
-         if (self.spawnflags & 1) self.wait = -1; if (self.target) self.wait = 1; };\n",
+         if (self.spawnflags & 1) self.wait = -1; if (self.target) self.wait = 1; };\n\
+         /*QUAKED worldspawn (0 0 0) ?\nThe level.\n*/\nvoid() worldspawn = {};\n",
     );
     let fgd = dir.join("thing.fgd");
     let found = session
         .execute(PROJECT_ENTITIES, json!({ "fgd": fgd }))
         .unwrap();
     let classes = found["classes"].as_array().unwrap();
-    assert_eq!(classes.len(), 1, "{found}");
+    assert_eq!(classes.len(), 2, "{found}");
+    assert_eq!(classes[1]["name"], "worldspawn");
+    assert_eq!(
+        classes[1]["spawnflags"],
+        json!([]),
+        "the world is never left out"
+    );
     let class = &classes[0];
     assert_eq!(class["name"], "trigger_thing");
     assert_eq!(class["found"], "documented");
     assert_eq!(class["shape"], "brush");
-    assert_eq!(class["doc"], json!(["Fires its targets."]));
+    assert_eq!(
+        class["doc"],
+        json!(["Fires its targets.", "\"wait\" between fires"])
+    );
     assert_eq!(
         class["keys"],
         json!([
-            { "name": "target", "ty": "string", "default": null },
-            { "name": "wait", "ty": "float", "default": "0.2" },
+            { "name": "target", "ty": "string", "default": null, "comment": null },
+            { "name": "wait", "ty": "float", "default": "0.2", "comment": "between fires" },
         ])
     );
-    assert_eq!(class["spawnflags"], json!([{ "value": 1, "name": "ONCE" }]));
+    assert_eq!(
+        class["spawnflags"],
+        json!([
+            { "value": 1, "name": "ONCE" },
+            { "value": 256, "name": "Not in easy" },
+            { "value": 512, "name": "Not in normal" },
+            { "value": 1024, "name": "Not in hard or nightmare" },
+            { "value": 2048, "name": "Not in deathmatch" },
+        ])
+    );
     let written = std::fs::read_to_string(&fgd).unwrap();
     assert!(
         written.starts_with("@SolidClass color(128 128 128) = trigger_thing : \"Fires"),
