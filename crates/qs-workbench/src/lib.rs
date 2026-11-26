@@ -372,6 +372,10 @@ pub struct Workbench<L> {
     logic: map_logic::LogicFound,
     /// What `map.playability` last found, for `map.issues` (L-77).
     playable: map_playable::PlayFound,
+    /// A `map.playability` search running on its own thread (L-77).
+    play_run: Option<map_playable::PlayRun>,
+    /// The whole open map as it was last compiled, which `map.playability` reads again.
+    last_compile: Option<map_playable::LastCompile>,
     /// The world the open `.map` was last compiled to for spawning (FIRE-5.4).
     spawn_world: map_filter::SpawnWorld,
 }
@@ -402,6 +406,8 @@ impl<L: Loader> Workbench<L> {
             opened_paths: None,
             logic: map_logic::LogicFound::default(),
             playable: map_playable::PlayFound::default(),
+            play_run: None,
+            last_compile: None,
             spawn_world: map_filter::SpawnWorld::default(),
         }
     }

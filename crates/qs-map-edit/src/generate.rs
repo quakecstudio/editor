@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, Outcome};
-use qs_map_gen::playable::{Ground, Moves, PlayError, Skill, Trap};
+use qs_map_gen::playable::{Ground, Moves, Skill, Trap};
 use qs_map_gen::{Classes, Level, LevelForm, LockKind, Request, Size};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -280,11 +280,8 @@ fn checked_level(
         let compiled = qs_map_bsp::Compiler::default()
             .compile(&level.map.to_bytes(), None)
             .map_err(|error| MapEditError::LevelCompile { error })?;
-        let bsp = Bsp::read(&compiled.bsp, BspLoader::default()).map_err(|error| {
-            MapEditError::LevelUnchecked {
-                error: PlayError::Lump(error.to_string()),
-            }
-        })?;
+        let bsp = Bsp::read(&compiled.bsp, BspLoader::default())
+            .map_err(|error| MapEditError::LevelBsp { error })?;
         let ground = Ground::new(&bsp, Moves::Generator, Skill::Normal)
             .map_err(|error| MapEditError::LevelUnchecked { error })?;
         let stand = |room: usize| {

@@ -127,7 +127,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.place_entity`](#mapplace_entity) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13), or with no eye the map's own player start. It answers where the player was put, the light there and the entities that stand in the dark; with start paused the game waits there with its monsters not yet awake, for a screenshot of the map as it was built. |
-| [`map.playability`](#mapplayability) | Checks that the open map can be finished, as a player moves through it compiled: walking, falling, swimming, riding lifts and teleporters, opening doors with keys, buttons and triggers, and jumping (or with moves "generator", no jump). Answers whether an exit is reached from the player start, each key, weapon, item and secret never reached, each place from which the exit can no longer be reached, with a point inside it, and each entity whose class the check does not follow. Its findings join map.issues until the map changes. |
+| [`map.playability`](#mapplayability) | Checks that the open map can be finished, as a player moves through it compiled: walking, falling, swimming, riding lifts and teleporters, opening doors with keys, buttons and triggers, and jumping (or with moves "generator", no jump). Answers whether an exit is reached from the player start, each key, weapon, item and secret never reached, each place from which the exit can no longer be reached, with a point inside it, and each entity whose class the check does not follow. Its findings join map.issues until the map changes. With answer "later" it answers null at once and searches on its own thread; map.playability_found gives the answer. |
+| [`map.playability_found`](#mapplayability_found) | Answers what map.playability found of the open map as it is now: the answer of a search started with answer "later" once it is done, or the last answer while the map has not changed since; null while a search runs, and when there is none. |
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
@@ -6668,13 +6669,28 @@ Parameters:
 
 ## `map.playability`
 
-Checks that the open map can be finished, as a player moves through it compiled: walking, falling, swimming, riding lifts and teleporters, opening doors with keys, buttons and triggers, and jumping (or with moves "generator", no jump). Answers whether an exit is reached from the player start, each key, weapon, item and secret never reached, each place from which the exit can no longer be reached, with a point inside it, and each entity whose class the check does not follow. Its findings join map.issues until the map changes.
+Checks that the open map can be finished, as a player moves through it compiled: walking, falling, swimming, riding lifts and teleporters, opening doors with keys, buttons and triggers, and jumping (or with moves "generator", no jump). Answers whether an exit is reached from the player start, each key, weapon, item and secret never reached, each place from which the exit can no longer be reached, with a point inside it, and each entity whose class the check does not follow. Its findings join map.issues until the map changes. With answer "later" it answers null at once and searches on its own thread; map.playability_found gives the answer.
 
 Parameters:
 
 ```json
 {
   "$defs": {
+    "Answer": {
+      "description": "When `map.playability` gives its answer.",
+      "oneOf": [
+        {
+          "const": "now",
+          "description": "The search runs, and its answer is given.",
+          "type": "string"
+        },
+        {
+          "const": "later",
+          "description": "The map is compiled, the search started on its own thread, and nothing is answered:\n`map.playability_found` gives the answer once the search is done, so that a window\nstays live while a large map is searched.",
+          "type": "string"
+        }
+      ]
+    },
     "Moves": {
       "description": "The moves a player is taken to have.",
       "oneOf": [
@@ -6720,6 +6736,11 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `map.playability`.",
   "properties": {
+    "answer": {
+      "$ref": "#/$defs/Answer",
+      "default": "now",
+      "description": "When the answer is given: at once, the default, or later, the search run on its own\nthread and its answer taken with `map.playability_found`."
+    },
     "moves": {
       "$ref": "#/$defs/Moves",
       "default": "player",
@@ -6732,6 +6753,22 @@ Parameters:
     }
   },
   "title": "PlayabilityParams",
+  "type": "object"
+}
+```
+
+## `map.playability_found`
+
+Answers what map.playability found of the open map as it is now: the answer of a search started with answer "later" once it is done, or the last answer while the map has not changed since; null while a search runs, and when there is none.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

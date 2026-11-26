@@ -24,6 +24,7 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::map_playable::LastCompile;
 use crate::preview::{GameStart, HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map::{Region, Surface, TexDef};
@@ -119,7 +120,9 @@ impl<L: crate::Loader> Workbench<L> {
         let path = document.path().to_path_buf();
         if region.is_none() {
             let edits = document.edits();
+            let map = document.file().to_bytes();
             self.maps.keep_report(report.clone(), edits)?;
+            self.last_compile = Some(LastCompile::new(map, compiled.bsp.clone()));
         }
         Ok((compiled, report, path))
     }

@@ -12,7 +12,7 @@ use qs_map_edit::testing::{Opening, room};
 use qs_map_edit::{EntityIndex, MAP_ISSUES, MapIssues};
 use serde_json::json;
 
-use super::{ExitReach, MAP_PLAYABILITY, Playability};
+use super::{ExitReach, MAP_PLAYABILITY, MAP_PLAYABILITY_FOUND, Playability};
 use crate::map_compile::tests::open;
 
 fn wall() -> Surface {
@@ -81,4 +81,65 @@ fn map_playability_names_the_open_maps_entities() {
         .find(|issue| issue.entity == Some(EntityIndex::new(4)))
         .unwrap();
     assert!(health.message.contains("item_health"), "{}", health.message);
+}
+
+// No spec statement: L-77, MAP-14: an instance (misc_external_map) made a func_detail joins the
+// world in the compile, as one does, and the findings after it still name their own entities
+#[test]
+fn an_instance_joined_to_the_world_keeps_the_names_after_it() {
+    let path = ledged();
+    let dir = path.parent().unwrap();
+    let mut prefab = MapFile::new();
+    let block = Brush::cuboid([0.0, 0.0, 0.0], [16.0, 16.0, 16.0], &wall()).unwrap();
+    prefab.push_entity(entity("worldspawn", &[], vec![block]));
+    std::fs::write(dir.join("block.map"), prefab.to_bytes()).unwrap();
+    let mut file = MapFile::parse(&std::fs::read(&path).unwrap()).unwrap();
+    let instance = entity(
+        "misc_external_map",
+        &[
+            ("_external_map", "block.map"),
+            ("_external_map_classname", "func_detail"),
+            ("origin", "-112 -112 -128"),
+        ],
+        Vec::new(),
+    );
+    file.entities.insert(3, instance);
+    std::fs::write(&path, file.to_bytes()).unwrap();
+    let mut session = open(&path);
+    let found: Playability<EntityIndex> =
+        serde_json::from_value(session.execute(MAP_PLAYABILITY, json!({})).unwrap()).unwrap();
+    assert_eq!(found.exits, [EntityIndex::new(4)]);
+    let unreached: Vec<EntityIndex> = found.unreached.iter().map(|u| u.entity).collect();
+    assert_eq!(unreached, [EntityIndex::new(5)]);
+}
+
+// No spec statement: L-77, map.playability with answer "later" answers nothing at once and
+// searches on its own thread; map.playability_found then gives what "now" gives, and nothing
+// once the map has changed
+#[test]
+fn a_later_answer_is_found_until_the_map_changes() {
+    let mut session = open(&ledged());
+    let now: Playability<EntityIndex> =
+        serde_json::from_value(session.execute(MAP_PLAYABILITY, json!({})).unwrap()).unwrap();
+    let started = session
+        .execute(MAP_PLAYABILITY, json!({ "answer": "later" }))
+        .unwrap();
+    assert_eq!(started, serde_json::Value::Null);
+    let found = loop {
+        let found = session.execute(MAP_PLAYABILITY_FOUND, json!({})).unwrap();
+        if !found.is_null() {
+            break found;
+        }
+        std::thread::yield_now();
+    };
+    let later: Playability<EntityIndex> = serde_json::from_value(found).unwrap();
+    assert_eq!(later, now);
+    session
+        .execute(
+            "map.set_key",
+            json!({ "entity": 4, "key": "targetname", "value": "moved" }),
+        )
+        .unwrap();
+    let after = session.execute(MAP_PLAYABILITY_FOUND, json!({})).unwrap();
+    assert_eq!(after, serde_json::Value::Null);
 }

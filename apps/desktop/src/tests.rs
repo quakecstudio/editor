@@ -4292,6 +4292,17 @@ fn a_leak_is_found_and_flown_along() {
     let sealed = editor(&harness).unwrap();
     assert!(sealed.leak.is_empty(), "{:?}", sealed.leak);
     assert!(harness.query_by_label(Text::MapSealed.get()).is_some());
+    // The check that the map can be finished runs on its own thread; each frame looks for its
+    // answer without waiting.
+    let checked = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.map_editor().playable().found().is_some()
+    };
+    while !checked(&harness) {
+        harness.step();
+        std::thread::yield_now();
+    }
+    harness.run();
     let shell = harness.state().as_ref().unwrap().shell();
     let found = shell.map_editor().playable().found().unwrap();
     assert_eq!(

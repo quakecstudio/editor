@@ -249,6 +249,11 @@ pub enum MapEditError {
         /// Why.
         error: qs_map_bsp::CompileError,
     },
+    /// A generated level compiled to a BSP that does not read, to be checked (`map.generate`).
+    LevelBsp {
+        /// Why.
+        error: qs_bsp::BspError,
+    },
     /// A generated level could not be checked (`map.generate`, L-77).
     LevelUnchecked {
         /// Why.
@@ -377,6 +382,12 @@ impl fmt::Display for MapEditError {
             Self::LevelCompile { error } => {
                 write!(f, "the level made does not compile, to be checked: {error}")
             }
+            Self::LevelBsp { error } => {
+                write!(
+                    f,
+                    "the level made compiled to a BSP that does not read: {error}"
+                )
+            }
             Self::LevelUnchecked { error } => {
                 write!(f, "the level made could not be checked: {error}")
             }
@@ -405,6 +416,7 @@ impl Error for MapEditError {
             Self::Link { error } => Some(error),
             Self::Generate { error } => Some(error),
             Self::LevelCompile { error } => Some(error),
+            Self::LevelBsp { error } => Some(error),
             Self::LevelUnchecked { error } => Some(error),
             Self::NoFile { .. }
             | Self::Trapped { .. }

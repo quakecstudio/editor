@@ -34,7 +34,8 @@
 //!   a `trigger_once`, `trigger_multiple` or `trigger_secret` when a player walks into it,
 //!   unless it is `notouch` (1), or sees it when it has `health`; an item or a weapon when it is
 //!   picked up; a monster when it dies, which it is taken to do once a player sees it, or, for
-//!   one with a `targetname`, which waits in a closet until fired, once it is fired.
+//!   one whose `targetname` something's `target` names, which waits in a closet until fired,
+//!   once it is fired.
 //! - a relay, a counter, a trigger, a button or a door that is fired fires its own targets (a
 //!   counter is taken to fire at its first firing: the check does not count).
 //! - a `func_wall` and a `func_bossgate` are solid; a `func_episodegate` is not in a new game
@@ -209,7 +210,7 @@ impl Moves {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlayError {
     /// The BSP's entity lump does not parse.
-    Lump(String),
+    Lump(qs_map::MapError),
     /// The BSP has no world model.
     NoWorld,
     /// The map has no `info_player_start`.
@@ -232,7 +233,14 @@ impl core::fmt::Display for PlayError {
     }
 }
 
-impl core::error::Error for PlayError {}
+impl core::error::Error for PlayError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::Lump(error) => Some(error),
+            Self::NoWorld | Self::NoStart | Self::TooLarge => None,
+        }
+    }
+}
 
 /// What the generator's check of a level found wrong.
 #[derive(Clone, Debug, PartialEq)]
@@ -366,9 +374,9 @@ enum Search {
 /// Where a player sets a firing off.
 #[derive(Clone, Copy, Debug)]
 enum Where {
-    /// Touching an item's box at either place, as an item is picked up: where it lies, and
-    /// where it lies once the door it stands on has moved. The box reaches `below` under the
-    /// item's origin.
+    /// Touching an item's box at either place, as an item is picked up: the middle of its box
+    /// where it lies, and where it lies once the door it stands on has moved. The box reaches
+    /// `below` under the item's origin.
     Item { at: [[f32; 3]; 2], below: f32 },
     /// Inside a volume, as a trigger is touched.
     Inside(Volume),
@@ -553,6 +561,16 @@ impl Train {
 struct Teleport {
     volume: Volume,
     to: [f32; 3],
+    /// What starts it when it has a `targetname`: until then it sends no one (`teleport_touch`:
+    /// "not fired yet").
+    opener: Option<Held>,
+}
+
+impl Teleport {
+    /// Whether it sends a player who holds `held`.
+    fn works(&self, held: Held) -> bool {
+        self.opener.is_none_or(|opener| held.has(opener))
+    }
 }
 
 /// What a sought entity is.
@@ -863,8 +881,7 @@ impl<'a> Ground<'a> {
         reason = "one pass over the lump reads every class the check follows"
     )]
     pub fn new(bsp: &'a Bsp<'a>, moves: Moves, skill: Skill) -> Result<Self, PlayError> {
-        let lump =
-            MapFile::parse(bsp.entity_lump).map_err(|error| PlayError::Lump(error.to_string()))?;
+        let lump = MapFile::parse(bsp.entity_lump).map_err(PlayError::Lump)?;
         let world = Volume::of_model(bsp, 0).ok_or(PlayError::NoWorld)?;
         // The entities the engine keeps in a single player game at `skill`: it frees the rest
         // before their spawn functions run (EDICT-8.4); never the world.
@@ -1047,10 +1064,16 @@ impl<'a> Ground<'a> {
             "trigger_secret",
             "func_button",
         ];
+        // The names something fires (`target`), as against only removes (`killtarget`).
+        let targeted: BTreeSet<String> = read.iter().filter_map(|r| r.text(b"target")).collect();
         for r in &read {
-            // A monster with a `targetname` comes to the player once fired, out of a closet or
-            // teleported in, and is taken to be killed, so its death fires its targets.
-            if (RELAYS.contains(&r.classname.as_str()) || r.classname.starts_with("monster_"))
+            // A monster whose `targetname` something fires comes to the player then, out of a
+            // closet or teleported in, and is taken to be killed, so its death fires its
+            // targets.
+            let fired_monster = r.classname.starts_with("monster_")
+                && r.text(b"targetname")
+                    .is_some_and(|name| targeted.contains(&name));
+            if (RELAYS.contains(&r.classname.as_str()) || fired_monster)
                 && let Some(name) = r.text(b"targetname")
             {
                 for event in r.fired() {
@@ -1093,6 +1116,9 @@ impl<'a> Ground<'a> {
             .filter_map(|r| Some((r.text(b"targetname")?, (r.origin(), r.text(b"target")))))
             .collect();
         let mut plat_bits: BTreeMap<usize, Held> = BTreeMap::new();
+        // What starts each teleporter with a `targetname`, and what shooting each trigger with
+        // `health` does to it, by its place in the lump.
+        let mut fired_bits: BTreeMap<usize, Held> = BTreeMap::new();
         // A secret something fires is found when it fires (`multi_use`), as one a player
         // does not touch is (`notouch`).
         let mut secret_bits: BTreeMap<usize, Held> = BTreeMap::new();
@@ -1110,11 +1136,48 @@ impl<'a> Ground<'a> {
             let fired = r.text(b"targetname").filter(|_| next_bit < MOST_DOORS);
             match r.classname.as_str() {
                 "func_plat" => {
+                    // It waits at its top, solid there as it is drawn, until fired.
                     if let Some(name) = fired {
                         chains.link(Event::Name(name), Event::Door(next_bit));
-                        plat_bits.insert(model, Held::door(next_bit));
+                        let bit = Held::door(next_bit);
+                        plat_bits.insert(model, bit);
+                        ground.doors.push(Door {
+                            model,
+                            from: NOT_MOVED,
+                            opener: Some(bit),
+                            open: Open::Gone,
+                            stays: Stays::Open,
+                            starts: Starts::Shut,
+                        });
                         next_bit = next_bit.saturating_add(1);
                     }
+                }
+                "trigger_teleport" => {
+                    if let Some(name) = fired {
+                        chains.link(Event::Name(name), Event::Door(next_bit));
+                        fired_bits.insert(r.place, Held::door(next_bit));
+                        next_bit = next_bit.saturating_add(1);
+                    }
+                }
+                // A trigger with `health` is solid until shot (`trigger_multiple`: `SOLID_BBOX`),
+                // and then fires and is gone.
+                "trigger_once"
+                | "trigger_multiple"
+                | "trigger_secret"
+                | "trigger_onlyregistered"
+                    if r.set(b"health") && next_bit < MOST_DOORS =>
+                {
+                    let bit = Held::door(next_bit);
+                    fired_bits.insert(r.place, bit);
+                    ground.doors.push(Door {
+                        model,
+                        from: NOT_MOVED,
+                        opener: Some(bit),
+                        open: Open::Gone,
+                        stays: Stays::Open,
+                        starts: Starts::Shut,
+                    });
+                    next_bit = next_bit.saturating_add(1);
                 }
                 "func_train" => {
                     // Its corners in the order it goes round them (`train_next`), each as how
@@ -1201,7 +1264,11 @@ impl<'a> Ground<'a> {
                 }
                 ("trigger_teleport", Some(volume)) => {
                     match r.text(b"target").and_then(|name| destinations.get(&name)) {
-                        Some(&to) => ground.teleports.push(Teleport { volume, to }),
+                        Some(&to) => ground.teleports.push(Teleport {
+                            volume,
+                            to,
+                            opener: fired_bits.get(&place).copied(),
+                        }),
                         None => ground.unjudged.push((place, r.classname.clone())),
                     }
                 }
@@ -1223,7 +1290,8 @@ impl<'a> Ground<'a> {
                     | "trigger_onlyregistered",
                     Some(volume),
                 ) => {
-                    let at = if r.set(b"health") {
+                    let shot = r.set(b"health");
+                    let at = if shot {
                         Some(Where::Seen(volume.middle()))
                     } else if r.number(b"spawnflags") & NOTOUCH == 0 {
                         Some(Where::Inside(volume))
@@ -1231,9 +1299,10 @@ impl<'a> Ground<'a> {
                         None
                     };
                     if let Some(at) = at {
+                        let gone = fired_bits.get(&place).copied().unwrap_or_default();
                         ground.firings.push(Firing {
                             at,
-                            opens: fires(r),
+                            opens: fires(r).with(gone),
                         });
                     }
                     if class == "trigger_secret" {
@@ -1241,7 +1310,11 @@ impl<'a> Ground<'a> {
                             entity: place,
                             kind: Sought::Secret,
                             classname: r.classname.clone(),
-                            at: Where::Inside(volume),
+                            at: if shot {
+                                Where::Seen(volume.middle())
+                            } else {
+                                Where::Inside(volume)
+                            },
                             point: volume.middle(),
                             fired: secret_bits.get(&place).copied(),
                         });
@@ -1273,25 +1346,47 @@ impl<'a> Ground<'a> {
                     } else {
                         0.0
                     };
+                    // Health, ammo and `item_weapon` boxes reach from their origin 32 along x and
+                    // y (`setsize (self, '0 0 0', '32 32 56')`); any other is centred on it.
+                    let corner = matches!(
+                        class,
+                        "item_health"
+                            | "item_shells"
+                            | "item_spikes"
+                            | "item_rockets"
+                            | "item_cells"
+                            | "item_weapon"
+                    );
+                    let across = if corner { HALF } else { 0.0 };
+                    let [ox, oy, oz] = r.origin();
                     // The game removes an item with no floor in reach.
-                    let Some(point) = ground.dropped(r.origin(), below) else {
+                    let Some(middle) = ground.dropped([ox + across, oy + across, oz], below) else {
                         continue;
                     };
                     let at = Where::Item {
-                        at: [point, ground.carried(point)],
+                        at: [middle, ground.carried(middle)],
                         below,
                     };
                     ground.firings.push(Firing { at, opens });
+                    let [mx, my, mz] = middle;
                     ground.wanted.push(Wanted {
                         entity: place,
                         kind,
                         classname: r.classname.clone(),
                         at,
-                        point,
+                        point: [mx - across, my - across, mz],
                         fired: None,
                     });
                 }
-                _ if class.starts_with("monster_") && r.text(b"target").is_some() => {
+                // One whose `targetname` something's `target` names waits in a closet and dies
+                // once fired (the relays); any other, a name only a `killtarget` uses included,
+                // once a player sees it.
+                _ if class.starts_with("monster_")
+                    && r.text(b"target").is_some()
+                    && !r
+                        .text(b"targetname")
+                        .is_some_and(|name| targeted.contains(&name)) =>
+                {
                     ground.firings.push(Firing {
                         at: Where::Seen(r.origin()),
                         opens: fires(r),
@@ -1487,7 +1582,7 @@ impl<'a> Ground<'a> {
         let teleport = self
             .teleports
             .iter()
-            .filter(|teleport| teleport.volume.overlaps(&column))
+            .filter(|teleport| teleport.works(held) && teleport.volume.overlaps(&column))
             .max_by(|a, b| {
                 a.volume.max[2]
                     .partial_cmp(&b.volume.max[2])
@@ -1505,9 +1600,10 @@ impl<'a> Ground<'a> {
     fn paced(&self, held: Held, from: [f32; 3], step: [f32; 2], climb: f32) -> Option<Landing> {
         let (x, y) = (from[0] + step[0], from[1] + step[1]);
         let mut z = from[2] + climb;
-        // The head must clear what the feet climb.
-        if self.blocked(held, [from[0], from[1], z]) {
-            z = from[2];
+        // The head must clear what the feet climb: the climb stops under a ceiling, as the
+        // engine's step up stops where its trace up meets one (`SV_WalkMove`).
+        while z > from[2] && self.blocked(held, [from[0], from[1], z]) {
+            z = (z - FINE).max(from[2]);
         }
         // The highest room at most `climb` up, a pace at a time: any height in it falls to the
         // same floor.
@@ -1583,7 +1679,11 @@ impl<'a> Ground<'a> {
     /// The places a player at `at` holding `held` moves to in one move.
     fn moves(&self, held: Held, at: [f32; 3]) -> Vec<Landing> {
         // A teleporter sends a player whose box touches it at once (`teleport_touch`).
-        if let Some(teleport) = self.teleports.iter().find(|t| t.volume.touched(at, 0.0)) {
+        if let Some(teleport) = self
+            .teleports
+            .iter()
+            .find(|t| t.works(held) && t.volume.touched(at, 0.0))
+        {
             return vec![self.fall(held, teleport.to)];
         }
         let mut next = Vec::new();
@@ -1980,17 +2080,18 @@ impl Explored {
     }
 }
 
-/// Whether a player at `at` touches the box of an item at `point`, which reaches `below` under
-/// it: the item's box is 32 across and 56 high (`items.qc`), grown by [`ITEM_REACH`] across
-/// and a unit up and down (`SV_LinkEdict`, for `FL_ITEM`).
+/// Whether a player at `at` touches the box of an item whose box's middle is over `point`, and
+/// which reaches `below` under it: the item's box is 32 across and 56 high (`items.qc`), grown
+/// by [`ITEM_REACH`] across "to make items easier to pick up", and the player's by a unit on
+/// every side (`SV_LinkEdict`, WinQuake/world.c).
 fn item_touched(at: [f32; 3], point: [f32; 3], below: f32) -> bool {
-    let across = HALF + ITEM_REACH + HALF;
-    let bottom = point[2] - below - SPREAD;
-    let top = point[2] - below + ITEM_HEIGHT + SPREAD;
+    let across = HALF + SPREAD + HALF + ITEM_REACH;
+    let bottom = point[2] - below;
+    let top = bottom + ITEM_HEIGHT;
     (at[0] - point[0]).abs() <= across
         && (at[1] - point[1]).abs() <= across
-        && at[2] - FEET <= top
-        && at[2] + HEAD >= bottom
+        && at[2] - FEET - SPREAD <= top
+        && at[2] + HEAD + SPREAD >= bottom
 }
 
 /// Whether `at` is within [`NEAR`] of `place` on each axis.
