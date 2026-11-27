@@ -29,7 +29,7 @@ Change this document and the configuration in the same PR.
 
 ## Toolchain and workspace (CONV-1)
 
-- `rust-toolchain.toml` pins an exact stable channel (`1.100.0`; vouch: `1.99.0`) with `rustfmt` and `clippy` components.
+- `rust-toolchain.toml` pins an exact stable channel (`1.100.1`; vouch: `1.99.0`) with `rustfmt` and `clippy` components.
 - Root `Cargo.toml`: `resolver = "3"`, `members = ["crates/*", "apps/*", "xtask"]`.
 - `[workspace.package]` holds `version`, `edition = "2024"`, `license`, `rust-version`,
   `repository`, `publish = false`; every crate inherits them with `*.workspace = true`.
@@ -51,7 +51,7 @@ repository = "https://github.com/quakecstudio/editor"
 publish = false
 ```
 
-The channel is `1.100.0` (vouch is on `1.99.0`), and `rust-version` equals it.
+The channel is `1.100.1` (vouch is on `1.99.0`), and `rust-version` equals it.
 
 Nightly Rust is allowed in two places only: fuzzing with cargo-fuzz (`cargo xtask fuzz`, which
 `make test-fuzz` and the scheduled `Fuzz` workflow call), and branch coverage
