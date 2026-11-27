@@ -314,6 +314,9 @@ dependencies = [
  "qc-project",
  "qc-sema",
  "qc-syntax",
+ "qs-bsp",
+ "schemars",
+ "serde",
 ]
 
 [[package]]
