@@ -54,9 +54,6 @@ pub(crate) enum DebugAction {
     Console(String),
 }
 
-/// The console commands whose word after them is a level (`Host_Map_f`, `Host_Changelevel_f`).
-const LEVEL_COMMANDS: [&str; 2] = ["map", "changelevel"];
-
 /// The text typed in the watch and console boxes, kept between frames, and what the console
 /// box offers.
 #[derive(Debug)]
@@ -196,7 +193,7 @@ impl DebugInput {
     /// that command with each level; otherwise every command and setting.
     fn console_offers(&self, typed: &str) -> Vec<Offer> {
         let typed = typed.trim_start();
-        let command = LEVEL_COMMANDS.iter().find(|command| {
+        let command = ConsoleName::LEVEL_COMMANDS.iter().find(|command| {
             typed
                 .strip_prefix(**command)
                 .is_some_and(|rest| rest.starts_with(' '))

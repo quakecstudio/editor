@@ -123,6 +123,10 @@ pub enum ConsoleName {
 }
 
 impl ConsoleName {
+    /// The commands whose word after them is a level's name (`Host_Map_f`,
+    /// `Host_Changelevel_f`).
+    pub const LEVEL_COMMANDS: [&'static str; 2] = ["map", "changelevel"];
+
     /// Every command in name order, then every setting in name order: the order Tab
     /// completes in (CON-4.3).
     #[must_use]
