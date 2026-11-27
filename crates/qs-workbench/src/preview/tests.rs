@@ -793,3 +793,102 @@ fn a_run_error_stop_carries_its_message() {
     game.take_event("qc/error", &json!({ "message": "the progs cannot run" }));
     assert_eq!(game.debugger().stack().len(), 2);
 }
+
+/// A workbench over a project and a preview, for the commands that read both.
+struct Both {
+    workbench: Workbench<MemoryLoader>,
+    preview: Preview,
+}
+
+impl crate::HasMap for Both {
+    type Project = Workbench<MemoryLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut crate::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<MemoryLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
+impl crate::HasWorkbench for Both {
+    type Loader = MemoryLoader;
+
+    fn workbench(&mut self) -> &mut Workbench<MemoryLoader> {
+        &mut self.workbench
+    }
+}
+
+impl super::HasPreview for Both {
+    fn workbench_and_preview(&mut self) -> (&mut Workbench<MemoryLoader>, &mut Preview) {
+        (&mut self.workbench, &mut self.preview)
+    }
+}
+
+/// What `preview.watch_names` answers, each as `expression detail`, over a project whose
+/// `world.qc` is `world` and a game stopped at `stopped`, a bridge location, when one is.
+fn watch_names(world: &str, stopped: Option<serde_json::Value>) -> Vec<String> {
+    let dir = root("watch-names");
+    let mut both = Both {
+        workbench: opened(&dir, world),
+        preview: preview(None, None),
+    };
+    if let Some(location) = stopped {
+        both.preview.take_event(
+            "state/changed",
+            &json!({ "state": "paused", "reason": "breakpoint", "location": location }),
+        );
+    }
+    let mut registry = qs_commands::Registry::new();
+    registry.register(super::WatchNamesCommand).unwrap();
+    let mut session = qs_commands::Session::new(both, registry);
+    let names: Vec<super::WatchName> =
+        serde_json::from_value(session.execute(super::WATCH_NAMES, json!({})).unwrap()).unwrap();
+    names
+        .into_iter()
+        .map(|name| format!("{} {}", name.expression, name.detail))
+        .collect()
+}
+
+/// A `world.qc` with an entity, a field, a global and a function with a parameter and a local.
+const HURT: &str = "entity self;\n.float health;\nfloat time;\nvoid(float n) hurt =\n{\n\tlocal float left;\n\tleft = n;\n};\n";
+
+// spec WORLD-9.5: a watch reads a local or a global by its name, or a field of an entity: where
+// the game stopped, the names offered are the locals, parameters and globals visible on that
+// line and the fields of self, and no function; none while it is not stopped in a file
+#[test]
+fn a_watch_is_offered_the_names_where_the_game_stopped() {
+    assert!(watch_names(HURT, None).is_empty());
+    let at = |line: u32| json!({ "function": "hurt", "file": "world.qc", "line": line });
+    let names = watch_names(HURT, Some(at(7)));
+    for name in [
+        "self entity",
+        "self.health .float",
+        "time float",
+        "n float",
+        "left float",
+    ] {
+        assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
+    }
+    assert!(!names.iter().any(|n| n.starts_with("hurt")), "{names:?}");
+    // A line past the file's end has no names, nor a frame of no file.
+    assert!(watch_names(HURT, Some(at(99))).is_empty());
+    assert!(watch_names(HURT, Some(json!({ "function": "hurt" }))).is_empty());
+}
+
+#[test]
+fn a_lines_start_is_found_by_its_number() {
+    let text = b"a\nbc\n\nd";
+    assert_eq!(super::line_start(text, 1), Some(0));
+    assert_eq!(super::line_start(text, 2), Some(2));
+    assert_eq!(super::line_start(text, 3), Some(5));
+    assert_eq!(super::line_start(text, 4), Some(6));
+    assert_eq!(super::line_start(text, 5), None);
+    assert_eq!(super::line_start(text, 0), None);
+}

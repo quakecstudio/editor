@@ -46,6 +46,8 @@ const REPLACE_WIDTH: f32 = 144.0;
 
 /// The most completion candidates the popup lists.
 const MAX_CANDIDATES: usize = 12;
+/// The quote that opens a string, which a completion label may start with.
+const STRING_QUOTE: char = '"';
 
 /// Save.
 pub(crate) const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
@@ -326,13 +328,20 @@ impl Editor {
         (Position::new(head.line, start), word)
     }
 
-    /// The candidates the typed prefix matches, in the order given.
+    /// The candidates the typed prefix matches, in the order given. A label that opens a
+    /// string, as a settings value's `"daily"` does, is matched after its quote, so `da` typed
+    /// bare finds it and taking it writes the quotes.
     fn matching<'c>(&self, candidates: &'c [Candidate]) -> Vec<&'c Candidate> {
         let (_, prefix) = self.word_before_caret();
         let prefix = prefix.to_lowercase();
         candidates
             .iter()
-            .filter(|c| c.label.to_lowercase().starts_with(&prefix))
+            .filter(|c| {
+                c.label
+                    .trim_start_matches(STRING_QUOTE)
+                    .to_lowercase()
+                    .starts_with(&prefix)
+            })
             .take(MAX_CANDIDATES)
             .collect()
     }

@@ -378,6 +378,12 @@ pub enum Text {
     EngineFrame,
     /// The hint in the console's command box.
     ConsoleCommand,
+    /// What an offered console command is.
+    ConsoleOfferCommand,
+    /// What an offered console setting is, before its default.
+    ConsoleOfferSetting,
+    /// What an offered level after map or changelevel is.
+    ConsoleOfferLevel,
     /// The breakpoints column with none set.
     NoBreakpoints,
     /// The Debugger tab while the game runs.
@@ -735,6 +741,12 @@ pub enum Text {
     MapRemoveKey,
     /// The mark beside a targeting key whose value no entity has as its targetname.
     MapNoSuchTarget,
+    /// The mark beside a file key whose name no file has.
+    MapNoSuchFile,
+    /// What an offered file in the project's folder is.
+    MapFileInProject,
+    /// What an offered file of the game is.
+    MapFileInGame,
     /// The key editor's hint in the new key's field.
     MapKey,
     /// The key editor's hint in the new value's field.
@@ -1260,7 +1272,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 620] = [
+    pub const ALL: [Self; 626] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1378,6 +1390,9 @@ impl Text {
         Self::StepOut,
         Self::EngineFrame,
         Self::ConsoleCommand,
+        Self::ConsoleOfferCommand,
+        Self::ConsoleOfferSetting,
+        Self::ConsoleOfferLevel,
         Self::NoBreakpoints,
         Self::NotStopped,
         Self::NotRead,
@@ -1621,6 +1636,9 @@ impl Text {
         Self::MapCompare,
         Self::MapRemoveKey,
         Self::MapNoSuchTarget,
+        Self::MapNoSuchFile,
+        Self::MapFileInProject,
+        Self::MapFileInGame,
         Self::MapKey,
         Self::MapValue,
         Self::SuggestList,
@@ -2022,6 +2040,9 @@ impl Text {
             Self::StepOut => "Step out",
             Self::EngineFrame => "engine",
             Self::ConsoleCommand => "Console command, for example impulse 9",
+            Self::ConsoleOfferCommand => "command",
+            Self::ConsoleOfferSetting => "setting",
+            Self::ConsoleOfferLevel => "level",
             Self::NoBreakpoints => "Click a line number to set a breakpoint.",
             Self::NotStopped => {
                 "The call stack and watches show when the game stops at a breakpoint or a step."
@@ -2298,6 +2319,9 @@ impl Text {
             Self::MapCompare => "Compare",
             Self::MapRemoveKey => "Remove",
             Self::MapNoSuchTarget => "No entity has this targetname yet",
+            Self::MapNoSuchFile => "No file of this name in the project or the game",
+            Self::MapFileInProject => "in the project",
+            Self::MapFileInGame => "in the game",
             Self::MapKey => "New key",
             Self::MapValue => "Its value",
             Self::SuggestList => "Suggestions",

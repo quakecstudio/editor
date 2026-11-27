@@ -497,6 +497,36 @@ fn the_console_completes_commands_then_settings() {
     assert_eq!(run.world.complete("zz"), None);
 }
 
+// spec CON-4.3: the names the console takes are its commands by name, then its settings by
+// name, each setting with the default it is declared with
+#[test]
+fn the_console_lists_its_commands_then_its_settings() {
+    let names = super::ConsoleName::all();
+    let commands: Vec<&str> = names
+        .iter()
+        .take_while(|name| matches!(name, super::ConsoleName::Command(_)))
+        .map(super::ConsoleName::name)
+        .collect();
+    let mut sorted = commands.clone();
+    sorted.sort_unstable();
+    assert_eq!(commands, sorted);
+    assert!(commands.contains(&"noclip") && commands.contains(&"map"));
+    let (_, settings) = names.split_at(commands.len());
+    assert!(
+        settings
+            .iter()
+            .all(|name| matches!(name, super::ConsoleName::Setting { .. }))
+    );
+    assert!(settings.contains(&super::ConsoleName::Setting {
+        name: "sv_gravity",
+        default: "800",
+    }));
+    let names: Vec<&str> = settings.iter().map(super::ConsoleName::name).collect();
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(names, sorted);
+}
+
 // spec CON-6.4: the client's commands go to the client in order, with nothing printed and the
 // server's commands of the line run; help is one of them
 #[test]

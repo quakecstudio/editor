@@ -3,20 +3,22 @@
 //! The key editor's fields (P5-13, MAP-27), each chosen from what the QuakeC says of the key:
 //! spawnflags as checkboxes named by the code, an angle with up and down, a colour with a
 //! picker, a float the map gives several values as a choice of them, a targeting key as the
-//! map's targetnames and `classname` as the project's classes, each offered as it is typed
-//! with what it names (UI-24); any other key as text. Each gives the value to set once an edit
-//! is done, so an edit is one undo step.
+//! map's targetnames and `classname` as the project's classes, a value the class's comment
+//! numbers as those values with their names, and a file the code loads as the project's and
+//! the game's files of its kind, each offered as it is typed with what it names (UI-24); any
+//! other key as text. Each gives the value to set once an edit is done, so an edit is one undo
+//! step.
 
 use std::collections::BTreeSet;
 
-use eframe::egui::{self, Ui};
+use eframe::egui::{self, RichText, Ui};
 use qs_map_edit::FlagChange;
 use qs_map_edit::FlagInfo;
 
 use crate::icons::Icon;
 use crate::map_scene::{ANGLE, COLOR_SUFFIX, FLOAT_TYPE, SPAWNFLAGS};
 use crate::strings::Text;
-use crate::suggest::{Offer, Suggest};
+use crate::suggest::{Offer, Offers, Suggest};
 use crate::theme::{Theme, Token};
 
 /// The width of a value's text field, in points.
@@ -25,6 +27,8 @@ const VALUE_WIDTH: f32 = 140.0;
 const SHORT_WIDTH: f32 = 64.0;
 /// The width of a targeting key's field, beside the eyedropper.
 const TARGET_WIDTH: f32 = 100.0;
+/// The start of a brush model's name, `*1`, which the compiler writes (BUILTIN-10.3).
+const BRUSH_MODEL: char = '*';
 /// `angle`'s values for straight up and straight down (`SetMovedir`).
 const UP: &str = "-1";
 const DOWN: &str = "-2";
@@ -66,6 +70,22 @@ pub(crate) enum Field<'a> {
     Target(&'a [Offer]),
     /// The entity's class, from the project's classes.
     Class(&'a [Offer]),
+    /// One of the values the class's comment numbers, each offered with what it is called,
+    /// the name of the one set shown beside it.
+    Numbered(&'a [Offer]),
+    /// A file's name, from the project's and the game's files of the kind the code loads it
+    /// as (MAP-8.11); a name no file has is marked once the game's files were searched too.
+    File(&'a [Offer], Searched),
+}
+
+/// Which folders the files a key offers were searched in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Searched {
+    /// The project's alone, no game being found: a name not listed may be the game's.
+    #[default]
+    Project,
+    /// The project's and the game's search path.
+    ProjectAndGame,
 }
 
 /// A value typed, and what is beside its field.
@@ -116,7 +136,7 @@ impl Field<'_> {
             Self::Target(offers) => {
                 let field = Suggest {
                     name: key,
-                    offers,
+                    offers: Offers::Given(offers),
                     width: TARGET_WIDTH,
                 };
                 let set = field.show(ui, theme, typed).filter(|done| done != value);
@@ -130,10 +150,42 @@ impl Field<'_> {
             Self::Class(offers) => {
                 let field = Suggest {
                     name: key,
-                    offers,
+                    offers: Offers::Given(offers),
                     width: VALUE_WIDTH,
                 };
                 field.show(ui, theme, typed).filter(|done| done != value)
+            }
+            Self::Numbered(offers) => {
+                let field = Suggest {
+                    name: key,
+                    offers: Offers::Given(offers),
+                    width: SHORT_WIDTH,
+                };
+                let set = field.show(ui, theme, typed).filter(|done| done != value);
+                let current = set.as_deref().unwrap_or(value);
+                if let Some(offer) = offers.iter().find(|offer| offer.name == current) {
+                    ui.label(RichText::new(&offer.detail).color(theme.color(Token::TextMuted)));
+                }
+                set
+            }
+            Self::File(offers, searched) => {
+                let field = Suggest {
+                    name: key,
+                    offers: Offers::Given(offers),
+                    width: VALUE_WIDTH,
+                };
+                let set = field.show(ui, theme, typed).filter(|done| done != value);
+                let typed = typed.trim();
+                // A brush model's `*N` is the compiler's, not a file (BUILTIN-10.3).
+                if searched == Searched::ProjectAndGame
+                    && !typed.is_empty()
+                    && !typed.starts_with(BRUSH_MODEL)
+                    && !offers.iter().any(|offer| offer.name == typed)
+                {
+                    let warn = theme.color(Token::StatusWarn);
+                    Icon::Warning.sign(ui, warn, Text::MapNoSuchFile);
+                }
+                set
             }
             Self::Typed(field) => field.ui(ui, key, typed, value),
         })

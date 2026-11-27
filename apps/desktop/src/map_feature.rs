@@ -52,6 +52,7 @@ use qs_map_edit::{
     FlipParams, Lock, MAP_FLIP, MAP_REPLACE_TEXTURE, MAP_TURN, ReplaceTextureParams, Selection,
     TurnParams,
 };
+use qs_map_edit::{GameFile, GameFilesParams, MAP_GAME_FILES};
 use qs_map_edit::{LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams};
 use qs_map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
 use qs_map_edit::{
@@ -81,6 +82,7 @@ use crate::features::{Commands, ShellRequest};
 use crate::map_editor::{
     Arrange, ClipboardAction, DiskNotice, MapAction, MapEditor, MenuAction, ShowFilter, ViewSetting,
 };
+use crate::map_fields::Searched;
 use crate::map_groups::GroupAction;
 use crate::map_profiles::ProfileAction;
 use crate::map_review::ReviewAction;
@@ -237,6 +239,29 @@ impl MapFeature {
                 self.map_editor.set_targeting(found.targeting);
             }
             Err(error) => tracing::warn!(%error, "no entity classes for the map"),
+        }
+        self.refresh_game_files(commands);
+    }
+
+    /// Reads the project's and the game's files a key naming one offers (MAP-8.11), every kind
+    /// in one listing, and whether the game's were searched too.
+    pub(crate) fn refresh_game_files(&mut self, commands: &mut Commands<'_>) {
+        let searched = if commands
+            .session()
+            .context()
+            .preview
+            .game_base_path()
+            .is_some()
+        {
+            Searched::ProjectAndGame
+        } else {
+            Searched::Project
+        };
+        let files: Result<Vec<GameFile>, ShellError> =
+            commands.attempt(MAP_GAME_FILES, &GameFilesParams { kind: None });
+        match files {
+            Ok(files) => self.map_editor.set_files(files, searched),
+            Err(error) => tracing::warn!(%error, "no game files for the key editor"),
         }
     }
 
@@ -1285,7 +1310,14 @@ impl MapFeature {
                 commands.attempt(MAP_ENTITY, &EntityParams { entity });
             keys.ok().map(|keys| (entity, keys))
         });
+        // A file added to the project since is offered, and no longer marked missing.
+        let names_files = keys
+            .as_ref()
+            .is_some_and(|(_, keys)| keys.keys.iter().any(|key| key.file.is_some()));
         self.map_editor.set_keys(keys, revision);
+        if names_files {
+            self.refresh_game_files(commands);
+        }
         let layers: Result<Vec<LayerInfo>, ShellError> =
             commands.attempt(MAP_LAYERS, &serde_json::json!({}));
         self.map_editor.set_layers(layers.unwrap_or_default());

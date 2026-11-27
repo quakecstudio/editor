@@ -28,7 +28,9 @@ use qs_layout::{
     HasLayout, Layout, MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams,
     ShowPanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
-use qs_map_edit::{MAP_GENERATE, opens_in_map_editor};
+use qs_map_edit::{
+    GameFile, GameFileKind, GameFilesParams, MAP_GAME_FILES, MAP_GENERATE, opens_in_map_editor,
+};
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::GitHub;
@@ -44,7 +46,7 @@ use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
 use qs_workbench::terminal::TaskInfo;
-use qs_workbench::tools::PROJECT_FILES;
+use qs_workbench::tools::{FunctionFound, PROJECT_FILES, PROJECT_FUNCTIONS};
 use qs_workbench::{ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE};
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
@@ -52,8 +54,9 @@ use qs_workbench::{
     HasWorkbench, HoverInfo, OPEN_FILE, OpenFile, OpenFileParams, PAUSE, PLAY, POLL, Place,
     PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME,
     RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
-    TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, Workbench,
+    TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, WATCH_NAMES, WatchName, Workbench,
 };
+use qs_workbench::{CandidateKind, FileText, READ_FILE};
 use qs_workbench::{FieldSet, SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
 use crate::about::{self, AboutWindow};
@@ -1453,6 +1456,15 @@ impl Shell {
         let selected = preview.entities().selected().map(|selected| selected.edict);
         let game = preview.state();
         self.features.map.properties.follow(selected, game);
+        // UI-24: a function field offers the server's functions, read once a pause.
+        if self.features.map.properties.functions_unread(game) {
+            let functions: Option<Vec<FunctionFound>> =
+                self.run(PROJECT_FUNCTIONS, &serde_json::json!({}));
+            let properties = &mut self.features.map.properties;
+            properties.set_functions(functions.unwrap_or_default());
+        }
+        self.follow_console_levels(game);
+        self.follow_watch_names();
         // P3-35: the background check's results for the latest edit, once it has finished.
         if self.run::<_, bool>(TAKE_CHECKED, &serde_json::json!({})) == Some(true) {
             ui.ctx().request_repaint();
@@ -1980,6 +1992,54 @@ impl Shell {
             ui.ctx().request_repaint();
         }
         true
+    }
+
+    /// Reads what a watch may read each time the game stops somewhere else (UI-24).
+    fn follow_watch_names(&mut self) {
+        let stopped = self
+            .session
+            .context()
+            .preview
+            .debugger()
+            .stopped()
+            .map(|(_, location)| location.clone());
+        if !self
+            .features
+            .debugger
+            .input
+            .watch_names_stale(stopped.as_ref())
+        {
+            return;
+        }
+        let names: Option<Vec<WatchName>> = match stopped {
+            Some(_) => self.run(WATCH_NAMES, &serde_json::json!({})),
+            None => None,
+        };
+        let input = &mut self.features.debugger.input;
+        input.set_watch_names(stopped, names.unwrap_or_default());
+    }
+
+    /// Reads the levels the console's `map` and `changelevel` offer once a game runs, and
+    /// forgets them when it stops, so the next game reads a level compiled since (UI-24).
+    fn follow_console_levels(&mut self, game: PlayState) {
+        let input = &mut self.features.debugger.input;
+        match game {
+            PlayState::Stopped => input.set_levels(None),
+            PlayState::Playing | PlayState::Paused | PlayState::NotAnswering
+                if input.levels_unread() =>
+            {
+                let params = GameFilesParams {
+                    kind: Some(GameFileKind::Level),
+                };
+                let files: Option<Vec<GameFile>> = self.run(MAP_GAME_FILES, &params);
+                let levels = files.unwrap_or_default().into_iter().map(|file| file.name);
+                self.features
+                    .debugger
+                    .input
+                    .set_levels(Some(levels.collect()));
+            }
+            PlayState::Playing | PlayState::Paused | PlayState::NotAnswering => {}
+        }
     }
 
     /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
@@ -2695,6 +2755,37 @@ impl Shell {
         }
     }
 
+    /// Whether `path` is the user's settings file or the open project's.
+    fn is_settings_file(&self, path: &Path) -> bool {
+        let project = self
+            .session
+            .context()
+            .workbench
+            .root()
+            .map(qs_settings::project_settings_path);
+        self.settings_file.as_deref() == Some(path) || project.as_deref() == Some(path)
+    }
+
+    /// What may be written at `at`: in the settings file, from its text in the editor and the
+    /// settings' schema (UI-24), as Zed completes `settings.json`; elsewhere the QuakeC's names.
+    fn completions(&mut self, at: AtParams) -> Vec<Candidate> {
+        if !self.is_settings_file(&at.path) {
+            return self.run(COMPLETE, &at).unwrap_or_default();
+        }
+        let offset = at.offset;
+        let file: Option<FileText> = self.run(READ_FILE, &SaveFileParams { path: at.path });
+        file.map_or_default(|file| {
+            SettingsFile::completions(&file.text, offset)
+                .into_iter()
+                .map(|completion| Candidate {
+                    label: completion.label,
+                    kind: CandidateKind::Field,
+                    detail: completion.detail,
+                })
+                .collect()
+        })
+    }
+
     /// Runs what the editor asked for, each through its command, after sending the editor's
     /// unsent text so every answer is about the text on screen.
     fn handle(&mut self, requests: Vec<Request>) {
@@ -2777,8 +2868,7 @@ impl Shell {
                         },
                     }),
                 Request::Complete(offset) => {
-                    let candidates: Vec<Candidate> =
-                        self.run(COMPLETE, &at(offset)).unwrap_or_default();
+                    let candidates = self.completions(at(offset));
                     Some(if candidates.is_empty() {
                         Popup::Note(Text::NoCompletions)
                     } else {

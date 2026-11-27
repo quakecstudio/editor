@@ -4234,6 +4234,7 @@ dependencies = [
  "qs-paths",
  "qs-render",
  "qs-settings",
+ "qs-sim",
  "qs-templates",
  "qs-update",
  "qs-vfs",

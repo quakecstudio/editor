@@ -12,6 +12,7 @@
 
 mod agent;
 mod commands;
+mod complete;
 mod error;
 
 #[cfg(test)]
@@ -29,6 +30,7 @@ use toml_edit::{Decor, DocumentMut, Item, TableLike};
 
 pub use agent::{Agent, AgentProfile, Decision, ExternalAgent, ToolPermissions, ToolRule};
 pub use commands::{Entry, HasSettings, register};
+pub use complete::SettingsCompletion;
 pub use error::SettingsError;
 
 /// The user's settings file in the app's config directory, `qs_paths::AppDirs::config`; the

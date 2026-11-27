@@ -30,9 +30,20 @@ impl Field {
     /// Whether it holds a function, whose definition a click opens.
     #[must_use]
     pub fn is_function(&self) -> bool {
-        self.kind() == "function"
+        self.kind() == FUNCTION_KIND
+    }
+
+    /// Whether it holds an entity, by its number.
+    #[must_use]
+    pub fn is_entity(&self) -> bool {
+        self.kind() == ENTITY_KIND
     }
 }
+
+/// The kind of a value that is a function (BRIDGE-5.1).
+const FUNCTION_KIND: &str = "function";
+/// The kind of a value that is an entity (BRIDGE-5.1).
+const ENTITY_KIND: &str = "entity";
 
 /// The selected edict: its number, its classname and its fields.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

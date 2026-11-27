@@ -6,6 +6,8 @@
 //! a row and Enter or a click takes it; a value the list does not hold is still taken, so a
 //! compiler's key or a new name is typed as before.
 
+use std::borrow::Cow;
+
 use eframe::egui::{self, Key, Modifiers, RichText, Ui};
 
 use crate::shell::name_area;
@@ -26,14 +28,52 @@ pub(crate) struct Offer {
     pub(crate) detail: String,
 }
 
+/// The values a field offers.
+#[derive(Clone, Copy)]
+pub(crate) enum Offers<'a> {
+    /// A list made already.
+    Given(&'a [Offer]),
+    /// A list made from what is typed, only while the field is edited, after the frame's keys:
+    /// one too costly to make every frame, or one that depends on the text.
+    Made(&'a dyn Fn(&str) -> Cow<'a, [Offer]>),
+}
+
+impl<'a> Offers<'a> {
+    /// The offers for `typed`.
+    fn for_typed(self, typed: &str) -> Cow<'a, [Offer]> {
+        match self {
+            Self::Given(offers) => Cow::Borrowed(offers),
+            Self::Made(make) => make(typed),
+        }
+    }
+}
+
 /// A field over a known set of values.
 pub(crate) struct Suggest<'a> {
     /// What the field is named to a screen reader, and its hint while empty.
     pub(crate) name: &'a str,
     /// The values offered.
-    pub(crate) offers: &'a [Offer],
+    pub(crate) offers: Offers<'a>,
     /// The field's width, in points.
     pub(crate) width: f32,
+}
+
+/// How the field's edit was done.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Taken {
+    /// An offer was taken, by Enter on its marked row or a click.
+    Offer(String),
+    /// The text typed was left, by Enter or the keyboard gone elsewhere.
+    Typed(String),
+}
+
+impl Taken {
+    /// The value taken.
+    pub(crate) fn value(self) -> String {
+        match self {
+            Self::Offer(value) | Self::Typed(value) => value,
+        }
+    }
 }
 
 /// The list's state between frames.
@@ -46,25 +86,38 @@ struct Shown {
     at: Option<egui::Rect>,
 }
 
-impl Suggest<'_> {
-    /// The offers that match `typed`: every one while the field holds one exactly or nothing,
-    /// so a value set already shows what else it may be; otherwise those containing it, in
-    /// any case.
-    fn matching(&self, typed: &str) -> Vec<&Offer> {
+impl Offer {
+    /// Those of `offers` that match `typed`: every one while the field holds one exactly or
+    /// nothing, so a value set already shows what else it may be; otherwise those containing
+    /// it, in any case.
+    pub(crate) fn matching<'o>(offers: &'o [Self], typed: &str) -> Vec<&'o Self> {
         let typed = typed.trim();
-        if typed.is_empty() || self.offers.iter().any(|offer| offer.name == typed) {
-            return self.offers.iter().collect();
+        if typed.is_empty() || offers.iter().any(|offer| offer.name == typed) {
+            return offers.iter().collect();
         }
         let lower = typed.to_lowercase();
-        self.offers
+        offers
             .iter()
             .filter(|offer| offer.name.to_lowercase().contains(&lower))
             .collect()
     }
+}
 
+impl Suggest<'_> {
     /// Draws the field over `typed`, and its list below it while it has the keyboard; the
     /// value once the edit is done: an offer taken, Enter, or the keyboard gone elsewhere.
     pub(crate) fn show(self, ui: &mut Ui, theme: &Theme, typed: &mut String) -> Option<String> {
+        self.take(ui, theme, typed).1.map(Taken::value)
+    }
+
+    /// As [`Suggest::show`], with the field, and saying whether an offer was taken or the text
+    /// typed left.
+    pub(crate) fn take(
+        self,
+        ui: &mut Ui,
+        theme: &Theme,
+        typed: &mut String,
+    ) -> (egui::Response, Option<Taken>) {
         // Sized exactly, as the key editor's other fields are, so a grid's column takes its
         // width in the first frame rather than growing to it over several.
         let edit = egui::TextEdit::singleline(typed).hint_text(self.name);
@@ -83,7 +136,14 @@ impl Suggest<'_> {
         if response.changed() || response.gained_focus() {
             shown.marked = None;
         }
-        let matching = self.matching(typed);
+        // Made only while edited, from the text as this frame's keys left it.
+        let active = response.has_focus() || response.lost_focus() || on_list;
+        let offers = if active {
+            self.offers.for_typed(typed)
+        } else {
+            Cow::Borrowed(&[][..])
+        };
+        let matching = Offer::matching(&offers, typed);
         let mut done = None;
         let mut moved = false;
         // Enter takes the keyboard from a one-line field in the frame it is pressed, so the
@@ -107,7 +167,7 @@ impl Suggest<'_> {
             if let Some(offer) = shown.marked.and_then(|m| matching.get(m))
                 && enter
             {
-                done = Some(offer.name.clone());
+                done = Some(Taken::Offer(offer.name.clone()));
             }
         }
         if (response.has_focus() || on_list) && !matching.is_empty() && done.is_none() {
@@ -148,7 +208,7 @@ impl Suggest<'_> {
                                         row.scroll_to_me(None);
                                     }
                                     if row.clicked() {
-                                        done = Some(offer.name.clone());
+                                        done = Some(Taken::Offer(offer.name.clone()));
                                     }
                                 }
                             });
@@ -159,9 +219,9 @@ impl Suggest<'_> {
             shown.at = None;
         }
         if done.is_none() && response.lost_focus() && !on_list {
-            done = Some(typed.trim().to_owned());
+            done = Some(Taken::Typed(typed.trim().to_owned()));
         }
-        if let Some(value) = &done {
+        if let Some(Taken::Offer(value) | Taken::Typed(value)) = &done {
             typed.clone_from(value);
             shown = Shown::default();
             if response.has_focus() {
@@ -169,7 +229,7 @@ impl Suggest<'_> {
             }
         }
         ui.data_mut(|d| d.insert_temp(id, shown));
-        done
+        (response, done)
     }
 }
 

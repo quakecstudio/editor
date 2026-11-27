@@ -6,10 +6,11 @@
 )]
 
 use eframe::egui::accesskit::Role;
-use eframe::egui::{Key, Vec2};
+use eframe::egui::{self, Key, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use qs_workbench::entities::Entities;
+use qs_workbench::tools::FunctionFound;
 use serde_json::json;
 
 use super::{Edict, EntityAction, PlayState, Properties, Shown, properties};
@@ -172,4 +173,98 @@ fn the_lock_says_why_fields_are_read_only() {
     harness.state_mut().game = PlayState::Paused;
     harness.run();
     assert!(harness.query_by_label(why).is_none());
+}
+
+// No spec statement: UI-24, BRIDGE-5.1: while paused an entity field offers the edicts in use
+// as the panel writes them and a function field the project's functions with their files; one
+// taken is set at once, and a value typed is still set on Enter
+#[test]
+fn entity_and_function_fields_offer_what_they_may_hold() {
+    let mut harness = drawn();
+    let state = harness.state_mut();
+    state.entities.replace(&json!({ "entities": [
+        { "edict": 0, "classname": "worldspawn" },
+        { "edict": 1, "classname": "player" },
+        { "edict": 7, "classname": "monster_army" },
+    ] }));
+    state.entities.select(&json!({
+        "edict": 7,
+        "classname": "monster_army",
+        "fields": [
+            { "name": "enemy", "value": { "type": "entity", "value": 0 } },
+            { "name": "think", "value": { "type": "function", "value": "army_stand1" } },
+        ],
+    }));
+    assert!(state.panel.functions_unread(PlayState::Paused));
+    state.panel.set_functions(
+        [("army_run1", "soldier.qc"), ("army_stand1", "soldier.qc")]
+            .map(|(name, file)| FunctionFound {
+                name: name.to_owned(),
+                file: file.to_owned(),
+            })
+            .to_vec(),
+    );
+    assert!(!state.panel.functions_unread(PlayState::Paused));
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::TextInput, "enemy")
+        .click();
+    harness.run();
+    harness.get_by_label("worldspawn #0");
+    harness.get_by_label("monster_army #7");
+    harness.get_by_label("player #1").click();
+    harness.run();
+    assert_eq!(
+        harness.state().asked,
+        Some(EntityAction::SetField {
+            field: "enemy".to_owned(),
+            value: "player #1".to_owned(),
+        })
+    );
+    harness
+        .get_by_role_and_label(Role::TextInput, "think")
+        .click();
+    harness.run();
+    harness.get_by_label("army_run1, soldier.qc").click();
+    harness.run();
+    assert_eq!(
+        harness.state().asked,
+        Some(EntityAction::SetField {
+            field: "think".to_owned(),
+            value: "army_run1".to_owned(),
+        })
+    );
+    // Typed, a value outside the list is still set on Enter.
+    harness
+        .get_by_role_and_label(Role::TextInput, "think")
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.event(egui::Event::Text("SUB_Null".to_owned()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(
+        harness.state().asked,
+        Some(EntityAction::SetField {
+            field: "think".to_owned(),
+            value: "SUB_Null".to_owned(),
+        })
+    );
+}
+
+// No spec statement: UI-24: the functions a function field offers are read once a pause, and
+// forgotten when the game runs, so a reload's are read at the next pause
+#[test]
+fn the_functions_are_read_once_a_pause() {
+    let mut panel = Properties::default();
+    assert!(!panel.functions_unread(PlayState::Playing));
+    assert!(panel.functions_unread(PlayState::Paused));
+    panel.set_functions(Vec::new());
+    panel.follow(None, PlayState::Paused);
+    assert!(!panel.functions_unread(PlayState::Paused));
+    panel.follow(None, PlayState::Playing);
+    panel.follow(None, PlayState::Paused);
+    assert!(panel.functions_unread(PlayState::Paused));
 }

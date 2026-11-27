@@ -113,6 +113,40 @@ pub struct Key {
     /// What the class's `/*QUAKED*/` comment says of it: the text after the key's quoted name
     /// on its line, or when that is empty the lines under it up to the next quoted name.
     pub comment: Option<String>,
+    /// The values the comment numbers for it, in its order (`"sounds"`, then `1) stone`).
+    pub choices: Vec<Choice>,
+}
+
+/// A value a class's comment numbers for a key, and what it says the value is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Choice {
+    /// The value, as the map writes it: `1`.
+    pub value: String,
+    /// What the comment calls it: `stone`.
+    pub name: String,
+}
+
+/// The builtin a key's value is passed to, which names a file (MAP-8.11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FileUse {
+    /// `changelevel`, which takes a level's name.
+    Changelevel,
+    /// `precache_model` or `precache_model2`, which take a model's path.
+    PrecacheModel,
+    /// `precache_sound` or `precache_sound2`, which take a sound's path under `sound/`.
+    PrecacheSound,
+}
+
+impl FileUse {
+    /// The use of the builtin named `name`, when it is one that names a file.
+    fn of_builtin(name: &str) -> Option<Self> {
+        match name {
+            "changelevel" => Some(Self::Changelevel),
+            "precache_model" | "precache_model2" => Some(Self::PrecacheModel),
+            "precache_sound" | "precache_sound2" => Some(Self::PrecacheSound),
+            _ => None,
+        }
+    }
 }
 
 /// The type of a key, the field's (EDICT-8.2 converts the value by it).
@@ -170,6 +204,41 @@ impl Quaked {
             .collect();
         (!under.is_empty()).then(|| under.join("; "))
     }
+
+    /// The values the comment numbers for the key `name`: the lines `n) what` straight under
+    /// the first line that quotes the name, as id's comments write them under `"sounds"` or
+    /// `Set "sounds" to one of the following:`, up to the first line that is not one.
+    fn key_choices(&self, name: &str) -> Vec<Choice> {
+        let quoted = format!("\"{name}\"");
+        for (at, line) in self.doc.iter().enumerate() {
+            if !line.contains(quoted.as_str()) {
+                continue;
+            }
+            let choices: Vec<Choice> = self
+                .doc
+                .iter()
+                .skip(at.saturating_add(1))
+                .map_while(|line| Choice::of_line(line))
+                .collect();
+            if !choices.is_empty() {
+                return choices;
+            }
+        }
+        Vec::new()
+    }
+}
+
+impl Choice {
+    /// The choice a comment's line `n) what` gives: a whole number, `)`, and a name.
+    fn of_line(line: &str) -> Option<Self> {
+        let (value, name) = line.trim().split_once(')')?;
+        let value = value.trim();
+        let name = name.trim();
+        (value.parse::<i32>().is_ok() && !name.is_empty()).then(|| Self {
+            value: value.to_owned(),
+            name: name.to_owned(),
+        })
+    }
 }
 
 impl EntityClass {
@@ -225,22 +294,7 @@ impl Key {
                 continue;
             };
             let code = body.generated();
-            let field = |name: Option<Name>| -> Option<&str> {
-                let Name::Made(made) = name? else {
-                    return None;
-                };
-                let statement = code.get(usize::try_from(made).ok()?)?;
-                if !is_load(statement.op) {
-                    return None;
-                }
-                let Some(Name::Def(field, 0)) = statement.b else {
-                    return None;
-                };
-                index
-                    .def(field)
-                    .filter(|def| def.kind == DefKind::Field)
-                    .map(|def| def.name.as_str())
-            };
+            let field = |name: Option<Name>| loaded_field(index, code, name);
             for call in Call::all(code) {
                 let named = |name: Option<Name>| match name {
                     Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
@@ -268,6 +322,96 @@ impl Key {
         }
         keys.into_iter().collect()
     }
+}
+
+impl Key {
+    /// The keys whose value names a file, read from the code of the module `input` names in
+    /// `db` (MAP-8.11): a field passed to `changelevel`, `precache_model` or `precache_sound`
+    /// (or their `2` forms), as `precache_sound (self.noise1)` is, or stored in a global that
+    /// is passed to one, as id's `changelevel_touch` stores `nextmap = self.map` for
+    /// `changelevel (nextmap)`. Sorted by key, each with the first use by its order.
+    pub fn files(db: &mut Db, input: &ModuleInput) -> Vec<(String, FileUse)> {
+        let analysis = db.analyze_module(input);
+        let index = &analysis.index;
+        let mut keys: BTreeMap<String, FileUse> = BTreeMap::new();
+        let mut globals: HashMap<DefId, FileUse> = HashMap::new();
+        let add = |keys: &mut BTreeMap<String, FileUse>, key: &str, used: FileUse| {
+            let held = keys.entry(key.to_owned()).or_insert(used);
+            *held = (*held).min(used);
+        };
+        let bodies: Vec<&[BodyStatement]> = index
+            .definitions()
+            .filter(|(_, def)| def.kind == DefKind::Function)
+            .filter_map(|(id, _)| index.body(id))
+            .map(|body| body.generated())
+            .collect();
+        for code in &bodies {
+            for call in Call::all(code) {
+                let callee = match call.callee {
+                    Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
+                    _ => None,
+                };
+                let Some(used) = callee.and_then(FileUse::of_builtin) else {
+                    continue;
+                };
+                let argument = call.argument(0);
+                if let Some(key) = loaded_field(index, code, argument) {
+                    add(&mut keys, key, used);
+                } else if let Some(Name::Def(global, 0)) = argument
+                    && index
+                        .def(global)
+                        .is_some_and(|def| def.kind == DefKind::Global)
+                {
+                    let held = globals.entry(global).or_insert(used);
+                    *held = (*held).min(used);
+                }
+            }
+        }
+        // The global is given the field's value by a store of its load, or, as FTEQCC writes
+        // `nextmap = self.map`, by the load itself made straight in it.
+        for code in &bodies {
+            for (at, statement) in code.iter().enumerate() {
+                let (global, made) = match (statement.b, statement.c) {
+                    (Some(Name::Def(global, 0)), _) if is_store(statement.op) => {
+                        (global, statement.a)
+                    }
+                    (_, Some(Name::Def(global, 0))) => {
+                        (global, u32::try_from(at).ok().map(Name::Made))
+                    }
+                    _ => continue,
+                };
+                if let Some(&used) = globals.get(&global)
+                    && let Some(key) = loaded_field(index, code, made)
+                {
+                    add(&mut keys, key, used);
+                }
+            }
+        }
+        keys.into_iter().collect()
+    }
+}
+
+/// The field whose load from an entity made the value `name` in `code`, as `self.target` is
+/// made; `None` for a value made any other way.
+fn loaded_field<'a>(
+    index: &'a ModuleIndex,
+    code: &[BodyStatement],
+    name: Option<Name>,
+) -> Option<&'a str> {
+    let Name::Made(made) = name? else {
+        return None;
+    };
+    let statement = code.get(usize::try_from(made).ok()?)?;
+    if !is_load(statement.op) {
+        return None;
+    }
+    let Some(Name::Def(field, 0)) = statement.b else {
+        return None;
+    };
+    index
+        .def(field)
+        .filter(|def| def.kind == DefKind::Field)
+        .map(|def| def.name.as_str())
 }
 
 /// The builtin that finds an entity by a field's value, `find (start, field, match)`.
@@ -466,6 +610,7 @@ impl Classes<'_> {
             .map(|(name, ty)| Key {
                 default: defaults.get(&name).cloned(),
                 comment: comment.key_comment(&name),
+                choices: comment.key_choices(&name),
                 name,
                 ty,
             })

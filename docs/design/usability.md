@@ -28,9 +28,21 @@ Typing is still allowed where a value outside the set is legitimate, but the set
   nightmare, Not in deathmatch), not the number 256, 512, 1024 or 2048 typed into
   `spawnflags`.
 - The grid size, the pane layout and the entity filter are pickers.
+- A key the class's `/*QUAKED*/` comment numbers (`"sounds"`, then `1) stone`) offers those
+  values, each with its name, and shows the name of the one set beside the field.
+- A key the code passes to `changelevel`, `precache_model` or `precache_sound` (MAP-8.11)
+  offers the project's and the game's levels, models or sounds.
+- The console offers the engine's commands and settings, and after `map` or `changelevel` the
+  game's levels.
+- A watch offers what may be read where the game stopped: the locals, parameters and globals
+  visible on that line, and the fields of `self`. Any other expression is still typed.
+- While the game is paused, an entity field offers the edicts in use and a function field the
+  project's functions.
+- The settings file completes its tables, keys and values from the settings' schema, as Zed
+  completes `settings.json`.
 
-Where the set is open (a new name, a commit message, a QuakeC expression to watch, a model id
-for a local Ollama), the control is a plain text field with a hint saying what to type.
+Where the set is open (a new name, a commit message, a model id for a local Ollama), the
+control is a plain text field with a hint saying what to type.
 
 ### 2. Show a name with what it names
 
@@ -40,6 +52,9 @@ A bare name makes the modder remember what it refers to. Show the thing beside t
 - An offered key shows its type, the class's default and what the class's `/*QUAKED*/`
   comment says of it: `speed   float, 120 by default: how fast it walks`.
 - An offered class says whether it is a point or a brush entity.
+- An offered console name says whether it is a command or a setting, and a setting its
+  default: `sv_gravity   setting, 800 by default`. A watch shows its type, a function its file,
+  a file whether it is in the project or the game, and a setting what it does.
 - The camera position fields say which axis each is: `X -320`, `Y 0`, `Z 88`.
 - A screen reader hears the same thing: an offer is named `gate, func_door`.
 
@@ -50,8 +65,8 @@ A bare name makes the modder remember what it refers to. Show the thing beside t
   running game's Properties or the mark on a target no entity has, says what it means the same
   way (`Icon::sign`).
 - Fire says, on hover, that it changes nothing in the map or a running game.
-- A value that will not work is marked before it is used: a target no entity has, a texture
-  no WAD holds, a key the class does not read.
+- A value that will not work is marked before it is used: a target no entity has, a file no
+  folder has, a texture no WAD holds, a key the class does not read.
 
 ### 4. Label in the modder's words, not the code's
 

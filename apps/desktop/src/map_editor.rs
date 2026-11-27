@@ -9,7 +9,7 @@
 //! `docs/map-editor.md` maps TrenchBroom's bindings to these.
 
 use qs_render::Degrees;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Role, Sense, Stroke, Ui, WidgetInfo};
 use eframe::egui_wgpu::RenderState;
@@ -27,6 +27,7 @@ use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
 };
+use qs_map_edit::{FileOrigin, GameFile, GameFileKind};
 use qs_render::Camera;
 use qs_workbench::map_balance::MapBalance;
 use qs_workbench::map_budget::MapBudget;
@@ -40,6 +41,7 @@ use crate::keymap;
 use crate::map_balance::BalancePane;
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_budget::BudgetView;
+use crate::map_fields::Searched;
 use crate::map_fields::{Field, Typed, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
 use crate::map_issues::IssueBrowser;
@@ -59,7 +61,7 @@ use crate::map_shading::{ShadedView, TRIGGER, TexturedFrom};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::pick::{Answer, Pick};
 use crate::strings::{self, Text, also_selected, panes_text, select_all_of};
-use crate::suggest::{Offer, Suggest};
+use crate::suggest::{Offer, Offers, Suggest};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
 
@@ -325,6 +327,9 @@ pub struct MapEditor {
     names: Vec<String>,
     /// The classnames as `classname` offers them, each a point or a brush entity (UI-24).
     class_offers: Vec<Offer>,
+    /// The project's and the game's files of each kind, which a key naming one offers, each
+    /// with where it is (MAP-8.11).
+    files: (BTreeMap<GameFileKind, Vec<Offer>>, Searched),
     models: HashMap<String, Vec<Line>>,
     /// The class models' files, which the textured and lit views draw (P7-08).
     model_files: HashMap<String, std::sync::Arc<[u8]>>,
@@ -624,6 +629,24 @@ impl MapEditor {
     /// Takes the map's layers (P5-14).
     pub fn set_layers(&mut self, layers: Vec<LayerInfo>) {
         self.layers = layers;
+    }
+
+    /// Takes the project's and the game's files a key naming one offers (MAP-8.11), and
+    /// which folders were searched for them.
+    pub(crate) fn set_files(&mut self, files: Vec<GameFile>, searched: Searched) {
+        let mut by_kind: BTreeMap<GameFileKind, Vec<Offer>> = BTreeMap::new();
+        for file in files {
+            by_kind.entry(file.kind).or_default().push(Offer {
+                name: file.name,
+                detail: match file.origin {
+                    FileOrigin::Project => Text::MapFileInProject,
+                    FileOrigin::Game => Text::MapFileInGame,
+                }
+                .get()
+                .to_owned(),
+            });
+        }
+        self.files = (by_kind, searched);
     }
 
     /// Takes the keys the code fires entities by (MAP-8.8).
@@ -1908,15 +1931,30 @@ impl MapEditor {
                         .typing
                         .entry(key.clone())
                         .or_insert_with(|| value.clone());
-                    let ty = keys
-                        .keys
-                        .iter()
-                        .find(|k| k.name == *key)
-                        .map(|k| k.ty.as_str());
+                    let info = keys.keys.iter().find(|k| k.name == *key);
+                    let ty = info.map(|k| k.ty.as_str());
+                    let numbered: Vec<Offer> = info
+                        .into_iter()
+                        .flat_map(|k| &k.choices)
+                        .map(|choice| Offer {
+                            name: choice.value.clone(),
+                            detail: choice.name.clone(),
+                        })
+                        .collect();
+                    let files = info.and_then(|k| k.file).map(|kind| {
+                        (
+                            self.files.0.get(&kind).map_or_default(Vec::as_slice),
+                            self.files.1,
+                        )
+                    });
                     let field = if self.targeting.contains(key) {
                         Field::Target(&targets)
                     } else if key == CLASSNAME {
                         Field::Class(&self.class_offers)
+                    } else if !numbered.is_empty() {
+                        Field::Numbered(&numbered)
+                    } else if let Some((files, searched)) = files {
+                        Field::File(files, searched)
                     } else {
                         Field::Typed(Typed::of(key, ty, self.scene.values.get(key)))
                     };
@@ -1972,7 +2010,7 @@ impl MapEditor {
         ui.horizontal(|ui| {
             let field = Suggest {
                 name: Text::MapKey.get(),
-                offers: &unset,
+                offers: Offers::Given(&unset),
                 width: NEW_PAIR_WIDTH,
             };
             let picked = field.show(ui, theme, &mut self.adding.0);
@@ -1987,7 +2025,7 @@ impl MapEditor {
             if self.targeting.contains(&self.adding.0) {
                 let field = Suggest {
                     name: Text::MapValue.get(),
-                    offers: &targets,
+                    offers: Offers::Given(&targets),
                     width: NEW_PAIR_WIDTH,
                 };
                 field.show(ui, theme, &mut self.adding.1);

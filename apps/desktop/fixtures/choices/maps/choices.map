@@ -1,0 +1,23 @@
+// The key editor's choices snapshot fixture (L-83): a trap whose sounds are numbered.
+{
+"classname" "worldspawn"
+{
+( -256 -127 -16 ) ( -256 -128 -16 ) ( -255 -128 -16 ) floor 0 0 0 1 1
+( -255 -128 0 ) ( -256 -128 0 ) ( -256 -127 0 ) floor 0 0 0 1 1
+( -256 -128 -15 ) ( -256 -128 -16 ) ( -256 -127 -16 ) floor 0 0 0 1 1
+( 256 -127 -16 ) ( 256 -128 -16 ) ( 256 -128 -15 ) floor 0 0 0 1 1
+( -255 -128 -16 ) ( -256 -128 -16 ) ( -256 -128 -15 ) floor 0 0 0 1 1
+( -256 128 -15 ) ( -256 128 -16 ) ( -255 128 -16 ) floor 0 0 0 1 1
+}
+}
+{
+"classname" "trap_buzzer"
+"origin" "0 0 24"
+"sounds" "2"
+"noise" "trap/none.wav"
+}
+{
+"classname" "info_player_start"
+"origin" "-192 0 24"
+"angle" "0"
+}

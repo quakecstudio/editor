@@ -4,16 +4,22 @@
 //! classname with a filter, and the selected edict's fields, editable while the game is paused.
 //! What a click asks for is returned to the shell, which runs it through its command.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use eframe::egui::{self, RichText, Ui};
 use qs_workbench::entities::Entities;
+use qs_workbench::tools::FunctionFound;
 use qs_workbench::{PlayState, Preview};
 
 use crate::icons::{self, Icon, Toggled};
 use crate::strings::Text;
+use crate::suggest::{Offer, Offers, Suggest, Taken};
 use crate::theme::{Theme, Token};
 use qs_workbench::ids::Edict;
+
+/// The width of an entity or function field's box, in points.
+const OFFER_WIDTH: f32 = 180.0;
 
 /// What a click in the outliner or the Properties panel asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,12 +62,37 @@ struct Edit {
     from: String,
 }
 
-/// The Properties panel's own state: the text of each field being edited.
+/// The text of each field being edited, by field.
+#[derive(Debug, Default)]
+struct Edits(BTreeMap<String, Edit>);
+
+impl Edits {
+    /// The text of `field`'s box, the game's value `shown` until something is typed in it,
+    /// and again once the game's value changes under it, as a step or a set field changes
+    /// it.
+    fn text(&mut self, field: &str, shown: &str) -> &mut String {
+        let fresh = || Edit {
+            text: shown.to_owned(),
+            from: shown.to_owned(),
+        };
+        let edit = self.0.entry(field.to_owned()).or_insert_with(fresh);
+        if edit.from != shown {
+            *edit = fresh();
+        }
+        &mut edit.text
+    }
+}
+
+/// The Properties panel's own state: the text of each field being edited, and the functions a
+/// function field offers.
 #[derive(Debug, Default)]
 pub(crate) struct Properties {
-    edits: BTreeMap<String, Edit>,
+    edits: Edits,
     /// The edict the edits are for; another selection drops them.
     edict: Option<Edict>,
+    /// The functions of the project's server QuakeC, each with its file, read once a pause
+    /// (UI-24); `None` until then.
+    functions: Option<Vec<Offer>>,
 }
 
 impl Properties {
@@ -71,24 +102,38 @@ impl Properties {
     /// is drawn, so a pause the panel did not see ends the texts too.
     pub(crate) fn follow(&mut self, edict: Option<Edict>, game: PlayState) {
         if self.edict != edict || game != PlayState::Paused {
-            self.edits.clear();
+            self.edits.0.clear();
+        }
+        if game != PlayState::Paused {
+            self.functions = None;
         }
         self.edict = edict;
+    }
+
+    /// Whether the functions a function field offers are to be read: the game is paused and
+    /// they were not read in this pause, so a reload's are offered at the next.
+    pub(crate) const fn functions_unread(&self, game: PlayState) -> bool {
+        matches!(game, PlayState::Paused) && self.functions.is_none()
+    }
+
+    /// Keeps `functions`, which a function field offers until the game runs again.
+    pub(crate) fn set_functions(&mut self, functions: Vec<FunctionFound>) {
+        let offers = functions
+            .into_iter()
+            .map(|function| Offer {
+                name: function.name,
+                detail: function.file,
+            })
+            .collect();
+        self.functions = Some(offers);
     }
 
     /// The text of `field`'s box, the game's value `shown` until something is typed in it,
     /// and again once the game's value changes under it, as a step or a set field changes
     /// it.
+    #[cfg(test)]
     fn text(&mut self, field: &str, shown: &str) -> &mut String {
-        let fresh = || Edit {
-            text: shown.to_owned(),
-            from: shown.to_owned(),
-        };
-        let edit = self.edits.entry(field.to_owned()).or_insert_with(fresh);
-        if edit.from != shown {
-            *edit = fresh();
-        }
-        &mut edit.text
+        self.edits.text(field, shown)
     }
 }
 
@@ -198,6 +243,21 @@ impl<'a> Shown<'a> {
             pending,
         }
     }
+
+    /// The edicts in use as an entity field offers them while paused (UI-24), written as the
+    /// panel writes an entity: `monster_army #7`.
+    fn edicts(&self) -> Vec<Offer> {
+        self.entities
+            .groups("")
+            .into_iter()
+            .flat_map(|group| {
+                group.edicts.into_iter().map(move |edict| Offer {
+                    name: format!("{} #{edict}", group.classname),
+                    detail: String::new(),
+                })
+            })
+            .collect()
+    }
 }
 
 /// The selected edict's fields: read only while the game runs, editable while it is paused,
@@ -241,6 +301,11 @@ pub(crate) fn properties(
             Icon::Lock.sign(ui, muted, Text::ReadOnlyWhilePlaying);
         }
     });
+    // Made only while a field is edited (UI-24): the edicts in use, and the server's
+    // functions, read once a pause.
+    let edicts = |_: &str| Cow::Owned(shown.edicts());
+    let functions = state.functions.as_deref().unwrap_or_default();
+    let functions = |_: &str| Cow::Borrowed(functions);
     egui::ScrollArea::vertical()
         .id_salt(Text::Properties.get())
         .show(ui, |ui| {
@@ -253,19 +318,44 @@ pub(crate) fn properties(
                         let shown = pending(selected.edict, &field.name)
                             .unwrap_or_else(|| entities.show(&field.value));
                         if paused {
-                            let text = state.text(&field.name, &shown);
-                            let response = ui.add(
-                                egui::TextEdit::singleline(text)
-                                    .code_editor()
-                                    .desired_width(f32::INFINITY),
-                            );
-                            let response = response.accessible_name(&field.name);
-                            let entered = response.lost_focus()
-                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                            if entered && *text != shown {
+                            let text = state.edits.text(&field.name, &shown);
+                            let offers: Option<Offers<'_>> = if field.is_entity() {
+                                Some(Offers::Made(&edicts))
+                            } else if field.is_function() {
+                                Some(Offers::Made(&functions))
+                            } else {
+                                None
+                            };
+                            let set = match offers {
+                                Some(offers) => {
+                                    let field = Suggest {
+                                        name: &field.name,
+                                        offers,
+                                        width: OFFER_WIDTH,
+                                    };
+                                    let entered = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                    match field.take(ui, theme, text).1 {
+                                        Some(Taken::Offer(value)) => Some(value),
+                                        Some(Taken::Typed(value)) if entered => Some(value),
+                                        Some(Taken::Typed(_)) | None => None,
+                                    }
+                                }
+                                None => {
+                                    let response = ui.add(
+                                        egui::TextEdit::singleline(text)
+                                            .code_editor()
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                    let response = response.accessible_name(&field.name);
+                                    let entered = response.lost_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                    entered.then(|| text.clone())
+                                }
+                            };
+                            if let Some(value) = set.filter(|value| *value != shown) {
                                 action = Some(EntityAction::SetField {
                                     field: field.name.clone(),
-                                    value: text.clone(),
+                                    value,
                                 });
                             }
                         } else if field.is_function() && !shown.is_empty() {

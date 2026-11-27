@@ -52,6 +52,8 @@ qs-paths = { workspace = true }
 qs-render = { workspace = true }
 # The user's settings file, which keeps the chosen game folder (P3-44).
 qs-settings = { workspace = true }
+# The console's commands and settings, which its box offers (CON-4.3).
+qs-sim = { workspace = true }
 qs-templates = { workspace = true }
 qs-update = { workspace = true }
 qs-vfs = { workspace = true }

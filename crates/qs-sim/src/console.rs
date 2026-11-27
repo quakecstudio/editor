@@ -107,6 +107,57 @@ fn command_names() -> Vec<String> {
     names
 }
 
+/// A name the console takes (CON-4.3): a command, or a setting with the default it is
+/// declared with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConsoleName {
+    /// A command, the server's or the client's.
+    Command(String),
+    /// A setting.
+    Setting {
+        /// Its name.
+        name: &'static str,
+        /// The value id declares it with.
+        default: &'static str,
+    },
+}
+
+impl ConsoleName {
+    /// The commands whose word after them is a level's name (`Host_Map_f`,
+    /// `Host_Changelevel_f`).
+    pub const LEVEL_COMMANDS: [&'static str; 2] = ["map", "changelevel"];
+
+    /// Every command in name order, then every setting in name order: the order Tab
+    /// completes in (CON-4.3).
+    #[must_use]
+    pub fn all() -> Vec<Self> {
+        let mut settings: Vec<(&'static str, &'static str)> = SERVER_SETTINGS
+            .iter()
+            .chain(&CLIENT_SETTINGS)
+            .copied()
+            .collect();
+        settings.sort_unstable();
+        command_names()
+            .into_iter()
+            .map(Self::Command)
+            .chain(
+                settings
+                    .into_iter()
+                    .map(|(name, default)| Self::Setting { name, default }),
+            )
+            .collect()
+    }
+
+    /// The name typed.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Command(name) => name,
+            Self::Setting { name, default: _ } => name,
+        }
+    }
+}
+
 /// The client's commands of `keys.c` and `cl_input.c` that take words (INPUT-1.2, INPUT-2.1).
 const KEY_COMMANDS: [&str; 4] = ["bind", "unbind", "unbindall", "impulse"];
 
@@ -231,19 +282,10 @@ impl World {
         if partial.is_empty() {
             return None;
         }
-        let mut settings: Vec<&str> = SERVER_SETTINGS
-            .iter()
-            .chain(&CLIENT_SETTINGS)
-            .map(|(name, _)| *name)
-            .collect();
-        settings.sort_unstable();
-        let commands = command_names();
-        commands
-            .iter()
-            .map(String::as_str)
-            .chain(settings)
-            .find(|name| name.starts_with(partial))
-            .map(str::to_owned)
+        ConsoleName::all()
+            .into_iter()
+            .find(|name| name.name().starts_with(partial))
+            .map(|name| name.name().to_owned())
     }
 
     /// The lines the console printed since the last call, each without its line feed; text

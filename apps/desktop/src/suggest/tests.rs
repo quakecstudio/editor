@@ -10,7 +10,7 @@ use eframe::egui::{self, Key, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
-use super::{Offer, Suggest};
+use super::{Offer, Offers, Suggest};
 use crate::theme::{Mode, Theme};
 
 /// The offers `gate`, `Gate2` and `light1`, each naming its class.
@@ -31,13 +31,7 @@ fn offers() -> Vec<Offer> {
 /// The names `typed` matches among [`offers`].
 fn matching(typed: &str) -> Vec<String> {
     let offers = offers();
-    let field = Suggest {
-        name: "target",
-        offers: &offers,
-        width: 0.0,
-    };
-    field
-        .matching(typed)
+    Offer::matching(&offers, typed)
         .into_iter()
         .map(|offer| offer.name.clone())
         .collect()
@@ -71,7 +65,7 @@ fn drawn_over(offers: Vec<Offer>) -> Harness<'static, Drawn> {
             move |ui, drawn: &mut Drawn| {
                 let field = Suggest {
                     name: "target",
-                    offers: &offers,
+                    offers: Offers::Given(&offers),
                     width: 120.0,
                 };
                 if let Some(done) = field.show(ui, &theme, &mut drawn.typed) {

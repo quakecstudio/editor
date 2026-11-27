@@ -24,6 +24,8 @@ fn corner_project() -> TestProject {
         ty: "string".to_owned(),
         default: None,
         comment: None,
+        choices: Vec::new(),
+        file: None,
     };
     let flag = |value: u32, name: &str| FlagInfo {
         value,

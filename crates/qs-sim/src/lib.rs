@@ -35,6 +35,7 @@ const HALF: f32 = 0.5;
 
 pub use builtins::{ModelFiles, SimBuiltins};
 pub use client::UserCmd;
+pub use console::ConsoleName;
 pub use host_commands::atoi;
 pub use messages::{
     ClientMessages, DEFAULT_VIEWHEIGHT, GameKind, Message, NET_FAT_PVS_DISTANCE, NET_GAME_COOP,

@@ -4,16 +4,17 @@
 //! its spawn functions (`qc_entities::entities`, P5-03), and written as an FGD file for other map
 //! editors when asked.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use qc_entities::{EntityClass, Fgd, Found, Key, KeyType, Shape};
+use qc_entities::{EntityClass, Fgd, FileUse, Found, Key, KeyType, Shape};
 use qc_project::ModuleKind;
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{HasWorkbench, Workbench, WorkbenchError};
-use qs_map_edit::{ClassInfo, FlagInfo, KeyInfo};
+use qs_map_edit::{ClassInfo, FlagInfo, GameFileKind, KeyChoice, KeyInfo};
 use qs_sim::spawn::{
     EDICT_SPAWNFLAG_NOT_DEATHMATCH, EDICT_SPAWNFLAG_NOT_EASY, EDICT_SPAWNFLAG_NOT_HARD,
     EDICT_SPAWNFLAG_NOT_MEDIUM,
@@ -42,8 +43,9 @@ pub struct EntitiesFound {
     pub targeting: Vec<String>,
 }
 
-/// `class` as the map editor and `project.entities` give it.
-pub(crate) fn class_info(class: &EntityClass) -> ClassInfo {
+/// `class` as the map editor and `project.entities` give it, `files` the kind of file each key
+/// that names one names (MAP-8.11).
+pub(crate) fn class_info(class: &EntityClass, files: &BTreeMap<String, GameFileKind>) -> ClassInfo {
     ClassInfo {
         name: class.name.clone(),
         found: match class.found {
@@ -76,6 +78,15 @@ pub(crate) fn class_info(class: &EntityClass) -> ClassInfo {
                 .to_owned(),
                 default: key.default.clone(),
                 comment: key.comment.clone(),
+                choices: key
+                    .choices
+                    .iter()
+                    .map(|choice| KeyChoice {
+                        value: choice.value.clone(),
+                        name: choice.name.clone(),
+                    })
+                    .collect(),
+                file: files.get(&key.name).copied(),
             })
             .collect(),
         spawnflags: spawnflags(class),
@@ -144,6 +155,26 @@ impl<L: crate::Loader> Workbench<L> {
         Ok(classes)
     }
 
+    /// The keys whose value names a file in the project's server QuakeC, with the kind of
+    /// file each names (MAP-8.11): the first module's where two differ.
+    pub fn file_keys(&mut self) -> BTreeMap<String, GameFileKind> {
+        let mut keys = BTreeMap::new();
+        for module in self.host.project_modules() {
+            if module.kind != ModuleKind::Ssqc {
+                continue;
+            }
+            for (key, used) in Key::files(module.db, module.input) {
+                let kind = match used {
+                    FileUse::Changelevel => GameFileKind::Level,
+                    FileUse::PrecacheModel => GameFileKind::Model,
+                    FileUse::PrecacheSound => GameFileKind::Sound,
+                };
+                keys.entry(key).or_insert(kind);
+            }
+        }
+        keys
+    }
+
     /// The keys the project's server QuakeC fires entities by, sorted (MAP-8.8).
     pub fn targeting_keys(&mut self) -> Vec<String> {
         let mut keys = std::collections::BTreeSet::new();
@@ -184,8 +215,12 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectEntities {
             })?;
         }
         let targeting = context.workbench().targeting_keys();
+        let files = context.workbench().file_keys();
         Ok(Outcome::outside_history(EntitiesFound {
-            classes: classes.iter().map(class_info).collect(),
+            classes: classes
+                .iter()
+                .map(|class| class_info(class, &files))
+                .collect(),
             fgd: params.fgd,
             targeting,
         }))

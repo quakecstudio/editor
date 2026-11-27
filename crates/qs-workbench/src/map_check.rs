@@ -87,10 +87,8 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
 
     fn entity_class(&mut self, classname: &str) -> Option<ClassInfo> {
         let classes = self.entity_classes().ok()?;
-        classes
-            .iter()
-            .find(|class| class.name == classname)
-            .map(class_info)
+        let class = classes.iter().find(|class| class.name == classname)?;
+        Some(class_info(class, &self.file_keys()))
     }
 
     fn targeting_keys(&mut self) -> Vec<String> {
