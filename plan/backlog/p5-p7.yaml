@@ -3439,3 +3439,28 @@ groups:
     - '`every_location_is_inside_its_file` passes 20,000 cases on Linux with the CI profile, recorded in the PR'
     verify:
     - 'cargo nextest run -p qc-sema; the 20,000-case run on Linux recorded in the PR'
+  - key: L-82
+    title: Keep the project's own tooling and its documentation accurate
+    labels:
+    - repo
+    - area:process
+    - type:chore
+    size: S
+    reqs:
+    - QA-1
+    - CONV-5
+    depends: []
+    summary: |
+      Justin, 2026-11-27: "we have so much tooling we built to manage this project, we need to keep it up to date. open a pr to ensure all of our various build tooling is accurate". An audit ran every generator and checker in its check mode (`commands`, `keymap`, `engines`, `layers`, `conventions`, `licenses`, `attribution`, `adr`, `contrast`, `notices`, `corpus verify`, `refresh-specs.sh --verify`, the plan checks, `status.py --readme`, actionlint, zizmor, `gh actions-lock --verify`): all current. What had drifted: `docs/compatibility.md` and `corpus/compatibility.toml` linked closed issues #661 and #186 as tracking open gaps; the `work-issue` skill told agents to record equivalent mutants in `ratchets.toml`, removed on 2026-11-16, and to run cargo-mutants without nextest; CLAUDE.md's command list left out fourteen xtask commands and the oracle subcommands CI runs; `docs/ci.md` named five scheduled and release jobs nowhere; and the pinned tools were behind: `taiki-e/install-action` v2.90.5 (v2.90.6), cargo-nextest 0.9.148 (0.9.152) and cargo-deny 0.20.2 (0.22.0), whose 0.22 changed `advisories.unmaintained` to the workspace's own crates.
+    deliverable:
+    - 'corpus/compatibility.toml and docs/compatibility.md: no closed issue linked as tracking a gap; the list regenerated with `cargo xtask compatibility`'
+    - '.claude/skills/work-issue/SKILL.md: the diff mutants step runs with nextest and records an equivalent survivor in the PR body'
+    - 'CLAUDE.md: every xtask command and the oracle subcommands CI runs, each with its real usage'
+    - 'docs/ci.md: every job of every workflow named, and the tool versions it states those the workflows pin'
+    - '.github/workflows and actions.lock: taiki-e/install-action v2.90.6, cargo-nextest 0.9.152, cargo-deny 0.22.0, each at least 7 days old; deny.toml keeps `unmaintained = "all"`'
+    acceptance:
+    - 'Every generator''s check mode, the plan checks, actionlint, zizmor and `gh actions-lock --verify` pass, recorded in the PR'
+    - 'cargo-deny 0.22.0 passes with the same warnings as 0.20.2, and the chrono advisory ignore still matches, recorded in the PR'
+    - 'Every `cargo xtask` command in CLAUDE.md is one `cargo xtask --help` lists, and every command it lists is in CLAUDE.md, checked in the PR'
+    verify:
+    - 'cargo xtask ci; the checks recorded in the PR'
