@@ -126,6 +126,7 @@ sections:
       - {id: ENG-15, kind: implied, text: "Preview host fidelity: its server simulation matches the engine oracle frame by frame on the corpus; rendering and sound match within stated tolerances"}
       - {id: ENG-16, kind: implied, text: "The preview host reads every asset the game uses: BSP29, BSP2, .lit, MDL, SPR, WAV, the rerelease's MD5 models and QuakeEX.kpf"}
       - {id: ENG-17, kind: implied, text: "The preview host runs the game as fast as the engines players use: frame time, server frame and QuakeC time, and map load no worse than a pinned QuakeSpasm on the same map, route and machine"}
+      - {id: ENG-18, kind: implied, text: "The preview host runs coop and deathmatch with several clients: players on the same machine and bots that play any mod through its own QuakeC"}
 
   - id: AGT
     title: Agent harness
@@ -210,6 +211,7 @@ sections:
       - {id: MAP-36, kind: implied, text: "A compiled map is checked for play: the exit, every key, item and secret reached from the start, and no place the exit can no longer be reached from"}
       - {id: MAP-37, kind: implied, text: "A balance sheet of a map on each skill: monsters and their health, weapons, ammo and the damage it can do, health, armour and secrets, as the game's own code spawns them"}
       - {id: MAP-38, kind: implied, text: "How much of the target engine's limits a map uses (BSP lumps, edicts, precaches), shown while editing, with BSP2 offered when BSP29 is passed"}
+      - {id: MAP-39, kind: implied, text: "A coop or deathmatch map is checked for what would spoil it and played from the editor with bots"}
 
   - id: QA
     title: Quality, testing and release
