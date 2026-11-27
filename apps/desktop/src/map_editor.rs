@@ -28,6 +28,7 @@ use qs_map_edit::{
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
 };
 use qs_render::Camera;
+use qs_workbench::map_balance::MapBalance;
 use qs_workbench::map_filter::{GameMode, Skill};
 use qs_workbench::map_logic::{LogicIssues, MapFired};
 use qs_workbench::map_playable::Playability;
@@ -35,6 +36,7 @@ use qs_workbench::map_playable::Playability;
 use crate::help::{self, Topic};
 use crate::icons::{self, Icon, Toggled};
 use crate::keymap;
+use crate::map_balance::BalancePane;
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, Typed, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
@@ -178,6 +180,9 @@ pub enum MapAction {
     Fire(EntityIndex),
     /// List the issues only running the map shows (L-76).
     CheckLogic,
+    /// Count the map's monsters, ammo, health and armour on each skill, with a tally of the
+    /// entities selected (L-78).
+    CheckBalance(Vec<EntityIndex>),
     /// Apply an issue's quick fix (P6-19).
     Fix(QuickFix),
     /// Search the map's entities and brushes (P6-19).
@@ -408,6 +413,7 @@ pub struct MapEditor {
     issues: IssueBrowser,
     /// The Logic tab: the last trace and the logic issues (L-76).
     logic: LogicPane,
+    balance: BalancePane,
     /// The compile profiles, the last run and the portals (P6-20).
     profiles: ProfileView,
     /// The map edits waiting for review (P6-21).
@@ -450,6 +456,8 @@ pub(crate) enum BottomTab {
     Issues,
     /// Firing entities and the issues only running shows (L-76).
     Logic,
+    /// The map's balance sheets on each skill (L-78).
+    Balance,
 }
 
 impl MapEditor {
@@ -766,6 +774,7 @@ impl MapEditor {
         self.plans.clear();
         self.issues.clear();
         self.logic.clear();
+        self.balance.clear();
     }
 
     /// Takes the trace of `entity` fired in the map at `at`, and shows the Logic tab (L-76).
@@ -779,6 +788,13 @@ impl MapEditor {
     pub fn set_logic_issues(&mut self, found: LogicIssues, at: MapRevision) {
         self.logic.set_issues(found, at);
         self.bottom = BottomTab::Logic;
+    }
+
+    /// Takes the sheets `map.balance` made of the map at `at`, and shows the Balance tab
+    /// (L-78).
+    pub fn set_balance(&mut self, found: MapBalance, at: MapRevision) {
+        self.balance.set(found, at);
+        self.bottom = BottomTab::Balance;
     }
 
     /// Takes what `map.playability` found in the map at `at` (L-77).
@@ -838,10 +854,13 @@ impl MapEditor {
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
         self.issues.follow(document.edits());
         self.logic.follow(document.edits());
+        self.balance.follow(document.edits());
         self.playable.follow(document.edits());
         // The one entity selected, which the Logic tab's Fire fires.
         let one_selected = document.selected().filter(|_| self.also.is_empty());
-        browser_ui.horizontal(|ui| {
+        // Wrapped, so a tab's controls that do not fit go to a second line rather than make
+        // the browser wider than the view above it.
+        browser_ui.horizontal_wrapped(|ui| {
             ui.selectable_value(
                 &mut self.bottom,
                 BottomTab::Textures,
@@ -851,12 +870,14 @@ impl MapEditor {
             ui.selectable_value(&mut self.bottom, BottomTab::Prefabs, Text::MapPrefabs.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Issues, Text::MapIssues.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Logic, Text::MapLogic.get());
+            ui.selectable_value(&mut self.bottom, BottomTab::Balance, Text::MapBalance.get());
             let topic = match self.bottom {
                 BottomTab::Textures => Topic::MapTextures,
                 BottomTab::Entities => Topic::MapEntities,
                 BottomTab::Prefabs => Topic::MapPrefabs,
                 BottomTab::Issues => Topic::MapIssues,
                 BottomTab::Logic => Topic::MapLogic,
+                BottomTab::Balance => Topic::MapBalance,
             };
             help::button(ui, theme, topic);
             ui.separator();
@@ -866,6 +887,14 @@ impl MapEditor {
                 BottomTab::Prefabs => actions.extend(self.prefabs.header(ui, theme)),
                 BottomTab::Issues => actions.extend(self.issues.header(ui, theme)),
                 BottomTab::Logic => actions.extend(self.logic.header(ui, theme, one_selected)),
+                BottomTab::Balance => {
+                    let selection = document
+                        .selected()
+                        .into_iter()
+                        .chain(self.also.iter().copied())
+                        .collect();
+                    actions.extend(self.balance.header(ui, selection));
+                }
             }
         });
         browser_ui.separator();
@@ -899,6 +928,7 @@ impl MapEditor {
                 }
             }
             BottomTab::Logic => actions.extend(self.logic.body(&mut browser_ui, theme)),
+            BottomTab::Balance => actions.extend(self.balance.body(&mut browser_ui, theme)),
         }
         if let Some((path, name, dither)) = self.textures.import_window(ui.ctx(), theme) {
             actions.push(MapAction::ImportTexture(path, name, dither));

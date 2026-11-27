@@ -96,6 +96,23 @@ it too.
   says whether the exit is reached, how many places a player cannot leave and how many things
   are never reached, every pane draws each such place as a box with a dot where a player comes
   into it, and a click on its issue frames it in the view.
+- **Balance on each skill (L-78, MAP-37):** `map.balance` spawns the open map with your mod's
+  QuakeC on each skill, 0 to 3, in single player, coop and deathmatch, and counts what the game
+  holds: the monsters by class with the health their spawn functions give them, counted as the
+  program counts `total_monsters`; the pickups that give a weapon; the ammunition by kind with
+  the damage id's weapons do with it ([`agent-reference/weapons.md`](agent-reference/weapons.md));
+  the health and armour given, each what touching the pickup gives a player; the secrets; and
+  the damage over the monsters' health. Each is counted for the whole map, each layer and group,
+  and the selection. Nothing is read from a classname, so a mod's own monsters and items count
+  as its code makes them; a mod's own ammunition is counted with no damage. The rules are
+  [`spec/balance.md`](spec/balance.md).
+
+  In the window, Count in the Balance tab below the view makes the sheets and shows them a
+  column a skill for the kind of game chosen, counted over the whole map, the entities
+  selected when Count was pressed, or one layer or group. A row's name selects its entities,
+  and a skill's heading shows the map as that skill spawns it with the view's entity filter:
+  every skill in single player, and normal in coop and deathmatch, which is the one the filter
+  offers there.
 - **Groups and layers (P5-14, MAP-26):** a map made in TrenchBroom keeps its groups, linked
   groups and layers as written ([MAP-9](spec/map.md)).
   - An edit inside a linked group is copied into every group linked to it, moved by each

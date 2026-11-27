@@ -28,6 +28,7 @@ use crate::offsets::{FieldOffset, GlobalOffset};
 use crate::protocol::EntAlpha;
 use qc_builtins::math::q_atof;
 use qc_edict::EdictNumber;
+use qc_edict::system::global_by_name;
 use qc_types::{Etype, Slot};
 
 /// `SPAWNFLAG_NOT_EASY` (EDICT-8.4), id's `WinQuake/server.h`.
@@ -464,12 +465,48 @@ fn parse_edict<H: SpawnHost>(
 }
 
 /// One entity of the lump as [`load_from_file`] left it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LoadedEntity {
     /// Its `classname`, empty for none.
     pub classname: Vec<u8>,
     /// The edict its spawn function ran on, `None` for one inhibited or classless.
     pub edict: Option<EdictNumber>,
+    /// What its spawn function added to the game's counters; nothing for one not spawned.
+    pub counted: SpawnCounts,
+}
+
+/// What one spawn function added to the program's counters of the level, the system globals
+/// `total_monsters` and `total_secrets` (EDICT-11.8): each read before the function ran and
+/// after it (BALANCE-1.1). Not id's: the engine never reads them while it spawns.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SpawnCounts {
+    /// The change in `total_monsters`.
+    pub monsters: f32,
+    /// The change in `total_secrets`.
+    pub secrets: f32,
+}
+
+impl SpawnCounts {
+    /// The counters as `host` holds them now, 0 for one it cannot read.
+    fn now<H: SpawnHost>(host: &H) -> Self {
+        let read = |name: &str| {
+            global_by_name(name)
+                .and_then(|var| host.global(GlobalOffset::new(var.slot)))
+                .map_or(0.0, Slot::as_f32)
+        };
+        Self {
+            monsters: read("total_monsters"),
+            secrets: read("total_secrets"),
+        }
+    }
+
+    /// What was added from `before` to `self`.
+    fn since(self, before: Self) -> Self {
+        Self {
+            monsters: self.monsters - before.monsters,
+            secrets: self.secrets - before.secrets,
+        }
+    }
 }
 
 /// `ED_ParseEdict` for a saved game's edict (PHYS-10.5): its keys applied to `edict`, after
@@ -591,9 +628,9 @@ pub fn inhibited(spawnflags: f32, deathmatch: Deathmatch, skill: i32) -> bool {
 /// [`LoadError::Run`] when a spawn function raises a runtime error (DIFF-8.1). Nothing after
 /// the error runs.
 ///
-/// Returns each entity of the lump in order, its classname and the edict its spawn function
-/// ran on; the spawn function may have freed it since, and a later entity reused it, which the
-/// host tells by the edicts in use.
+/// Returns each entity of the lump in order, its classname, the edict its spawn function ran on
+/// and what it added to the level's counters (BALANCE-1.1); the spawn function may have freed
+/// it since, and a later entity reused it, which the host tells by the edicts in use.
 pub fn load_from_file<H: SpawnHost>(
     host: &mut H,
     data: &[u8],
@@ -624,20 +661,27 @@ pub fn load_from_file<H: SpawnHost>(
         match parsed {
             Parsed::Spawn(function) => {
                 let flags = host.spawnflags(edict);
-                let edict = if inhibited(flags, deathmatch, skill) {
+                let (edict, counted) = if inhibited(flags, deathmatch, skill) {
                     host.free(edict);
-                    None
+                    (None, SpawnCounts::default())
                 } else {
+                    // BALANCE-1.1: the counters around the spawn function.
+                    let before = SpawnCounts::now(host);
                     host.spawn(edict, function).map_err(LoadError::Run)?;
-                    Some(edict)
+                    (Some(edict), SpawnCounts::now(host).since(before))
                 };
-                spawned.push(LoadedEntity { classname, edict });
+                spawned.push(LoadedEntity {
+                    classname,
+                    edict,
+                    counted,
+                });
             }
             Parsed::NoSpawn => {
                 host.free(edict);
                 spawned.push(LoadedEntity {
                     classname,
                     edict: None,
+                    counted: SpawnCounts::default(),
                 });
             }
         }

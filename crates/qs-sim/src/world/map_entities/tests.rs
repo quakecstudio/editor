@@ -187,3 +187,44 @@ fn the_load_writes_the_settings_it_used_back() {
     assert_eq!(run.world.setting("skill"), Some(0.0));
     assert_eq!(run.world.setting("deathmatch"), Some(1.0));
 }
+
+// spec BALANCE-1.1: each map entity's spawn function is read for what it added to
+// `total_monsters` and `total_secrets`; an entity not spawned added nothing, and one spawning
+// two monsters added two
+#[test]
+fn each_map_entity_keeps_what_its_spawn_added_to_the_counters() {
+    let source = "void() monster_thing = { total_monsters = total_monsters + 1; };\n\
+        void() monster_pair = { total_monsters = total_monsters + 2; };\n\
+        void() trigger_secret = { total_secrets = total_secrets + 1; };\n\
+        void() info_thing = { self.health = 5; };\n";
+    let entities = [
+        entity("monster_thing", "0 0 0", ""),
+        entity("monster_thing", "8 0 0", "\"spawnflags\" \"512\"\n"),
+        entity("trigger_secret", "16 0 0", ""),
+        entity("monster_pair", "24 0 0", ""),
+        entity("info_thing", "32 0 0", ""),
+        entity("no_function", "40 0 0", ""),
+    ]
+    .concat();
+    let run = running(&ledge(), source, &entities, Vec::new());
+    let counts: Vec<(f32, f32)> = (0..8)
+        .map(|place| {
+            let counts = run.world.map_counts(MapPlace::new(place));
+            (counts.monsters, counts.secrets)
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        [
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 1.0),
+            (2.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+        ],
+        "the world, a monster, one not on medium, a secret, a pair, a thing, no class, past the end"
+    );
+}

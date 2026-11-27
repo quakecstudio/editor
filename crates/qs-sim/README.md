@@ -15,7 +15,8 @@ server runs them. Collision, monster movement, physics and the player all follow
   (RRE-4) are here, with the map editor's list of which edict each map entity became
   (BRIDGE-4.13). FIRE-1 to FIRE-3 of [`fire.md`](../../docs/spec/fire.md): an entity fired by
   its `use` or `touch` and the trace of what the program did about it (`World::fire`), this
-  project's design.
+  project's design. BALANCE-1.1 of [`balance.md`](../../docs/spec/balance.md): what each map
+  entity's spawn function added to `total_monsters` and `total_secrets` (`World::map_counts`).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/world.c`, `sv_move.c`, `sv_phys.c`, `sv_user.c`, `sv_main.c` (`SV_SpawnServer`
   and the message writers) and `host_cmd.c` (the signon commands, `Host_Changelevel_f`, `Host_Savegame_f`, `Host_Loadgame_f`), `cmd.c` (the command buffer, aliases and `Cmd_ForwardToServer`), `cvar.c` (`Cvar_Command`), with parts of

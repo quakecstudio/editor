@@ -1,0 +1,71 @@
+// The Balance tab's snapshot fixture (L-78): monsters and pickups that differ by skill.
+{
+"classname" "worldspawn"
+{
+( -256 -127 -16 ) ( -256 -128 -16 ) ( -255 -128 -16 ) floor 0 0 0 1 1
+( -255 -128 0 ) ( -256 -128 0 ) ( -256 -127 0 ) floor 0 0 0 1 1
+( -256 -128 -15 ) ( -256 -128 -16 ) ( -256 -127 -16 ) floor 0 0 0 1 1
+( 256 -127 -16 ) ( 256 -128 -16 ) ( 256 -128 -15 ) floor 0 0 0 1 1
+( -255 -128 -16 ) ( -256 -128 -16 ) ( -256 -128 -15 ) floor 0 0 0 1 1
+( -256 128 -15 ) ( -256 128 -16 ) ( -255 128 -16 ) floor 0 0 0 1 1
+}
+}
+{
+"classname" "info_player_start"
+"origin" "-192 0 24"
+"angle" "0"
+}
+{
+"classname" "monster_army"
+"origin" "0 64 24"
+}
+{
+"classname" "monster_army"
+"origin" "32 64 24"
+"spawnflags" "256"
+}
+{
+"classname" "monster_army"
+"origin" "64 64 24"
+"spawnflags" "256"
+}
+{
+"classname" "monster_ogre"
+"origin" "128 0 24"
+"spawnflags" "768"
+}
+{
+"classname" "item_shells"
+"origin" "-64 -64 0"
+}
+{
+"classname" "item_shells"
+"origin" "-32 -64 0"
+"spawnflags" "1024"
+}
+{
+"classname" "item_rockets"
+"origin" "0 -64 0"
+}
+{
+"classname" "item_health"
+"origin" "32 -64 0"
+}
+{
+"classname" "item_health"
+"origin" "64 -64 0"
+"spawnflags" "1792"
+}
+{
+"classname" "item_armor1"
+"origin" "96 -64 0"
+"spawnflags" "256"
+}
+{
+"classname" "weapon_supershotgun"
+"origin" "-128 -64 0"
+}
+{
+"classname" "trigger_secret"
+"origin" "160 64 24"
+}

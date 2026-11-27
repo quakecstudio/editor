@@ -244,3 +244,25 @@ Source: [`crates/qs-map-gen`](../../crates/qs-map-gen/README.md), `playable` (L-
 - The findings join `map.issues` until the map changes. `map.generate` checks each level it
   makes the same way, with `generator` moves, and moves on to the next seed when it finds a
   trap.
+
+## Balancing a map on each skill
+
+Source: [`docs/spec/balance.md`](../spec/balance.md) (L-78, MAP-37).
+
+- `map.balance` spawns the open map with the project's server program on each skill, 0 to 3, in
+  single player, coop and deathmatch, and answers a sheet for each: the monsters by class with
+  their count and health, the pickups that give a weapon, the ammunition by field with the
+  damage id's weapons do with it, the health and armour given, the secrets, and the damage over
+  the monsters' health (`ratio`). Each line lists its entities. `start` is what the player has
+  on entering, and the sheet's own `ratio` counts it.
+- Everything is the program's own: a monster is what its spawn function counts in
+  `total_monsters`, with the `health` it sets, so a mod's monsters count with the health its
+  code gives them; a pickup gives what its `touch` gives a player emptied of everything. A mod's
+  own ammunition (an `ammo_` field the engine does not define) is counted in units with no
+  damage. The damage table is the one in [`weapons.md`](weapons.md), "What a unit of ammo can
+  do", and is in the answer as `weapons`.
+- Each sheet also has `rooms`, a tally of each layer and group, and with `selection` (places in
+  the map) a tally of those entities. Balance a map by reading `ratio` and the monster health
+  on easy and on hard: nightmare spawns hard's entities.
+- A map with no `info_player_start` still counts its monsters; `entry` says the player could
+  not enter, and the pickups give nothing.

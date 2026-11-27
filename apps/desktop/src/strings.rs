@@ -873,6 +873,43 @@ pub enum Text {
     MapCheckLogic,
     /// What Check logic does, on hover (L-76).
     MapCheckLogicHint,
+    /// The map browser's tab that counts the map's monsters, ammo, health and armour on each
+    /// skill (L-78).
+    MapBalance,
+    /// The button that counts them (L-78).
+    MapCount,
+    /// What Count does, on hover (L-78).
+    MapCountHint,
+    /// What the Balance tab says before the map is counted (L-78).
+    MapBalanceNone,
+    /// The Balance tab's choice of single player (L-78).
+    MapSingle,
+    /// What a skill's column heading does, on hover (L-78).
+    MapBalanceShowHint,
+    /// What a row's name does, on hover (L-78).
+    MapBalanceRowHint,
+    /// The row of the monsters' count (L-78).
+    MapBalanceMonsters,
+    /// The row of the monsters' health (L-78).
+    MapBalanceMonsterHealth,
+    /// The row of the health given (L-78).
+    MapBalanceHealth,
+    /// The row of the armour given (L-78).
+    MapBalanceArmour,
+    /// The row of the secrets (L-78).
+    MapBalanceSecrets,
+    /// The row of the damage the ammunition can do (L-78).
+    MapBalanceDamage,
+    /// The row of the damage over the monsters' health (L-78).
+    MapBalanceRatio,
+    /// The Balance tab's picker of what is counted (L-78).
+    MapBalanceScope,
+    /// The picker's choice of the whole map (L-78).
+    MapBalanceWholeMap,
+    /// The picker's choice of the entities selected (L-78).
+    MapBalanceSelection,
+    /// A layer with no name in the picker, before its place (L-78).
+    MapBalanceLayer,
     /// What the logic issue list says before the map is checked (L-76).
     MapLogicHint,
     /// The map search's box, for text or a query (P7-08).
@@ -1061,6 +1098,8 @@ pub enum Text {
     HelpMapIssues,
     /// The help of the map editor's Logic tab (L-76).
     HelpMapLogic,
+    /// The help for the map browser's Balance tab (L-78).
+    HelpMapBalance,
     /// Help for the window that finds the game's files.
     HelpGameGuide,
     /// Help for the texture import window.
@@ -1217,7 +1256,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 599] = [
+    pub const ALL: [Self; 618] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1653,6 +1692,24 @@ impl Text {
         Self::MapFireStepHint,
         Self::MapCheckLogic,
         Self::MapCheckLogicHint,
+        Self::MapBalance,
+        Self::MapCount,
+        Self::MapCountHint,
+        Self::MapBalanceNone,
+        Self::MapSingle,
+        Self::MapBalanceShowHint,
+        Self::MapBalanceRowHint,
+        Self::MapBalanceMonsters,
+        Self::MapBalanceMonsterHealth,
+        Self::MapBalanceHealth,
+        Self::MapBalanceArmour,
+        Self::MapBalanceSecrets,
+        Self::MapBalanceDamage,
+        Self::MapBalanceRatio,
+        Self::MapBalanceScope,
+        Self::MapBalanceWholeMap,
+        Self::MapBalanceSelection,
+        Self::MapBalanceLayer,
         Self::MapLogicHint,
         Self::MapSearchQuery,
         Self::MapSearchSyntax,
@@ -1747,6 +1804,7 @@ impl Text {
         Self::HelpMapPrefabs,
         Self::HelpMapIssues,
         Self::HelpMapLogic,
+        Self::HelpMapBalance,
         Self::HelpGameGuide,
         Self::HelpTextureImport,
         Self::PauseHint,
@@ -2325,6 +2383,29 @@ impl Text {
             Self::MapCheckLogicHint => {
                 "Fires every entity that has targets and lists the chains that cannot work"
             }
+            Self::MapBalance => "Balance",
+            Self::MapCount => "Count",
+            Self::MapCountHint => {
+                "Spawns the map with your mod's QuakeC on every skill and counts its monsters, \
+                 ammo, health, armour and secrets"
+            }
+            Self::MapBalanceNone => {
+                "Count to see the map's monsters, ammo, health and armour on each skill"
+            }
+            Self::MapSingle => "Single player",
+            Self::MapBalanceShowHint => "Shows the map as the game spawns it on this skill",
+            Self::MapBalanceRowHint => "Selects these entities",
+            Self::MapBalanceMonsters => "Monsters",
+            Self::MapBalanceMonsterHealth => "Monster health",
+            Self::MapBalanceHealth => "Health",
+            Self::MapBalanceArmour => "Armour",
+            Self::MapBalanceSecrets => "Secrets",
+            Self::MapBalanceDamage => "Ammo damage",
+            Self::MapBalanceRatio => "Damage per monster health",
+            Self::MapBalanceScope => "Counted over",
+            Self::MapBalanceWholeMap => "Whole map",
+            Self::MapBalanceSelection => "Selection",
+            Self::MapBalanceLayer => "Layer",
             Self::MapLogicHint => "Check logic to list what only running the map shows",
             Self::MapSearchQuery => "Search: text or a query",
             Self::MapSearchSyntax => {
@@ -2467,6 +2548,9 @@ impl Text {
             }
             Self::HelpMapPrefabs => {
                 "Brushes and entities kept to use again. Drag one into the view to copy it in; Save as prefab in Properties keeps the selection."
+            }
+            Self::HelpMapBalance => {
+                "Count spawns the map with your mod's QuakeC on each skill and lists, a column a skill, its monsters by class with the health your code gives them, the weapons, the ammo with the damage id's weapons do with it, the health, armour and secrets, and the damage over the monsters' health. A row's name selects its entities; a skill's heading shows the map as that skill spawns it. Counted over chooses the whole map, the entities selected when you pressed Count, or one layer or group."
             }
             Self::HelpMapLogic => {
                 "Fire runs the selected entity's use, or its touch, in the simulation with your mod's QuakeC and lists what happened in order: a click on a step selects its entity. Check logic fires every entity that has targets and lists the chains that cannot work."
@@ -2893,6 +2977,13 @@ pub fn logic_issue_count(issues: usize) -> String {
         1 => "1 logic issue".to_owned(),
         count => format!("{count} logic issues"),
     }
+}
+
+/// Why the Balance tab counts no pickups: the program put no player in the map (L-78,
+/// BALANCE-3.4).
+#[must_use]
+pub fn balance_unentered(error: &str) -> String {
+    format!("No player could enter the map, so pickups are not counted: {error}")
 }
 
 /// An entity a trace names: its place in the map, or its edict for one the game spawned (L-76).

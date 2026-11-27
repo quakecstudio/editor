@@ -2472,6 +2472,13 @@ impl Shell {
         &self.features.map.map_editor
     }
 
+    /// Whether the check that the map can be finished, started by a compile, is still running
+    /// on its own thread (L-77).
+    #[cfg(test)]
+    pub(crate) const fn checking_playability(&self) -> bool {
+        self.features.map.checking_playability()
+    }
+
     /// Puts the map editor's 3D camera at `camera`, as a showcase or a script looks from.
     pub const fn set_map_camera(&mut self, camera: Camera) {
         self.features.map.map_editor.set_camera(camera);

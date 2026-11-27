@@ -14,7 +14,8 @@ Problems panels list, the commands that open a project or a file, `project.open`
   QCT-4 ([`qc-tests.md`](../../docs/spec/qc-tests.md)), a project's tests and `project.test`.
   PRJ-2.11, how a task runs. FIRE-4 and FIRE-5 ([`fire.md`](../../docs/spec/fire.md)),
   `map.fire` and `map.logic_issues`: an entity of the open map fired in `qs-sim` and the
-  issues only running shows.
+  issues only running shows. BALANCE-2 to BALANCE-4 ([`balance.md`](../../docs/spec/balance.md)),
+  `map.balance`: the open map's balance sheets on each skill, read from its spawn in `qs-sim`.
 - **Shipped:** yes.
 
 ## Prior art

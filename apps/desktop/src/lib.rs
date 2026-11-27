@@ -34,6 +34,7 @@ mod help;
 pub mod icons;
 pub mod keymap;
 pub mod launch;
+mod map_balance;
 mod map_browser;
 pub mod map_editor;
 mod map_feature;

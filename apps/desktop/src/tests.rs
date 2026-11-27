@@ -959,6 +959,23 @@ fn the_match_count_reads_as_words() {
     assert_eq!(match_count(12), "12 matches");
 }
 
+/// Runs frames until the check that the map can be finished, which a compile or a leak check
+/// starts on its own thread (L-77), has answered, then until the window settles. The thread
+/// takes a different number of frames on each machine, and the shell asks for a frame while it
+/// runs, so `Harness::run` alone may give up before it answers.
+pub(crate) fn settle_playability(harness: &mut Harness<'static, Option<App>>) {
+    harness.step();
+    while harness
+        .state()
+        .as_ref()
+        .is_some_and(|app| app.shell().checking_playability())
+    {
+        std::thread::yield_now();
+        harness.step();
+    }
+    harness.run();
+}
+
 /// A kittest harness running the app with no file open, after its first frame.
 fn accessible() -> Harness<'static, Option<App>> {
     let mut harness = Harness::builder()
@@ -4152,7 +4169,7 @@ fn a_profile_compiles_from_the_map_view() {
         .to_owned();
     assert_eq!(chosen, "Room", "chosen by a command, shown in the picker");
     harness.get_by_label(Text::MapCompileProfile.get()).click();
-    harness.run();
+    settle_playability(&mut harness);
     let notice = |harness: &Harness<'static, Option<App>>| {
         harness
             .state()
@@ -4283,8 +4300,7 @@ fn a_leak_is_found_and_flown_along() {
         .unwrap();
     harness.run();
     harness.get_by_label(Text::MapCheckLeaks.get()).click();
-    harness.run();
-    harness.run();
+    settle_playability(&mut harness);
     let editor = |harness: &Harness<'static, Option<App>>| {
         let shell = harness.state().as_ref().unwrap().shell();
         shell.workbench().map().unwrap().report().cloned()

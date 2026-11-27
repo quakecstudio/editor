@@ -66,6 +66,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.apply_fix`](#mapapply_fix) | Applies a quick fix `map.issues` gave, as one step with undo. |
 | [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
 | [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
+| [`map.balance`](#mapbalance) | A balance sheet of the open map for each skill, 0 to 3, in single player, coop and deathmatch, read by spawning the map with the project's program: the monsters by class with the health their spawn functions give them, counted as the program counts total_monsters; the pickups that give weapons; the ammunition by kind with the damage id's weapons do with it (none for a mod's own); the health and armour given, each what touching the pickup gives a player; the secrets; and the damage over the monsters' health. Each for the whole map, each layer and group, and the entities in selection when given, each line with its entities. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
 | [`map.brush_clip`](#mapbrush_clip) | Clips a brush of the open map by the plane through three points, keeping the part behind it, in front of it, or both as two brushes. |
 | [`map.brush_create`](#mapbrush_create) | Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture. |
@@ -152,7 +153,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
 | [`map.staged_hunks`](#mapstaged_hunks) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
-| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them. |
+| [`map.summary`](#mapsummary) | A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them as the file has them, and map.balance counts what the game spawns on each skill. |
 | [`map.ungroup`](#mapungroup) | Takes a group's entities and brushes out of it into the layer or group it is in, or the world's, and removes the group. |
 | [`map.unlink_group`](#mapunlink_group) | Unlinks a group from the groups linked to it, which then change on their own (TrenchBroom's Separate Linked Groups). |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
@@ -2069,6 +2070,40 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.balance`
+
+A balance sheet of the open map for each skill, 0 to 3, in single player, coop and deathmatch, read by spawning the map with the project's program: the monsters by class with the health their spawn functions give them, counted as the program counts total_monsters; the pickups that give weapons; the ammunition by kind with the damage id's weapons do with it (none for a mod's own); the health and armour given, each what touching the pickup gives a player; the secrets; and the damage over the monsters' health. Each for the whole map, each layer and group, and the entities in selection when given, each line with its entities.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.balance`.",
+  "properties": {
+    "selection": {
+      "default": [],
+      "description": "The entities selected, by place in the map, whose own tally each sheet gives; none when\nempty.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    }
+  },
+  "title": "BalanceParams",
   "type": "object"
 }
 ```
@@ -7659,7 +7694,7 @@ Parameters:
 
 ## `map.summary`
 
-A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them.
+A map in short, to review it or compare it with others: the box around its brushes, its brush and entity counts, its entities counted by classname (monsters, lights, items, triggers), its textures counted by face, and its world's keys. The open map, or with a path a .map file read from the disk without opening it; with `most_textures`, only that many textures of the count it gives, which keeps it short when many maps are read. map.list_entities lists each entity; this counts them as the file has them, and map.balance counts what the game spawns on each skill.
 
 Parameters:
 

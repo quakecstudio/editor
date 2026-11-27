@@ -358,6 +358,20 @@ fn scripts() -> Vec<Script> {
                 Step::Click("Fire"),
             ],
         },
+        // L-78: Count in the Balance tab lists the map's monsters, ammo, health, armour and
+        // secrets a column a skill.
+        Script {
+            name: "map-balance",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": balance_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": balance_fixture().join("maps/balance.map") }),
+                ),
+                Step::Click("Balance"),
+                Step::Click("Count"),
+            ],
+        },
         Script {
             name: "map-uv",
             steps: vec![
@@ -448,6 +462,11 @@ fn keep_fixture() -> PathBuf {
 /// The project whose button fires a door through its QuakeC (L-76).
 fn logic_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/logic")
+}
+
+/// The project whose map holds monsters and pickups that differ by skill (L-78).
+fn balance_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/balance")
 }
 
 /// The project with two tasks, one that succeeds and one that fails (P4-36).

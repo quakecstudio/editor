@@ -60,6 +60,7 @@ use qs_map_edit::{
 use qs_map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
+use qs_workbench::map_balance::{BalanceParams, MAP_BALANCE, MapBalance};
 use qs_workbench::map_compile::{
     MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
 };
@@ -374,6 +375,7 @@ impl MapFeature {
                 MapAction::CheckIssues => self.check_map_issues(commands),
                 MapAction::Fire(entity) => self.fire_entity(commands, entity),
                 MapAction::CheckLogic => self.check_map_logic(commands),
+                MapAction::CheckBalance(selection) => self.check_map_balance(commands, selection),
                 MapAction::Fix(fix) => {
                     let fixed =
                         commands.attempt::<_, serde_json::Value>(MAP_FIX, &MapFixParams { fix });
@@ -481,6 +483,19 @@ impl MapFeature {
         Ok(serde_json::Value::Null)
     }
 
+    /// Makes the open map's balance sheets on every skill, with a tally of the selection, and
+    /// shows them in the Balance tab (L-78).
+    fn check_map_balance(
+        &mut self,
+        commands: &mut Commands<'_>,
+        selection: Vec<EntityIndex>,
+    ) -> Result<serde_json::Value, ShellError> {
+        let found: MapBalance = commands.attempt(MAP_BALANCE, &BalanceParams { selection })?;
+        let at = commands.session().context().map_edits();
+        self.map_editor.set_balance(found, at);
+        Ok(serde_json::Value::Null)
+    }
+
     /// Checks the open map for leaks and missing textures, and then that it can be finished
     /// (P6-11, L-77).
     fn check_leaks(
@@ -510,6 +525,13 @@ impl MapFeature {
         self.playing = started
             .is_ok()
             .then(|| commands.session().context().map_edits());
+    }
+
+    /// Whether a check [`MapFeature::check_playability`] started has not answered yet, for tests
+    /// that wait on its thread.
+    #[cfg(test)]
+    pub(crate) const fn checking_playability(&self) -> bool {
+        self.playing.is_some()
     }
 
     /// Takes the answer of the check [`MapFeature::check_playability`] started once it is done,
