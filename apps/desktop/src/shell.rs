@@ -46,7 +46,7 @@ use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
 use qs_workbench::terminal::TaskInfo;
-use qs_workbench::tools::PROJECT_FILES;
+use qs_workbench::tools::{FunctionFound, PROJECT_FILES, PROJECT_FUNCTIONS};
 use qs_workbench::{ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE};
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
@@ -1456,6 +1456,13 @@ impl Shell {
         let selected = preview.entities().selected().map(|selected| selected.edict);
         let game = preview.state();
         self.features.map.properties.follow(selected, game);
+        // UI-24: a function field offers the server's functions, read once a pause.
+        if self.features.map.properties.functions_unread(game) {
+            let functions: Option<Vec<FunctionFound>> =
+                self.run(PROJECT_FUNCTIONS, &serde_json::json!({}));
+            let properties = &mut self.features.map.properties;
+            properties.set_functions(functions.unwrap_or_default());
+        }
         self.follow_console_levels(game);
         self.follow_watch_names();
         // P3-35: the background check's results for the latest edit, once it has finished.
@@ -2022,7 +2029,7 @@ impl Shell {
                 if input.levels_unread() =>
             {
                 let params = GameFilesParams {
-                    kind: GameFileKind::Level,
+                    kind: Some(GameFileKind::Level),
                 };
                 let files: Option<Vec<GameFile>> = self.run(MAP_GAME_FILES, &params);
                 let levels = files.unwrap_or_default().into_iter().map(|file| file.name);

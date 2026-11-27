@@ -448,7 +448,7 @@ pub(crate) fn properties_panel(
     } else {
         let first = heading_with_help(ui, theme, Text::Properties, Topic::Properties);
         let pending = |edict, field: &str| preview.pending(edict, field).map(str::to_owned);
-        let shown = entities::Shown::of(preview, &pending, workbench.project_symbols());
+        let shown = entities::Shown::of(preview, &pending);
         entity_action = entities::properties(ui, theme, &shown, properties);
         first
     };

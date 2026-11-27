@@ -41,7 +41,7 @@ const PROJECT: [&str; 8] = [
 #[test]
 fn levels_are_named_as_map_takes_them() {
     let root = folder("levels", &PROJECT);
-    let files = GameFileKind::Level.files(Some(&root), None);
+    let files = GameFile::list(Some(GameFileKind::Level), Some(&root), None);
     assert_eq!(names(&files), ["start"]);
     assert_eq!(
         files.first().map(|file| file.origin),
@@ -54,7 +54,7 @@ fn levels_are_named_as_map_takes_them() {
 #[test]
 fn models_are_named_by_their_path() {
     let root = folder("models", &PROJECT);
-    let files = GameFileKind::Model.files(Some(&root), None);
+    let files = GameFile::list(Some(GameFileKind::Model), Some(&root), None);
     assert_eq!(
         names(&files),
         [
@@ -72,7 +72,7 @@ fn models_are_named_by_their_path() {
 #[test]
 fn sounds_are_named_under_the_sound_folder() {
     let root = folder("sounds", &PROJECT);
-    let files = GameFileKind::Sound.files(Some(&root), None);
+    let files = GameFile::list(Some(GameFileKind::Sound), Some(&root), None);
     assert_eq!(names(&files), ["doors/drclos4.wav"]);
 }
 
@@ -85,15 +85,17 @@ fn the_project_takes_the_games_place() {
         &["id1/sound/doors/drclos4.wav", "id1/sound/misc/null.wav"],
     );
     let root = folder("over", &["sound/doors/drclos4.wav"]);
-    let files = GameFileKind::Sound.files(Some(&root), Some(&base));
+    let files = GameFile::list(Some(GameFileKind::Sound), Some(&root), Some(&base));
     assert_eq!(
         files,
         [
             GameFile {
+                kind: GameFileKind::Sound,
                 name: "doors/drclos4.wav".to_owned(),
                 origin: FileOrigin::Project,
             },
             GameFile {
+                kind: GameFileKind::Sound,
                 name: "misc/null.wav".to_owned(),
                 origin: FileOrigin::Game,
             },
@@ -103,11 +105,32 @@ fn the_project_takes_the_games_place() {
 
 #[test]
 fn nothing_is_listed_with_no_folder_or_a_missing_one() {
-    assert!(GameFileKind::Level.files(None, None).is_empty());
+    assert!(GameFile::list(Some(GameFileKind::Level), None, None).is_empty());
     let missing = Path::new("/no/such/folder/for/qs-game-files");
-    assert!(
-        GameFileKind::Level
-            .files(Some(missing), Some(missing))
-            .is_empty()
+    assert!(GameFile::list(Some(GameFileKind::Level), Some(missing), Some(missing)).is_empty());
+}
+
+// spec MAP-8.11: a file keeps the case it has, its folder and ending matched in any case, so a
+// name taken loads on a filesystem that tells case apart; with no kind every kind is listed,
+// a level's BSP a model too
+#[test]
+fn names_keep_their_case_and_every_kind_is_listed() {
+    let root = folder(
+        "case",
+        &["Sound/Trap/Buzz.WAV", "MAPS/Start.bsp", "progs/Ogre.mdl"],
+    );
+    let files = GameFile::list(None, Some(&root), None);
+    let listed: Vec<(GameFileKind, &str)> = files
+        .iter()
+        .map(|file| (file.kind, file.name.as_str()))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            (GameFileKind::Level, "Start"),
+            (GameFileKind::Model, "MAPS/Start.bsp"),
+            (GameFileKind::Model, "progs/Ogre.mdl"),
+            (GameFileKind::Sound, "Trap/Buzz.WAV"),
+        ]
     );
 }

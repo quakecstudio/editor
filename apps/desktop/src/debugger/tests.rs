@@ -120,15 +120,16 @@ fn a_level_is_offered_after_map() {
 fn no_level_is_offered_before_they_are_read() {
     let mut input = DebugInput::default();
     assert!(input.levels_unread());
-    assert!(input.console_offers("map ").is_empty());
-    assert!(!input.console_offers("ma").is_empty());
+    assert!(input.console_names.for_line("map ").is_empty());
+    assert!(!input.console_names.for_line("ma").is_empty());
     input.set_levels(Some(Vec::new()));
     assert!(!input.levels_unread());
-    assert!(input.console_offers("  changelevel x").is_empty());
+    assert!(input.console_names.for_line("  changelevel x").is_empty());
     // A word that only starts with `map` is a command still being typed.
     assert!(
         input
-            .console_offers("mapx ")
+            .console_names
+            .for_line("mapx ")
             .iter()
             .any(|offer| offer.name == "map")
     );

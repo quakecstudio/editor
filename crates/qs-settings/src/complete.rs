@@ -134,17 +134,16 @@ impl Setting {
     fn at(table: &str, key: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
-            .find(|setting| setting.place() == (table, key))
+            .find(|setting| setting.place() == (table.trim(), key))
     }
 }
 
-/// The table a `[name]` or `[[name]]` header line names, its first part: `agent` for
-/// `[agent.tool_permissions]`.
+/// The table a `[name]` or `[[name]]` header line names, with its dotted parts:
+/// `agent.tool_permissions`.
 fn header_name(line: &str) -> Option<&str> {
     let inner = line.trim().strip_prefix('[')?;
     let inner = inner.trim_start_matches('[');
-    let name = inner.split(']').next()?.trim();
-    name.split('.').next().map(str::trim)
+    inner.split(']').next().map(str::trim)
 }
 
 /// The schema `schema` stands for: the definition a `$ref` names, or the one of an `anyOf`
@@ -168,10 +167,28 @@ fn resolved<'a>(root: &'a Value, schema: &'a Value) -> &'a Value {
     schema
 }
 
-/// The keys of `table`, by name, with their schemas.
+/// The keys of `table`, a dotted path of tables, by name, with their schemas: each part is a
+/// key of the table before it, or a key of a map of tables, and an array of tables is read as
+/// one of its tables.
 fn keys_of<'a>(root: &'a Value, table: &str) -> Option<&'a Map<String, Value>> {
-    let schema = root.get("properties")?.get(table)?;
-    resolved(root, schema).get("properties")?.as_object()
+    let mut schema = root;
+    for part in table.split('.').map(str::trim) {
+        let held = table_of(root, schema);
+        schema = held
+            .get("properties")
+            .and_then(|keys| keys.get(part))
+            .or_else(|| held.get("additionalProperties"))?;
+    }
+    table_of(root, schema).get("properties")?.as_object()
+}
+
+/// The table `schema` stands for: an array's item for an array of tables.
+fn table_of<'a>(root: &'a Value, schema: &'a Value) -> &'a Value {
+    let schema = resolved(root, schema);
+    match schema.get("items") {
+        Some(item) => resolved(root, item),
+        None => schema,
+    }
 }
 
 /// What `schema` says of itself, or of what it stands for.

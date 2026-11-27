@@ -44,8 +44,8 @@ it too.
   values the class's `/*QUAKED*/` comment numbers (`"sounds"`, then `1) stone`) offers those
   values with their names, and shows the name of the one set beside it. A key the QuakeC passes
   to `changelevel`, `precache_model` or `precache_sound` (MAP-8.11) offers the project's and
-  the game's levels, models or sounds, each said to be in the project or the game, and marks a
-  name no file has. A new key
+  the game's levels, models or sounds, each said to be in the project or the game, and, once a
+  game is found, marks a name no file has. A new key
   offers, as it is typed, the keys the class reads and the entity does not set, each with its
   type, default and what the class's `/*QUAKED*/` comment says of it, and taking one fills in
   its default; any other key, such as a compiler's `_minlight`, is typed and added as before.

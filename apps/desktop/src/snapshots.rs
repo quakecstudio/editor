@@ -348,7 +348,8 @@ fn scripts() -> Vec<Script> {
             ],
         },
         // L-83: a key whose values the class's comment numbers offers them with their names,
-        // the name of the one set beside it, and a sound key no file has is marked.
+        // the name of the one set beside it; with no game found, a sound key no project file
+        // has is not marked, since the game may have it.
         Script {
             name: "map-key-choices",
             steps: vec![

@@ -27,6 +27,8 @@ pub const PROJECT_FILES: &str = "project.files";
 pub const PROJECT_SEARCH: &str = "project.search";
 /// The id of the command that describes the open project's modules.
 pub const PROJECT_INFO: &str = "project.info";
+/// The id of the command that lists the functions the project's server QuakeC defines.
+pub const PROJECT_FUNCTIONS: &str = "project.functions";
 
 /// The most matches `project.search` answers.
 pub const SEARCH_LIMIT: usize = 200;
@@ -519,6 +521,67 @@ fn builtins_of(engine: Engine, kind: ModuleKind) -> EngineBuiltins {
     }
 }
 
+/// A function the project's server QuakeC defines with a body (UI-24).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FunctionFound {
+    /// Its name, as a function field of the running game is set to it.
+    pub name: String,
+    /// The name of the file its name is first declared in, as the Symbols panel gives it.
+    pub file: String,
+}
+
+impl<L: crate::Loader> crate::Workbench<L> {
+    /// The functions the project's server modules define with a body, by name, each once: the
+    /// ones a function field of the server's entities may hold. A builtin, which has no body,
+    /// and a client or menu module's function are left out.
+    pub fn server_functions(&mut self) -> Vec<FunctionFound> {
+        let mut found: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        for module in self.host.project_modules() {
+            if module.kind != ModuleKind::Ssqc {
+                continue;
+            }
+            let analysis = module.db.analyze_module(module.input);
+            for (id, def) in analysis.index.definitions() {
+                if def.kind != qc_sema::DefKind::Function || analysis.index.body(id).is_none() {
+                    continue;
+                }
+                let file = module
+                    .db
+                    .file_path(def.location.file)
+                    .and_then(|path| path.file_name())
+                    .map_or_default(|name| name.to_string_lossy().into_owned());
+                found.entry(def.name.clone()).or_insert(file);
+            }
+        }
+        found
+            .into_iter()
+            .map(|(name, file)| FunctionFound { name, file })
+            .collect()
+    }
+}
+
+/// `project.functions`.
+struct ProjectFunctions;
+
+impl<C: HasWorkbench + 'static> Command<C> for ProjectFunctions {
+    const ID: &'static str = PROJECT_FUNCTIONS;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
+    const SUMMARY: &'static str = "Lists the functions the open project's server QuakeC defines \
+        with a body, each with its file: those a function field of the running game may hold.";
+    type Params = qs_commands::NoParams;
+    type Output = Vec<FunctionFound>;
+    type Error = !;
+
+    fn run(
+        &self,
+        context: &mut C,
+        _: qs_commands::NoParams,
+    ) -> Result<Outcome<Vec<FunctionFound>, C>, !> {
+        Ok(Outcome::unchanged(context.workbench().server_functions()))
+    }
+}
+
 /// Registers `project.symbols` and `engine.builtins`.
 ///
 /// # Errors
@@ -532,6 +595,7 @@ pub fn register_tools<C: HasWorkbench + 'static>(
     registry.register(CompileCommand)?;
     registry.register(ProjectFiles)?;
     registry.register(ProjectInfoCommand)?;
+    registry.register(ProjectFunctions)?;
     registry.register(ProjectSearch)
 }
 

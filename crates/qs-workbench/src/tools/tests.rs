@@ -15,8 +15,8 @@ use qs_commands::{Registry, Session};
 use serde_json::{Value, json};
 
 use super::{
-    COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_FILES, PROJECT_INFO, PROJECT_SEARCH,
-    PROJECT_SYMBOLS, SEARCH_LIMIT, builtins_of,
+    COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_FILES, PROJECT_FUNCTIONS, PROJECT_INFO,
+    PROJECT_SEARCH, PROJECT_SYMBOLS, SEARCH_LIMIT, builtins_of,
 };
 use crate::search::SearchOptions;
 use crate::{Config, OPEN_PROJECT, Workbench, register};
@@ -266,4 +266,38 @@ fn project_info_names_each_modules_dialect_and_engine() {
         .execute(ENGINE_BUILTINS, json!({ "engine": engine }))
         .unwrap();
     assert_eq!(builtins["engine"], engine);
+}
+
+// No spec statement: UI-24: project.functions lists the functions the server QuakeC defines
+// with a body, each once with the file it is first declared in, the ones a running game's function field may hold; a
+// builtin and a prototype with no body are left out
+#[test]
+fn project_functions_lists_the_functions_with_a_body() {
+    let mut loader = MemoryLoader::new();
+    for (name, text) in [
+        ("progs.src", "progs.dat\ndefs.qc\nworld.qc\n"),
+        (
+            "defs.qc",
+            "void(entity e) remove = #15;\nvoid() later;\nvoid() never;\n",
+        ),
+        ("world.qc", "void() worldspawn = {};\nvoid() later = {};\n"),
+    ] {
+        loader.insert(Path::new(ROOT).join(name), text.as_bytes().to_vec());
+    }
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    let mut session = Session::new(Workbench::new(loader, Config::default()), registry);
+    let none = session.execute(PROJECT_FUNCTIONS, json!({})).unwrap();
+    assert_eq!(none, json!([]), "no project, no functions");
+    session
+        .execute(OPEN_PROJECT, json!({ "path": ROOT }))
+        .unwrap();
+    let found = session.execute(PROJECT_FUNCTIONS, json!({})).unwrap();
+    assert_eq!(
+        found,
+        json!([
+            { "name": "later", "file": "defs.qc" },
+            { "name": "worldspawn", "file": "world.qc" },
+        ])
+    );
 }

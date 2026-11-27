@@ -59,6 +59,13 @@ fn a_tables_keys_are_offered_with_their_summary() {
     );
     let agent = labels("[agent.tool_permissions]\ndefault = \"ask\"\n[agent]\n");
     assert!(agent.iter().any(|key| key == "profile"), "{agent:?}");
+    // A dotted header's keys are its own table's, and an array of tables' those of one table.
+    let rules = labels("[agent.tool_permissions]\n");
+    assert!(rules.iter().any(|key| key == "default"), "{rules:?}");
+    assert!(!rules.iter().any(|key| key == "profile"), "{rules:?}");
+    let external = labels("[[agent.external]]\n");
+    assert!(external.iter().any(|key| key == "command"), "{external:?}");
+    assert!(labels("[agent.nothing]\n").is_empty());
     assert!(labels("[nothing]\n").is_empty());
 }
 
@@ -72,6 +79,10 @@ fn a_keys_values_are_offered_when_they_are_a_set() {
     let daily = offered("[updates]\ncheck = ", "\"daily\"").unwrap();
     assert!(daily.detail.contains("once a day"), "{daily:?}");
     assert_eq!(labels("[editor]\nkey_mode="), ["\"standard\"", "\"vim\""]);
+    assert_eq!(
+        labels("[agent.tool_permissions]\ndefault = "),
+        ["\"allow\"", "\"ask\"", "\"deny\""]
+    );
     assert!(labels("[log]\nfilter = ").is_empty());
     assert!(labels("[log]\nnothing = ").is_empty());
     assert!(labels("theme = ").is_empty());
@@ -95,9 +106,12 @@ fn the_place_is_the_offsets() {
 }
 
 #[test]
-fn a_headers_table_is_its_first_part() {
+fn a_headers_table_is_its_dotted_path() {
     assert_eq!(header_name("[agent]"), Some("agent"));
-    assert_eq!(header_name("  [[agent.external]]  "), Some("agent"));
+    assert_eq!(
+        header_name("  [[agent.external]]  "),
+        Some("agent.external")
+    );
     assert_eq!(header_name("[ game ]"), Some("game"));
     assert_eq!(header_name("theme = \"dark\""), None);
 }

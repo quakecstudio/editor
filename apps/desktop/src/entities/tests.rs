@@ -10,7 +10,7 @@ use eframe::egui::{self, Key, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use qs_workbench::entities::Entities;
-use qs_workbench::{FileRange, Span, Symbol, SymbolKind};
+use qs_workbench::tools::FunctionFound;
 use serde_json::json;
 
 use super::{Edict, EntityAction, PlayState, Properties, Shown, properties};
@@ -51,7 +51,6 @@ fn a_paused_fields_box_shows_the_games_value() {
 /// What the drawn panel is given and keeps.
 struct Drawn {
     entities: Entities,
-    symbols: Vec<Symbol>,
     game: PlayState,
     panel: Properties,
     asked: Option<EntityAction>,
@@ -76,7 +75,6 @@ fn drawn() -> Harness<'static, Drawn> {
     let theme = Theme::load(Mode::Dark).unwrap();
     let state = Drawn {
         entities: grunt(30.0),
-        symbols: Vec::new(),
         game: PlayState::Paused,
         panel: Properties::default(),
         asked: None,
@@ -90,7 +88,6 @@ fn drawn() -> Harness<'static, Drawn> {
                     entities: &drawn.entities,
                     game: drawn.game,
                     pending: &|_, _| None,
-                    symbols: &drawn.symbols,
                 };
                 if let Some(asked) = properties(ui, &theme, &shown, &mut drawn.panel) {
                     drawn.asked = Some(asked);
@@ -178,18 +175,6 @@ fn the_lock_says_why_fields_are_read_only() {
     assert!(harness.query_by_label(why).is_none());
 }
 
-/// A definition of the project, `kind`, named `name`, in `file`.
-fn symbol(name: &str, kind: SymbolKind, file: &str) -> Symbol {
-    Symbol {
-        name: name.to_owned(),
-        kind,
-        range: FileRange {
-            path: format!("/mod/src/{file}").into(),
-            span: Span::new(0, 0),
-        },
-    }
-}
-
 // No spec statement: UI-24, BRIDGE-5.1: while paused an entity field offers the edicts in use
 // as the panel writes them and a function field the project's functions with their files; one
 // taken is set at once, and a value typed is still set on Enter
@@ -210,11 +195,16 @@ fn entity_and_function_fields_offer_what_they_may_hold() {
             { "name": "think", "value": { "type": "function", "value": "army_stand1" } },
         ],
     }));
-    state.symbols = vec![
-        symbol("army_stand1", SymbolKind::Function, "soldier.qc"),
-        symbol("army_run1", SymbolKind::Function, "soldier.qc"),
-        symbol("health", SymbolKind::Field, "defs.qc"),
-    ];
+    assert!(state.panel.functions_unread(PlayState::Paused));
+    state.panel.set_functions(
+        [("army_run1", "soldier.qc"), ("army_stand1", "soldier.qc")]
+            .map(|(name, file)| FunctionFound {
+                name: name.to_owned(),
+                file: file.to_owned(),
+            })
+            .to_vec(),
+    );
+    assert!(!state.panel.functions_unread(PlayState::Paused));
     harness.run();
     harness
         .get_by_role_and_label(Role::TextInput, "enemy")
@@ -235,7 +225,6 @@ fn entity_and_function_fields_offer_what_they_may_hold() {
         .get_by_role_and_label(Role::TextInput, "think")
         .click();
     harness.run();
-    assert!(harness.query_by_label("health, defs.qc").is_none());
     harness.get_by_label("army_run1, soldier.qc").click();
     harness.run();
     assert_eq!(
@@ -263,4 +252,19 @@ fn entity_and_function_fields_offer_what_they_may_hold() {
             value: "SUB_Null".to_owned(),
         })
     );
+}
+
+// No spec statement: UI-24: the functions a function field offers are read once a pause, and
+// forgotten when the game runs, so a reload's are read at the next pause
+#[test]
+fn the_functions_are_read_once_a_pause() {
+    let mut panel = Properties::default();
+    assert!(!panel.functions_unread(PlayState::Playing));
+    assert!(panel.functions_unread(PlayState::Paused));
+    panel.set_functions(Vec::new());
+    panel.follow(None, PlayState::Paused);
+    assert!(!panel.functions_unread(PlayState::Paused));
+    panel.follow(None, PlayState::Playing);
+    panel.follow(None, PlayState::Paused);
+    assert!(panel.functions_unread(PlayState::Paused));
 }

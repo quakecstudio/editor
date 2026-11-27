@@ -6,6 +6,8 @@
 //! a row and Enter or a click takes it; a value the list does not hold is still taken, so a
 //! compiler's key or a new name is typed as before.
 
+use std::borrow::Cow;
+
 use eframe::egui::{self, Key, Modifiers, RichText, Ui};
 
 use crate::shell::name_area;
@@ -26,12 +28,32 @@ pub(crate) struct Offer {
     pub(crate) detail: String,
 }
 
+/// The values a field offers.
+#[derive(Clone, Copy)]
+pub(crate) enum Offers<'a> {
+    /// A list made already.
+    Given(&'a [Offer]),
+    /// A list made from what is typed, only while the field is edited, after the frame's keys:
+    /// one too costly to make every frame, or one that depends on the text.
+    Made(&'a dyn Fn(&str) -> Cow<'a, [Offer]>),
+}
+
+impl<'a> Offers<'a> {
+    /// The offers for `typed`.
+    fn for_typed(self, typed: &str) -> Cow<'a, [Offer]> {
+        match self {
+            Self::Given(offers) => Cow::Borrowed(offers),
+            Self::Made(make) => make(typed),
+        }
+    }
+}
+
 /// A field over a known set of values.
 pub(crate) struct Suggest<'a> {
     /// What the field is named to a screen reader, and its hint while empty.
     pub(crate) name: &'a str,
     /// The values offered.
-    pub(crate) offers: &'a [Offer],
+    pub(crate) offers: Offers<'a>,
     /// The field's width, in points.
     pub(crate) width: f32,
 }
@@ -64,22 +86,24 @@ struct Shown {
     at: Option<egui::Rect>,
 }
 
-impl Suggest<'_> {
-    /// The offers that match `typed`: every one while the field holds one exactly or nothing,
-    /// so a value set already shows what else it may be; otherwise those containing it, in
-    /// any case.
-    fn matching(&self, typed: &str) -> Vec<&Offer> {
+impl Offer {
+    /// Those of `offers` that match `typed`: every one while the field holds one exactly or
+    /// nothing, so a value set already shows what else it may be; otherwise those containing
+    /// it, in any case.
+    pub(crate) fn matching<'o>(offers: &'o [Self], typed: &str) -> Vec<&'o Self> {
         let typed = typed.trim();
-        if typed.is_empty() || self.offers.iter().any(|offer| offer.name == typed) {
-            return self.offers.iter().collect();
+        if typed.is_empty() || offers.iter().any(|offer| offer.name == typed) {
+            return offers.iter().collect();
         }
         let lower = typed.to_lowercase();
-        self.offers
+        offers
             .iter()
             .filter(|offer| offer.name.to_lowercase().contains(&lower))
             .collect()
     }
+}
 
+impl Suggest<'_> {
     /// Draws the field over `typed`, and its list below it while it has the keyboard; the
     /// value once the edit is done: an offer taken, Enter, or the keyboard gone elsewhere.
     pub(crate) fn show(self, ui: &mut Ui, theme: &Theme, typed: &mut String) -> Option<String> {
@@ -112,7 +136,14 @@ impl Suggest<'_> {
         if response.changed() || response.gained_focus() {
             shown.marked = None;
         }
-        let matching = self.matching(typed);
+        // Made only while edited, from the text as this frame's keys left it.
+        let active = response.has_focus() || response.lost_focus() || on_list;
+        let offers = if active {
+            self.offers.for_typed(typed)
+        } else {
+            Cow::Borrowed(&[][..])
+        };
+        let matching = Offer::matching(&offers, typed);
         let mut done = None;
         let mut moved = false;
         // Enter takes the keyboard from a one-line field in the frame it is pressed, so the

@@ -18,7 +18,7 @@ use qs_map_edit::FlagInfo;
 use crate::icons::Icon;
 use crate::map_scene::{ANGLE, COLOR_SUFFIX, FLOAT_TYPE, SPAWNFLAGS};
 use crate::strings::Text;
-use crate::suggest::{Offer, Suggest};
+use crate::suggest::{Offer, Offers, Suggest};
 use crate::theme::{Theme, Token};
 
 /// The width of a value's text field, in points.
@@ -74,8 +74,18 @@ pub(crate) enum Field<'a> {
     /// the name of the one set shown beside it.
     Numbered(&'a [Offer]),
     /// A file's name, from the project's and the game's files of the kind the code loads it
-    /// as (MAP-8.11); a name no file has is marked.
-    File(&'a [Offer]),
+    /// as (MAP-8.11); a name no file has is marked once the game's files were searched too.
+    File(&'a [Offer], Searched),
+}
+
+/// Which folders the files a key offers were searched in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Searched {
+    /// The project's alone, no game being found: a name not listed may be the game's.
+    #[default]
+    Project,
+    /// The project's and the game's search path.
+    ProjectAndGame,
 }
 
 /// A value typed, and what is beside its field.
@@ -126,7 +136,7 @@ impl Field<'_> {
             Self::Target(offers) => {
                 let field = Suggest {
                     name: key,
-                    offers,
+                    offers: Offers::Given(offers),
                     width: TARGET_WIDTH,
                 };
                 let set = field.show(ui, theme, typed).filter(|done| done != value);
@@ -140,7 +150,7 @@ impl Field<'_> {
             Self::Class(offers) => {
                 let field = Suggest {
                     name: key,
-                    offers,
+                    offers: Offers::Given(offers),
                     width: VALUE_WIDTH,
                 };
                 field.show(ui, theme, typed).filter(|done| done != value)
@@ -148,7 +158,7 @@ impl Field<'_> {
             Self::Numbered(offers) => {
                 let field = Suggest {
                     name: key,
-                    offers,
+                    offers: Offers::Given(offers),
                     width: SHORT_WIDTH,
                 };
                 let set = field.show(ui, theme, typed).filter(|done| done != value);
@@ -158,16 +168,17 @@ impl Field<'_> {
                 }
                 set
             }
-            Self::File(offers) => {
+            Self::File(offers, searched) => {
                 let field = Suggest {
                     name: key,
-                    offers,
+                    offers: Offers::Given(offers),
                     width: VALUE_WIDTH,
                 };
                 let set = field.show(ui, theme, typed).filter(|done| done != value);
                 let typed = typed.trim();
                 // A brush model's `*N` is the compiler's, not a file (BUILTIN-10.3).
-                if !typed.is_empty()
+                if searched == Searched::ProjectAndGame
+                    && !typed.is_empty()
                     && !typed.starts_with(BRUSH_MODEL)
                     && !offers.iter().any(|offer| offer.name == typed)
                 {

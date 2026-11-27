@@ -278,6 +278,24 @@ fn the_settings_file_completes_from_its_schema() {
         "{}",
         text(&harness)
     );
+    // A value typed bare is matched after its quote, and taking it writes the quotes.
+    let at = text(&harness).find("\"daily\"").unwrap();
+    let editor = editor_mut(&mut harness);
+    let buffer = editor.view.state().buffer();
+    let (anchor, head) = (buffer.position(at), buffer.position(at + "\"daily\"".len()));
+    editor
+        .view
+        .state_mut()
+        .set_selections(&[Selection { anchor, head }]);
+    harness.event(Event::Text("da".to_owned()));
+    harness.run();
+    press(&mut harness, Modifiers::CTRL, Key::Space);
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    assert!(
+        text(&harness).contains("check = \"daily\"\n"),
+        "{}",
+        text(&harness)
+    );
     let _gone = std::fs::remove_dir_all(dir);
 }
 

@@ -6887,7 +6887,8 @@ fn a_target_is_picked_from_the_names_in_the_map() {
 
 // spec MAP-8.11: a value the class's comment numbers is picked from those values, each with
 // what the comment calls it, the name of the one set shown beside it; a key the code passes to
-// precache_sound offers the project's and the game's sounds, and a name no file has is marked
+// precache_sound offers the project's and the game's sounds, and once the game's files were
+// searched a name no file has is marked
 #[test]
 fn a_numbered_choice_and_a_sound_are_picked() {
     let dir = keep_copy("numbered");
@@ -6928,6 +6929,16 @@ fn a_numbered_choice_and_a_sound_are_picked() {
     harness.run();
     assert_eq!(map_value(&harness, 3, "sounds").as_deref(), Some("2"));
     harness.get_by_label("click");
+    // With no game found a sound may be the game's, so none is marked missing.
+    assert!(harness.query_by_label(Text::MapNoSuchFile.get()).is_none());
+    let tmp = TempDir::new("numbered-game");
+    let game = game_folder(&tmp);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.set_settings_file(tmp.0.join("config/settings.toml"));
+    assert!(shell.choose_game_folder(&game).unwrap().state.plays());
+    shell.execute("map.select", json!({ "entity": 3 })).unwrap();
+    harness.run();
+    harness.run();
     harness.get_by_label(Text::MapNoSuchFile.get());
     harness
         .get_by_role_and_label(Role::TextInput, "noise")

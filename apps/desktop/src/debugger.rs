@@ -5,6 +5,7 @@
 //! console. What a click or a typed line asks for is returned to the shell, which runs it
 //! through its command (mockup 02).
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use eframe::egui::{self, RichText, Ui};
@@ -19,7 +20,7 @@ use qs_workbench::{
 
 use crate::features::{Commands, ShellRequest};
 use crate::strings::{Text, key_detail};
-use crate::suggest::{Offer, Suggest, Taken};
+use crate::suggest::{Offer, Offers, Suggest, Taken};
 use crate::theme::{Theme, Token};
 
 /// The debugger's columns: the call stack, the watches and the breakpoints.
@@ -61,10 +62,8 @@ pub(crate) struct DebugInput {
     watch: String,
     console: String,
     filter: String,
-    /// The console's commands and settings, each with what it is (CON-4.3).
-    names: Vec<Offer>,
-    /// The levels `map` and `changelevel` take, read once a game runs; `None` until then.
-    levels: Option<Vec<String>>,
+    /// What the console box offers.
+    console_names: ConsoleNames,
     /// What a watch may read where the game stopped, each with its type, and the place they
     /// were read for.
     watch_names: (Option<Location>, Vec<Offer>),
@@ -89,9 +88,46 @@ impl Default for DebugInput {
             watch: String::new(),
             console: String::new(),
             filter: String::new(),
-            names,
-            levels: None,
+            console_names: ConsoleNames {
+                names,
+                levels: None,
+            },
             watch_names: (None, Vec::new()),
+        }
+    }
+}
+
+/// What the console box offers.
+#[derive(Debug)]
+struct ConsoleNames {
+    /// The console's commands and settings, each with what it is (CON-4.3).
+    names: Vec<Offer>,
+    /// The levels `map` and `changelevel` take, read once a game runs; `None` until then.
+    levels: Option<Vec<String>>,
+}
+
+impl ConsoleNames {
+    /// What the console box offers for `typed`: after `map` or `changelevel` and a space,
+    /// that command with each level; otherwise every command and setting.
+    fn for_line(&self, typed: &str) -> Cow<'_, [Offer]> {
+        let typed = typed.trim_start();
+        let command = ConsoleName::LEVEL_COMMANDS.iter().find(|command| {
+            typed
+                .strip_prefix(**command)
+                .is_some_and(|rest| rest.starts_with(' '))
+        });
+        match command {
+            Some(command) => Cow::Owned(
+                self.levels
+                    .iter()
+                    .flatten()
+                    .map(|level| Offer {
+                        name: format!("{command} {level}"),
+                        detail: Text::ConsoleOfferLevel.get().to_owned(),
+                    })
+                    .collect(),
+            ),
+            None => Cow::Borrowed(&self.names),
         }
     }
 }
@@ -99,13 +135,13 @@ impl Default for DebugInput {
 impl DebugInput {
     /// Whether the levels are to be read: a game runs and they have not been.
     pub(crate) const fn levels_unread(&self) -> bool {
-        self.levels.is_none()
+        self.console_names.levels.is_none()
     }
 
     /// Keeps the levels `map` and `changelevel` offer, or with `None` forgets them, so the next
     /// game reads them again.
     pub(crate) fn set_levels(&mut self, levels: Option<Vec<String>>) {
-        self.levels = levels;
+        self.console_names.levels = levels;
     }
 
     /// Whether the names a watch may read are to be read again: the game stopped somewhere
@@ -131,7 +167,7 @@ impl DebugInput {
     fn watch_box(&mut self, ui: &mut Ui, theme: &Theme) -> Option<DebugAction> {
         let field = Suggest {
             name: Text::AddWatch.get(),
-            offers: &self.watch_names.1,
+            offers: Offers::Given(&self.watch_names.1),
             width: ui.available_width(),
         };
         let (_, taken) = field.take(ui, theme, &mut self.watch);
@@ -153,10 +189,11 @@ impl DebugInput {
                 .monospace()
                 .color(theme.color(Token::Accent)),
         );
-        let offers = self.console_offers(&self.console);
+        let names = &self.console_names;
+        let offers = |typed: &str| names.for_line(typed);
         let field = Suggest {
             name: Text::ConsoleCommand.get(),
-            offers: &offers,
+            offers: Offers::Made(&offers),
             width: ui.available_width(),
         };
         let (typed, taken) = field.take(ui, theme, &mut self.console);
@@ -187,29 +224,6 @@ impl DebugInput {
             Some(Taken::Typed(_)) | None => {}
         }
         None
-    }
-
-    /// What the console box offers for `typed`: after `map` or `changelevel` and a space,
-    /// that command with each level; otherwise every command and setting.
-    fn console_offers(&self, typed: &str) -> Vec<Offer> {
-        let typed = typed.trim_start();
-        let command = ConsoleName::LEVEL_COMMANDS.iter().find(|command| {
-            typed
-                .strip_prefix(**command)
-                .is_some_and(|rest| rest.starts_with(' '))
-        });
-        match command {
-            Some(command) => self
-                .levels
-                .iter()
-                .flatten()
-                .map(|level| Offer {
-                    name: format!("{command} {level}"),
-                    detail: Text::ConsoleOfferLevel.get().to_owned(),
-                })
-                .collect(),
-            None => self.names.clone(),
-        }
     }
 }
 

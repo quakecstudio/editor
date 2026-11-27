@@ -410,9 +410,11 @@ and MAP-8.10's empty classname.
   (nextmap)`. The file is a level for `changelevel`, by the name `map` takes
   (`maps/<map>.bsp`, BUILTIN-10.3); a model for `precache_model`, by its path; a sound for
   `precache_sound`, by its path under `sound/` (SND-1.4). A key passed to more than one is
-  taken for the first in that order. The key editor offers the project's and the game's files
-  of that kind and marks a name no file has; a name starting with `*` is a brush model the
-  compiler writes and is not marked.
+  taken for the first in that order. A `maps/b_*.bsp` is an item's box model, as id's
+  `items.qc` names `maps/b_bh10.bsp`, and no level. A name keeps the case its file has; its
+  folder and ending are matched in any case. The key editor offers the project's and the
+  game's files of that kind and, once the game's search path was read too, marks a name no
+  file has; a name starting with `*` is a brush model the compiler writes and is not marked.
 
 ## MAP-9 Rooms: TrenchBroom's layers and groups
 
