@@ -59,6 +59,8 @@ enum Step {
     Drop(fn() -> PathBuf, &'static str),
     /// Click the node with the label.
     Click(&'static str),
+    /// Click the text field with the label, where a label of the same name is beside it.
+    ClickField(&'static str),
     /// Select these faces of the open map, each an entity, a brush and a face, as Alt-clicks
     /// would.
     Faces(&'static [[usize; 3]]),
@@ -345,6 +347,20 @@ fn scripts() -> Vec<Script> {
                 Step::Type("s"),
             ],
         },
+        // L-83: a key whose values the class's comment numbers offers them with their names,
+        // the name of the one set beside it, and a sound key no file has is marked.
+        Script {
+            name: "map-key-choices",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": choices_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": choices_fixture().join("maps/choices.map") }),
+                ),
+                Step::Run("map.select", json!({ "entity": 1 })),
+                Step::ClickField("sounds"),
+            ],
+        },
         // L-76: Fire in Properties fires the selected button, and the Logic tab lists what the
         // QuakeC did, the link it fired lit in the view.
         Script {
@@ -473,6 +489,11 @@ fn keep_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep")
 }
 
+/// The project whose trap's comment numbers its sounds (L-83).
+fn choices_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/choices")
+}
+
 /// The project whose button fires a door through its QuakeC (L-76).
 fn logic_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/logic")
@@ -578,6 +599,9 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                     .push(Arc::new(Dropped(make())));
             }
             Step::Click(label) => harness.get_by_label(label).click(),
+            Step::ClickField(label) => harness
+                .get_by_role_and_label(egui::accesskit::Role::TextInput, label)
+                .click(),
             Step::Faces(faces) => {
                 let faces: Vec<FaceRef> = faces
                     .iter()

@@ -238,6 +238,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `map.face_uv` | needs a value | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | `map.fire` | needs a value | Fires an entity of the open map as the game would, its use or its touch run in the simulation with the project's program, and answers what the QuakeC did about it in order: each use, touch and think the firing reached, each entity looked up by its targetname, removed or spawned, each centerprint and sound, and the fields written. Changes nothing: not the map, not a game that is playing it. |
 | `map.flip` | needs a value | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
+| `map.game_files` | answers a question | Lists the levels, models or sounds of the project's folder and the game's search path, each by the name the engine is given (a level as map takes it, a model by its path, a sound by its path under sound/) and where it is; the project's takes the game's place for a name both have. |
 | `map.generate` | run from a menu | Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave: each level is compiled and checked as map.playability checks a map, with no jump, and a seed whose level fails gives way to the seeds after it. One seed gives one level. |
 | `map.group` | needs a value | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | `map.hide` | needs a value | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
@@ -308,6 +309,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `preview.step_by` | needs a value | Steps the game stopped in a frame by a statement, into a call, over one or out to the caller. |
 | `preview.unwatch` | needs a value | Takes a watch away. |
 | `preview.watch` | needs a value | Adds a watch, an expression read each time the game stops in a frame. |
+| `preview.watch_names` | answers a question | Lists what a watch may read where the game stopped: the locals, parameters and globals visible on that line, and the fields of self, each with its type. |
 | `project.entities` | answers a question | Lists the entity classes the open project's server QuakeC defines, read from its spawn functions: each class's keys, defaults, spawnflags, comment, model and size; with fgd, also writes them as an FGD file for other map editors. |
 | `project.files` | answers a question | Lists every source file the open project compiles, by path. |
 | `project.info` | answers a question | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
