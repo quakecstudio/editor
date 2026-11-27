@@ -3464,3 +3464,28 @@ groups:
     - 'Every `cargo xtask` command in CLAUDE.md is one `cargo xtask --help` lists, and every command it lists is in CLAUDE.md, checked in the PR'
     verify:
     - 'cargo xtask ci; the checks recorded in the PR'
+  - key: L-83
+    title: Offer known values in the debugger, the running game, map keys and settings
+    labels:
+    - L7-ui
+    - area:editor
+    - type:feature
+    size: L
+    reqs:
+    - UI-24
+    - MAP-27
+    depends: []
+    summary: |
+      Justin, 2026-11-27: "following the previous work we did on the properties for don't make me think, how can we take that across more of the IDE?", then picked all four places found where the modder still types a value the app already knows. L-80's audit (`docs/audits/usability.md`) kept the debugger's watch expression and the running game's fields as free text, but their first names and their values of entity and function type are known sets; the debugger's console is a plain field though the engine's commands are a fixed list (`qs-sim` `console::COMMANDS`, CON-4.3); a class's `/*QUAKED*/` comment numbers the values of keys such as `sounds` (`1) stone`), which the key editor shows only as text; a key the class passes to `changelevel`, `precache_model` or `precache_sound` names a file the game filesystem can list; and the settings file is raw JSON though `qs-settings` derives its schema. The model is L-80's rules (`docs/design/usability.md`, rule 1: when the values a control can take are known, they are offered), and for the settings file Zed's completions in `settings.json` from its schema.
+    deliverable:
+    - 'apps/desktop/src/debugger.rs: the console field offers the engine''s commands and cvars, each with what it is, and the project''s maps after `map` or `changelevel`; the watch field offers the stopped frame''s locals and parameters, the globals and `self` fields, each with its type; any other text is still taken'
+    - 'apps/desktop/src/entities.rs: while paused, an entity field offers the live edicts with their classnames and a function field the progs''s functions'
+    - 'crates/qc-entities: a key''s numbered choices read from its `/*QUAKED*/` comment, and the keys a class passes to `changelevel`, `precache_model` or `precache_sound`; apps/desktop/src/map_fields.rs: such a key is a picker of its choices, or a field offering the game''s files of that kind, marking a path no file has'
+    - 'The settings file opened by `settings.open` completes its keys and values from the `qs-settings` schema, each with its description'
+    - 'docs/design/usability.md and docs/audits/usability.md: the examples and the problems found (U13 onwards), the two entries kept as free text rewritten'
+    acceptance:
+    - 'A UI test each: a console command taken from the offers; a watch on a `self` field taken from the offers; an entity field set to an offered edict and a function field to an offered function; a numbered choice picked for `sounds`; a sound path no file has marked; a settings key completed with its description'
+    - 'qc-entities tests: a comment with no numbered lines, one, gaps in the numbers, and a list ended by an unnumbered line; a key passed to each of the three builtins, and one passed to none'
+    - 'The goldens of the panels that changed rendered again; screenshots before and after, in the PR'
+    verify:
+    - 'cargo nextest run -p quakec-studio -p qc-entities; the screenshots in the PR'
