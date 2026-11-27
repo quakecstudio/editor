@@ -40,6 +40,7 @@ Format: one row per file, the path in backticks relative to the repository root.
 | `apps/desktop/snapshots/command-line.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/next-edit.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/map-balance.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
+| `apps/desktop/snapshots/map-budget.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/map-editor.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/texture-import.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/map-leak.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |

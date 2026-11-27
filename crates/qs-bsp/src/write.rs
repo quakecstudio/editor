@@ -259,7 +259,7 @@ impl BspFile {
     pub fn counts(&self) -> BspCounts {
         let textures = self
             .textures
-            .get(..4)
+            .get(..core::mem::size_of::<i32>())
             .and_then(|count| <[u8; 4]>::try_from(count).ok())
             .map(i32::from_le_bytes)
             .and_then(|count| usize::try_from(count).ok())

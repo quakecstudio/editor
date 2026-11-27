@@ -12,7 +12,9 @@ KEX (the 2021 rerelease).
 
 - **Layer:** L3 semantics. It depends on `qc-sema` (L3), `qc-syntax` and `qc-project` (L2),
   `qc-builtins` (L1, id's vanilla table) and `qc-diag` (L0).
-- **Spec sections:** ENGT-1 (sources), ENGT-3 (engines) and ENGT-4 (the missing-builtin warning)
+- **Spec sections:** ENGT-1 (sources), ENGT-3 (engines), ENGT-4 (the missing-builtin warning)
+  and ENGT-5 (each engine's map limits, `limits`: id's from BSP-16 and LIMIT-6, the others
+  generated from their pinned sources, KEX's unknown)
   of [`docs/spec/engine-targets.md`](../../docs/spec/engine-targets.md). Written from the spec,
   not ported.
 - **Not this crate's:** ENGT-2, the extraction from the fact sources, which the generator `cargo

@@ -18,7 +18,7 @@ use serde_json::json;
 
 use super::{
     BUDGET_NEAR_SHARE, BudgetLine, EngineBudget, LineBound, LumpSource, MAP_BUDGET, MapBudget,
-    Measured, Spawned, Standing, Used, engine_budget, issues, room, worst_first,
+    Measured, Spawned, Standing, Used, engine_budget, room, worst_first,
 };
 use crate::map_compile::MAP_COMPILE;
 use crate::map_compile::tests::Context;
@@ -242,8 +242,9 @@ fn the_target_then_ids() {
     assert_eq!(budget(&mut quake).engines.len(), 1);
 }
 
-// spec BUDGET-2.1: before a compile the lumps are not measured; after one they are the
-// report's, but for lighting and visibility; BUDGET-2.2: the format is the compile's
+// spec BUDGET-2.1, BUDGET-2.2: before a compile the lumps are not measured and there is no
+// format; after one they are the report's, but for lighting and visibility, and the format is
+// the compile's
 #[test]
 fn the_lumps_come_from_the_compile() {
     let (mut session, _dir) = open_session(&ProjectSpec::default());
@@ -400,7 +401,7 @@ fn each_limit_at_and_above_its_bound() {
                 Standing::Past,
                 "{engine:?} {limit:?}"
             );
-            let said = issues(&above, engine, None);
+            let said = above.issues(engine, None);
             let wanted = format!(
                 "{} {} is past {}'s limit of {}",
                 fact.most + 1,
@@ -437,7 +438,7 @@ fn shares_and_standings() {
     assert!(kex.lines.iter().all(|l| l.standing == Standing::Unknown));
     assert!(kex.lines.iter().all(|l| l.bound == LineBound::Unknown));
     // Near is an issue too.
-    let said = issues(&near, Engine::Vanilla, None);
+    let said = near.issues(Engine::Vanilla, None);
     assert!(
         said.contains(&"540 edicts is 90% of Vanilla's limit of 600".to_owned()),
         "{said:?}"
@@ -488,7 +489,7 @@ fn past_bsp29_is_offered_bsp2() {
         line(&quakespasm, MapLimit::Clipnodes).standing,
         Standing::Within
     );
-    let said = issues(&quakespasm, Engine::QuakeSpasm, Some(&written));
+    let said = quakespasm.issues(Engine::QuakeSpasm, Some(&written));
     assert_eq!(
         said,
         [
@@ -497,7 +498,7 @@ fn past_bsp29_is_offered_bsp2() {
         ]
     );
     let vanilla = engine_budget(Engine::Vanilla, &measured);
-    let said = issues(&vanilla, Engine::Vanilla, Some(&written));
+    let said = vanilla.issues(Engine::Vanilla, Some(&written));
     assert!(
         said.contains(
             &"40000 clipnodes is past Vanilla's limit of 32767: id's compiler cannot write it"
@@ -512,7 +513,7 @@ fn past_bsp29_is_offered_bsp2() {
         )
     );
     let kex = engine_budget(Engine::Kex, &measured);
-    let said = issues(&kex, Engine::Kex, Some(&written));
+    let said = kex.issues(Engine::Kex, Some(&written));
     assert_eq!(
         said,
         [
@@ -525,7 +526,7 @@ fn past_bsp29_is_offered_bsp2() {
         lump: String::new(),
     };
     assert_eq!(
-        issues(&quakespasm, Engine::QuakeSpasm, Some(&opened)),
+        quakespasm.issues(Engine::QuakeSpasm, Some(&opened)),
         ["the map is BSP2, which QuakeSpasm reads"]
     );
 }
@@ -534,22 +535,14 @@ fn past_bsp29_is_offered_bsp2() {
 #[test]
 fn what_each_past_says() {
     let measured = measured(1_000_000, MapFormat::Bsp29);
-    let said = issues(
-        &engine_budget(Engine::QuakeSpasm, &measured),
-        Engine::QuakeSpasm,
-        None,
-    );
+    let said = engine_budget(Engine::QuakeSpasm, &measured).issues(Engine::QuakeSpasm, None);
     for end in [
         "QuakeSpasm refuses it",
         "QuakeSpasm loads it with a warning",
     ] {
         assert!(said.iter().any(|m| m.ends_with(end)), "{end}: {said:?}");
     }
-    let said = issues(
-        &engine_budget(Engine::Vanilla, &measured),
-        Engine::Vanilla,
-        None,
-    );
+    let said = engine_budget(Engine::Vanilla, &measured).issues(Engine::Vanilla, None);
     for end in [
         "id's compiler cannot write it",
         "Vanilla writes past its array, which is undefined",

@@ -113,6 +113,19 @@ it too.
   and a skill's heading shows the map as that skill spawns it with the view's entity filter:
   every skill in single player, and normal in coop and deathmatch, which is the one the filter
   offers there.
+- **Engine limits (L-79, MAP-38):** `map.budget` shows how much of your target engine's limits
+  the map uses, and of id's: each BSP lump of the last compile, the largest face extent, and the
+  edicts, precached models and sounds and light styles of the map spawned by your mod's QuakeC
+  on each skill. Each engine's limits are read from its own source at a pinned commit
+  ([ENGT-5](spec/engine-targets.md)); KEX has no source, so its limits are shown as not known.
+  A limit passed, or within 10% of its bound, joins the issue browser until the map changes,
+  and so does a map compiled as BSP2 because BSP29 could not hold a lump, which is an error
+  when the target does not read BSP2. The rules are [`spec/budget.md`](spec/budget.md).
+
+  In the window, after any compile (Check for leaks, a compile profile, or the agent's) the
+  Properties panel shows Engine limits: a meter for each of the target's limits, the worst
+  first, past in the error colour and near in the warning colour, and the rest folded under
+  The other limits.
 - **Groups and layers (P5-14, MAP-26):** a map made in TrenchBroom keeps its groups, linked
   groups and layers as written ([MAP-9](spec/map.md)).
   - An edit inside a linked group is copied into every group linked to it, moved by each

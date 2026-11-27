@@ -407,6 +407,14 @@ impl BspVersion {
     }
 }
 
+/// Where id's `CalcSurfaceExtents` starts a face's texture bounds before any vertex widens
+/// them (BSP-9.10).
+const EXTENTS_START_MIN: f32 = 999_999.0;
+const EXTENTS_START_MAX: f32 = -99_999.0;
+/// The texels of a light sample, [`BSP_LIGHTMAP_SCALE`], as `CalcSurfaceExtents` divides by
+/// it (BSP-9.10).
+const LUXEL_TEXELS: f32 = 16.0;
+
 /// Whose loader [`Bsp::read`] follows where loaders differ (BSP-9.17, BSP-12.6, BSP-20).
 ///
 /// The default is [`BspLoader::FitzQuake`], the rules of the engines modders play on
@@ -462,7 +470,7 @@ impl BspLoader {
         let (mut mins, mut maxs) = if self.fitz() {
             ([f32::MAX; 2], [f32::MIN; 2])
         } else {
-            ([999_999.0_f32; 2], [-99_999.0_f32; 2])
+            ([EXTENTS_START_MIN; 2], [EXTENTS_START_MAX; 2])
         };
         for &vertex in vertices {
             for (axis, axis_vecs) in vecs.iter().enumerate() {
@@ -494,13 +502,13 @@ impl BspLoader {
         for axis in 0..2 {
             let min = mins.get(axis).copied().unwrap_or_default();
             let max = maxs.get(axis).copied().unwrap_or_default();
-            let bmin = x86_double_to_int(f64::from(min / 16.0).floor());
-            let bmax = x86_double_to_int(f64::from(max / 16.0).ceil());
+            let bmin = x86_double_to_int(f64::from(min / LUXEL_TEXELS).floor());
+            let bmax = x86_double_to_int(f64::from(max / LUXEL_TEXELS).ceil());
             if let Some(slot) = texturemins.get_mut(axis) {
-                *slot = low_16(bmin.wrapping_mul(16));
+                *slot = low_16(bmin.wrapping_mul(BSP_LIGHTMAP_SCALE));
             }
             if let Some(slot) = extents.get_mut(axis) {
-                *slot = low_16(bmax.wrapping_sub(bmin).wrapping_mul(16));
+                *slot = low_16(bmax.wrapping_sub(bmin).wrapping_mul(BSP_LIGHTMAP_SCALE));
             }
         }
         (texturemins, extents)

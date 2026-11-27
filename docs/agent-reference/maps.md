@@ -266,3 +266,28 @@ Source: [`docs/spec/balance.md`](../spec/balance.md) (L-78, MAP-37).
   on easy and on hard: nightmare spawns hard's entities.
 - A map with no `info_player_start` still counts its monsters; `entry` says the player could
   not enter, and the pickups give nothing.
+
+## A map's engine limits
+
+Source: [`docs/spec/budget.md`](../spec/budget.md) and
+[`docs/spec/engine-targets.md`](../spec/engine-targets.md) ENGT-5 (L-79, MAP-38).
+
+- `map.budget` answers how much of the target engine's limits the open map uses, and of id's
+  when the target is another: one line for each BSP lump, the world's `visleafs`, the largest
+  face extent, edicts, precached models and sounds and light styles. Each line gives `used`
+  (a count, or `not_measured` with the reason), `bound` (the most, what the engine does past it
+  and where that is stated, or `unlimited`, or `unknown` for KEX, which has no source), `share`
+  and `standing`: `past`, `near` (at least 90% of the bound), `within` or `unknown`. The lines
+  come worst first.
+- The lumps come from the last `map.compile` or `map.find_leaks` while the map is unchanged,
+  so compile first; a compile neither lights nor vises, so lighting and visibility are not
+  measured. Edicts, precaches and light styles come from spawning the map with the project's
+  program on each skill, with room past id's limits: a map of 601 edicts shows past Vanilla's
+  600 and inside QuakeSpasm's 8192.
+- `format` is the compile's. A lump too wide for BSP29 makes the compile write BSP2: with a
+  target that reads it (QuakeSpasm, Ironwail, vkQuake, FTEQW, DarkPlaces) that is a note;
+  with Vanilla, an error; with KEX, not known.
+- Lines past and near the target's bound, and the BSP2 note, join `map.issues` until the map
+  changes. To get a map under a limit: fewer entities or `spawnflags` that drop them on a
+  skill for edicts; fewer distinct models and sounds for precaches; `func_detail` and fewer
+  small brushes for faces, clipnodes and marksurfaces; or a target engine with a higher bound.

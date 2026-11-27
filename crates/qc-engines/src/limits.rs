@@ -254,15 +254,17 @@ const MODEL_C: &str = "WinQuake/model.c";
 /// The source of id's own limits, which are this project's statements of id's code.
 const ID: &str = "id";
 
-/// A limit of id's, from the constants of BSP-16 and LIMIT-6.
-const fn id(limit: MapLimit, most: usize, past: Past, path: &'static str) -> LimitFact {
-    LimitFact {
-        limit,
-        most,
-        past,
-        applies: Applies::AllFormats,
-        source: ID,
-        path,
+impl LimitFact {
+    /// A limit of id's, from the constants of BSP-16 and LIMIT-6.
+    const fn id(limit: MapLimit, most: usize, past: Past, path: &'static str) -> Self {
+        Self {
+            limit,
+            most,
+            past,
+            applies: Applies::AllFormats,
+            source: ID,
+            path,
+        }
     }
 }
 
@@ -272,103 +274,103 @@ const fn id(limit: MapLimit, most: usize, past: Past, path: &'static str) -> Lim
 /// which `PF_lightstyle` does not check (BUILTIN-12.6).
 static VANILLA_LIMITS: LazyLock<[LimitFact; 22]> = LazyLock::new(|| {
     [
-        id(MapLimit::Models, BSP_MAX_MAP_MODELS, Past::Tools, BSPFILE_H),
-        id(
+        LimitFact::id(MapLimit::Models, BSP_MAX_MAP_MODELS, Past::Tools, BSPFILE_H),
+        LimitFact::id(
             MapLimit::Entities,
             BSP_MAX_MAP_ENTITIES,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::EntityText,
             BSP_MAX_MAP_ENTSTRING,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(MapLimit::Planes, BSP_MAX_MAP_PLANES, Past::Tools, BSPFILE_H),
-        id(MapLimit::Nodes, BSP_MAX_MAP_NODES, Past::Tools, BSPFILE_H),
-        id(
+        LimitFact::id(MapLimit::Planes, BSP_MAX_MAP_PLANES, Past::Tools, BSPFILE_H),
+        LimitFact::id(MapLimit::Nodes, BSP_MAX_MAP_NODES, Past::Tools, BSPFILE_H),
+        LimitFact::id(
             MapLimit::Clipnodes,
             BSP_MAX_MAP_CLIPNODES,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(MapLimit::Leafs, BSP_MAX_MAP_LEAFS, Past::Tools, BSPFILE_H),
-        id(
+        LimitFact::id(MapLimit::Leafs, BSP_MAX_MAP_LEAFS, Past::Tools, BSPFILE_H),
+        LimitFact::id(
             MapLimit::Visleafs,
             BSP_MAX_MAP_LEAFS,
             Past::Undefined,
             MODEL_C,
         ),
-        id(
+        LimitFact::id(
             MapLimit::Vertexes,
             BSP_MAX_MAP_VERTS,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(MapLimit::Faces, BSP_MAX_MAP_FACES, Past::Tools, BSPFILE_H),
-        id(
+        LimitFact::id(MapLimit::Faces, BSP_MAX_MAP_FACES, Past::Tools, BSPFILE_H),
+        LimitFact::id(
             MapLimit::Marksurfaces,
             BSP_MAX_MAP_MARKSURFACES,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::Texinfo,
             BSP_MAX_MAP_TEXINFO,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(MapLimit::Edges, BSP_MAX_MAP_EDGES, Past::Tools, BSPFILE_H),
-        id(
+        LimitFact::id(MapLimit::Edges, BSP_MAX_MAP_EDGES, Past::Tools, BSPFILE_H),
+        LimitFact::id(
             MapLimit::Surfedges,
             BSP_MAX_MAP_SURFEDGES,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::Textures,
             BSP_MAX_MAP_TEXTURES,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::Lighting,
             BSP_MAX_MAP_LIGHTING,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::Visibility,
             BSP_MAX_MAP_VISIBILITY,
             Past::Tools,
             BSPFILE_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::FaceExtent,
             usize::try_from(BSP_MAX_SURFACE_EXTENT).unwrap_or_default(),
             Past::Refused,
             MODEL_C,
         ),
-        id(
+        LimitFact::id(
             MapLimit::Edicts,
             LIMIT_MAX_EDICTS,
             Past::Refused,
             QUAKEDEF_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::ModelPrecaches,
             LIMIT_MAX_MODELS.saturating_sub(1),
             Past::Refused,
             QUAKEDEF_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::SoundPrecaches,
             LIMIT_MAX_SOUNDS.saturating_sub(1),
             Past::Refused,
             QUAKEDEF_H,
         ),
-        id(
+        LimitFact::id(
             MapLimit::LightStyles,
             LIMIT_MAX_LIGHTSTYLES,
             Past::Undefined,

@@ -16,6 +16,9 @@ Problems panels list, the commands that open a project or a file, `project.open`
   `map.fire` and `map.logic_issues`: an entity of the open map fired in `qs-sim` and the
   issues only running shows. BALANCE-2 to BALANCE-4 ([`balance.md`](../../docs/spec/balance.md)),
   `map.balance`: the open map's balance sheets on each skill, read from its spawn in `qs-sim`.
+  BUDGET-1 to BUDGET-3 ([`budget.md`](../../docs/spec/budget.md)), `map.budget`: how much of the
+  target engine's limits (ENGT-5) the open map uses, from the last compile and a spawn with room
+  past id's limits.
 - **Shipped:** yes.
 
 ## Prior art

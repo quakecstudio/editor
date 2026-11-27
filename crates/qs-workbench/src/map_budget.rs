@@ -375,48 +375,53 @@ fn consequence(engine: Engine, past: Past) -> String {
     }
 }
 
-/// The issues of the target engine's budget (BUDGET-3.1, BUDGET-3.2).
-fn issues(target: &EngineBudget, engine: Engine, format: Option<&Written>) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in &target.lines {
-        let (Used::Count { count, .. }, LineBound::At { most, past, .. }) =
-            (&line.used, &line.bound)
-        else {
-            continue;
-        };
-        match line.standing {
-            Standing::Past => out.push(format!(
-                "{count} {} is past {}'s limit of {most}: {}",
-                line.name,
-                engine.name(),
-                consequence(engine, *past)
-            )),
-            Standing::Near => {
-                let percent = (line.share.unwrap_or(0.0) * PERCENT).floor();
-                out.push(format!(
-                    "{count} {} is {percent}% of {}'s limit of {most}",
+impl EngineBudget {
+    /// Its issues, `engine` being the engine it is of and `format` the map's (BUDGET-3.1,
+    /// BUDGET-3.2).
+    fn issues(&self, engine: Engine, format: Option<&Written>) -> Vec<String> {
+        let mut out = Vec::new();
+        for line in &self.lines {
+            let (Used::Count { count, .. }, LineBound::At { most, past, .. }) =
+                (&line.used, &line.bound)
+            else {
+                continue;
+            };
+            match line.standing {
+                Standing::Past => out.push(format!(
+                    "{count} {} is past {}'s limit of {most}: {}",
                     line.name,
-                    engine.name()
-                ));
+                    engine.name(),
+                    consequence(engine, *past)
+                )),
+                Standing::Near => {
+                    let percent = (line.share.unwrap_or(0.0) * PERCENT).floor();
+                    out.push(format!(
+                        "{count} {} is {percent}% of {}'s limit of {most}",
+                        line.name,
+                        engine.name()
+                    ));
+                }
+                Standing::Within | Standing::Unknown => {}
             }
-            Standing::Within | Standing::Unknown => {}
         }
+        if let Some(Written::Bsp2 { lump }) = format {
+            let name = engine.name();
+            let reads = match engine.bsp2() {
+                Bsp2::Reads => format!("which {name} reads"),
+                Bsp2::DoesNotRead => format!("which {name} does not read: it will not load"),
+                Bsp2::Unknown => format!("and whether {name} reads BSP2 is not known"),
+            };
+            // A BSP opened as BSP2 names no lump.
+            out.push(if lump.is_empty() {
+                format!("the map is BSP2, {reads}")
+            } else {
+                format!(
+                    "the {lump} are too many for BSP29, so the map is compiled as BSP2, {reads}"
+                )
+            });
+        }
+        out
     }
-    if let Some(Written::Bsp2 { lump }) = format {
-        let name = engine.name();
-        let reads = match engine.bsp2() {
-            Bsp2::Reads => format!("which {name} reads"),
-            Bsp2::DoesNotRead => format!("which {name} does not read: it will not load"),
-            Bsp2::Unknown => format!("and whether {name} reads BSP2 is not known"),
-        };
-        // A BSP opened as BSP2 names no lump.
-        out.push(if lump.is_empty() {
-            format!("the map is BSP2, {reads}")
-        } else {
-            format!("the {lump} are too many for BSP29, so the map is compiled as BSP2, {reads}")
-        });
-    }
-    out
 }
 
 /// The room a spawn needs past every bound of `engines` (BUDGET-2.4).
@@ -472,23 +477,18 @@ impl<L: crate::Loader> Workbench<L> {
 
     /// What the open map spawns on each skill, with room past `engines`' bounds (BUDGET-2.3 to
     /// BUDGET-2.5).
-    fn budget_spawn(&mut self, engines: &[Engine]) -> Result<Spawned, String> {
-        let spawn = self
-            .map_spawn()
-            .map_err(|error| error.to_string())?
-            .with_room(room(engines));
+    fn budget_spawn(&mut self, engines: &[Engine]) -> Result<Spawned, WorkbenchError> {
+        let spawn = self.map_spawn()?.with_room(room(engines));
         let mut spawned = Spawned::default();
         for skill in SKILLS {
-            spawn
-                .world(skill, GameMode::Single, |progs, mut world| {
-                    world.settle(progs).map_err(|error| spawn.failed(error))?;
-                    Spawned::most(&mut spawned.edicts, world.num_edicts(), skill);
-                    Spawned::most(&mut spawned.models, world.precached(Precache::Model), skill);
-                    Spawned::most(&mut spawned.sounds, world.precached(Precache::Sound), skill);
-                    Spawned::most(&mut spawned.styles, world.light_styles_set(), skill);
-                    Ok(())
-                })
-                .map_err(|error| error.to_string())?;
+            spawn.world(skill, GameMode::Single, |progs, mut world| {
+                world.settle(progs).map_err(|error| spawn.failed(error))?;
+                Spawned::most(&mut spawned.edicts, world.num_edicts(), skill);
+                Spawned::most(&mut spawned.models, world.precached(Precache::Model), skill);
+                Spawned::most(&mut spawned.sounds, world.precached(Precache::Sound), skill);
+                Spawned::most(&mut spawned.styles, world.light_styles_set(), skill);
+                Ok(())
+            })?;
         }
         Ok(spawned)
     }
@@ -509,14 +509,17 @@ impl<L: crate::Loader> Workbench<L> {
         let measured = Measured {
             lumps,
             format: map_format,
-            spawned: self.budget_spawn(&engines),
+            spawned: self
+                .budget_spawn(&engines)
+                .map_err(|error| error.to_string()),
         };
         let budgets: Vec<EngineBudget> = engines
             .iter()
             .map(|&engine| engine_budget(engine, &measured))
             .collect();
         if let (Some(document), Some(first)) = (self.map(), budgets.first()) {
-            let problems = issues(first, target, format.as_ref())
+            let problems = first
+                .issues(target, format.as_ref())
                 .into_iter()
                 .map(|message| EntityProblem {
                     entity: None,

@@ -8,12 +8,12 @@ and names the system globals and fields the engine reads and writes at fixed slo
 
 - `EdictLayout`: the edict size from the field count (EDICT-1.1) on the 32-bit header size
   (EDICT-1.3), the entity value of an edict (EDICT-1.5), the pointer value of a field slot
-  (EDICT-1.6), the number an entity value names (EDICT-1.9), and the refusal of a progs that
-  cannot hold the system globals or fields (EDICT-2.4, EDICT-3.3) or whose field count would
-  overflow an entity value (EDICT-3.5).
-- `EdictStore`: the array of 600 edicts with `num_edicts` (EDICT-1.4, EDICT-1.8), field access
-  by offset, `EDICT_NUM` and `NUM_FOR_EDICT` (EDICT-1.7), allocation (`spawn`, EDICT-6) and
-  freeing (`remove`, EDICT-7) with id's spec-exact reuse rules.
+  (EDICT-1.6), and the refusal of a progs that cannot hold the system globals or fields
+  (EDICT-2.4, EDICT-3.3) or whose field count would overflow an entity value (EDICT-3.5).
+- `EdictStore`: the array of 600 edicts, or more for counting a map past them (EDICT-1.10),
+  with `num_edicts` (EDICT-1.4, EDICT-1.8), field access by offset, the number an entity value
+  names (EDICT-1.9), `EDICT_NUM` and `NUM_FOR_EDICT` (EDICT-1.7), allocation (`spawn`, EDICT-6)
+  and freeing (`remove`, EDICT-7) with id's spec-exact reuse rules.
 - `system`: the fixed tables of the 64 system globals (EDICT-2.1) and 105 system fields
   (EDICT-3.1), with lookup by slot and by name.
 
