@@ -279,15 +279,19 @@ Source: [`docs/spec/budget.md`](../spec/budget.md) and
   and where that is stated, or `unlimited`, or `unknown` for KEX, which has no source), `share`
   and `standing`: `past`, `near` (at least 90% of the bound), `within` or `unknown`. The lines
   come worst first.
+- With `answer: "later"` it answers null and makes the spawns on its own thread;
+  `map.budget_found` then gives the budget, and keeps giving it while the map, the target and
+  the sources are unchanged.
 - The lumps come from the last `map.compile` or `map.find_leaks` while the map is unchanged,
   so compile first; a compile neither lights nor vises, so lighting and visibility are not
   measured. Edicts, precaches and light styles come from spawning the map with the project's
-  program on each skill, with room past id's limits: a map of 601 edicts shows past Vanilla's
-  600 and inside QuakeSpasm's 8192.
+  program on each skill, with room past the bounds: a map of 601 edicts shows past Vanilla's
+  600 and inside QuakeSpasm's 8192, and a spawn that runs out of that room is `at_least`, past
+  every bound.
 - `format` is the compile's. A lump too wide for BSP29 makes the compile write BSP2: with a
   target that reads it (QuakeSpasm, Ironwail, vkQuake, FTEQW, DarkPlaces) that is a note;
   with Vanilla, an error; with KEX, not known.
-- Lines past and near the target's bound, and the BSP2 note, join `map.issues` until the map
-  changes. To get a map under a limit: fewer entities or `spawnflags` that drop them on a
+- Lines past and near the target's bound, and the BSP2 note, join `map.issues` while the map,
+  the target and the sources are unchanged. To get a map under a limit: fewer entities or `spawnflags` that drop them on a
   skill for edicts; fewer distinct models and sounds for precaches; `func_detail` and fewer
   small brushes for faces, clipnodes and marksurfaces; or a target engine with a higher bound.

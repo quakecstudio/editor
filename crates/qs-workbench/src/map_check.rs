@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::editing::{Change, Source};
 use crate::editing::{Saved, TextStep};
 use crate::entity_classes::class_info;
+use crate::map_budget::BudgetKey;
 use crate::{EntityCheck, EntityProblem, HasWorkbench, MapProject, Workbench, WorkbenchError};
 use qs_map_edit::{ClassInfo, EntityIndex, QuickFix};
 
@@ -100,13 +101,17 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
         // L-77: what `map.playability` last found, while the map is the same; it needs no
         // project.
         let playable = self.playable.clone();
-        // BUDGET-3.3: what `map.budget` last found, while the map is the same.
+        // BUDGET-3.3: what `map.budget` last found, while the map, the target and the sources
+        // are the same.
         let budget = self.budget.clone();
+        let inputs = self.budget_inputs();
+        let budget_problems =
+            move |text: &[u8]| budget.problems(&BudgetKey::of(text.to_vec(), inputs));
         let Ok(schema) = self.entity_schema() else {
             return Some(Box::new(move |map| {
                 let text = map.to_bytes();
                 let mut problems = playable.problems(&text);
-                problems.extend(budget.problems(&text));
+                problems.extend(budget_problems(&text));
                 problems
             }));
         };
@@ -118,7 +123,7 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
             let mut problems = entity_problems(&schema, map);
             problems.extend(logic.problems(&text, sources));
             problems.extend(playable.problems(&text));
-            problems.extend(budget.problems(&text));
+            problems.extend(budget_problems(&text));
             problems
         }))
     }

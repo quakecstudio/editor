@@ -247,7 +247,9 @@ pub struct BspCounts {
     /// Bytes of visibility.
     pub visibility: usize,
     /// The largest extent, in texels, on either axis, of a face that is not `TEX_SPECIAL`,
-    /// as WinQuake's `CalcSurfaceExtents` computes it (BSP-9.7, BSP-9.10 to BSP-9.14).
+    /// as WinQuake's `CalcSurfaceExtents` computes it (BSP-9.7, BSP-9.10 to BSP-9.14), read
+    /// as an unsigned 16-bit value: an extent the engine's `short` wraps negative counts as
+    /// the 32768 or more it is.
     pub face_extent: usize,
     /// The same as the FitzQuake lineage computes it (BSP-20.8, BSP-20.9).
     pub fitz_face_extent: usize,
@@ -325,7 +327,7 @@ impl BspFile {
             }
             let (_, extents) = loader.surface_extents(texinfo.vecs, &self.face_vertices(face));
             for extent in extents {
-                largest = largest.max(usize::try_from(extent).unwrap_or(0));
+                largest = largest.max(usize::from(extent.cast_unsigned()));
             }
         }
         largest
@@ -347,7 +349,7 @@ impl crate::Bsp<'_> {
                 continue;
             }
             for extent in face.extents {
-                face_extent = face_extent.max(usize::try_from(extent).unwrap_or(0));
+                face_extent = face_extent.max(usize::from(extent.cast_unsigned()));
             }
         }
         BspCounts {

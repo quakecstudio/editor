@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+use qs_bsp::LumpId;
 use qs_bsp::write::BspCounts;
 use qs_map::qbsp::QbspWarning;
 use qs_map_bsp::{Compiled, Warning};
@@ -26,17 +27,99 @@ pub enum Seal {
 }
 
 /// The format a compile wrote (QBSP-14.4).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Written {
     /// id's BSP29.
     #[default]
     Bsp29,
-    /// BSP2, since a value of `lump` is too wide for BSP29.
+    /// BSP2.
     Bsp2 {
-        /// The lump, such as `clipnodes`.
-        lump: String,
+        /// The lump a value of which is too wide for BSP29; none for a BSP opened as BSP2.
+        lump: Option<BspLump>,
     },
+}
+
+/// A lump of a BSP file (BSP-1.1), as `qs_bsp::LumpId` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BspLump {
+    /// The entity text.
+    Entities,
+    /// The planes.
+    Planes,
+    /// The textures.
+    Textures,
+    /// The vertexes.
+    Vertexes,
+    /// The visibility.
+    Visibility,
+    /// The nodes.
+    Nodes,
+    /// The texinfo.
+    Texinfo,
+    /// The faces.
+    Faces,
+    /// The lighting.
+    Lighting,
+    /// The clipnodes.
+    Clipnodes,
+    /// The leafs.
+    Leafs,
+    /// The marksurfaces.
+    Marksurfaces,
+    /// The edges.
+    Edges,
+    /// The surfedges.
+    Surfedges,
+    /// The models.
+    Models,
+}
+
+impl From<LumpId> for BspLump {
+    fn from(lump: LumpId) -> Self {
+        match lump {
+            LumpId::Entities => Self::Entities,
+            LumpId::Planes => Self::Planes,
+            LumpId::Textures => Self::Textures,
+            LumpId::Vertexes => Self::Vertexes,
+            LumpId::Visibility => Self::Visibility,
+            LumpId::Nodes => Self::Nodes,
+            LumpId::Texinfo => Self::Texinfo,
+            LumpId::Faces => Self::Faces,
+            LumpId::Lighting => Self::Lighting,
+            LumpId::Clipnodes => Self::Clipnodes,
+            LumpId::Leafs => Self::Leafs,
+            LumpId::Marksurfaces => Self::Marksurfaces,
+            LumpId::Edges => Self::Edges,
+            LumpId::Surfedges => Self::Surfedges,
+            LumpId::Models => Self::Models,
+        }
+    }
+}
+
+impl BspLump {
+    /// Its name in id's messages, such as `clipnodes`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Entities => "entities",
+            Self::Planes => "planes",
+            Self::Textures => "textures",
+            Self::Vertexes => "vertexes",
+            Self::Visibility => "visibility",
+            Self::Nodes => "nodes",
+            Self::Texinfo => "texinfo",
+            Self::Faces => "faces",
+            Self::Lighting => "lighting",
+            Self::Clipnodes => "clipnodes",
+            Self::Leafs => "leafs",
+            Self::Marksurfaces => "marksurfaces",
+            Self::Edges => "edges",
+            Self::Surfedges => "surfedges",
+            Self::Models => "models",
+        }
+    }
 }
 
 /// What the BSP a compile wrote holds, counted (ENGT-5.4).
@@ -149,7 +232,7 @@ impl MapReport {
                 Warning::NoOccupant => seal = Seal::NoOccupant,
                 Warning::Bsp2(lump) => {
                     format = Written::Bsp2 {
-                        lump: lump.name().to_owned(),
+                        lump: Some((*lump).into()),
                     };
                 }
                 Warning::NoBrushFaces | Warning::PortalClippedAway | Warning::Map(_) => {}

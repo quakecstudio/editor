@@ -494,7 +494,8 @@ fn budget_maps(
                 .find(|line| line.limit == limit)
                 .and_then(|line| match line.used {
                     Used::Count { count, .. } => Some(count),
-                    Used::NotMeasured { .. } => None,
+                    // A map past the budget's room is past what the game started with too.
+                    Used::AtLeast { .. } | Used::NotMeasured { .. } => None,
                 })
         };
         let limits = [

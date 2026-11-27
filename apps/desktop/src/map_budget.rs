@@ -36,6 +36,18 @@ impl BudgetView {
         }
     }
 
+    /// Whether what is shown is `found`, found at `at`.
+    pub(crate) fn shows(&self, found: &MapBudget, at: MapRevision) -> bool {
+        self.found
+            .as_ref()
+            .is_some_and(|(shown, shown_at)| shown == found && *shown_at == at)
+    }
+
+    /// Shows nothing.
+    pub(crate) fn clear(&mut self) {
+        self.found = None;
+    }
+
     /// What was found, for tests.
     #[cfg(test)]
     pub(crate) fn found(&self) -> Option<&MapBudget> {
@@ -80,7 +92,7 @@ fn meter(ui: &mut Ui, theme: &Theme, line: &BudgetLine, engine: &str) {
     };
     let colour = theme.color(token);
     match (&line.used, &line.bound) {
-        (Used::Count { count, .. }, LineBound::At { most, .. }) => {
+        (Used::Count { count, .. } | Used::AtLeast { count, .. }, LineBound::At { most, .. }) => {
             ui.horizontal_wrapped(|ui| {
                 let share = line.share.unwrap_or(0.0).clamp(0.0, 1.0);
                 #[expect(
@@ -99,10 +111,10 @@ fn meter(ui: &mut Ui, theme: &Theme, line: &BudgetLine, engine: &str) {
                 ui.label(RichText::new(budget_meter(*count, *most, &line.name)).color(text));
             });
         }
-        (Used::Count { count, .. }, LineBound::Unlimited) => {
+        (Used::Count { count, .. } | Used::AtLeast { count, .. }, LineBound::Unlimited) => {
             ui.label(RichText::new(budget_unbounded(*count, &line.name, engine)).color(colour));
         }
-        (Used::Count { .. }, LineBound::Unknown) => {
+        (Used::Count { .. } | Used::AtLeast { .. }, LineBound::Unknown) => {
             ui.label(
                 RichText::new(budget_unknown(&line.name, &limit_unknown(engine))).color(colour),
             );

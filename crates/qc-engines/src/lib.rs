@@ -84,8 +84,19 @@ pub struct Source {
     pub license_sha256: &'static str,
 }
 
-/// An engine a project can target (ENGT-3.9).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// An engine a project can target (ENGT-3.9), written by its id (ENGT-3.4).
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum Engine {
     /// id's engine.
     Vanilla,

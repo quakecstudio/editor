@@ -78,7 +78,7 @@ use crate::keymap::{self, Platform, Scope};
 use crate::map_editor::MapAction;
 #[cfg(test)]
 use crate::map_editor::MapEditor;
-use crate::map_feature::MapFeature;
+use crate::map_feature::{Budgeting, MapFeature};
 use crate::map_profiles::ProfileAction;
 use crate::map_view::{self, MapView};
 #[cfg(test)]
@@ -1951,9 +1951,12 @@ impl Shell {
             // The Properties panel, drawn before the map this frame, shows them on the next.
             ui.ctx().request_repaint();
         }
-        // L-79: the engine limits of a map just compiled, shown on the next frame.
-        if self.with_map(MapFeature::refresh_map_budget) {
-            ui.ctx().request_repaint();
+        // L-79: the engine limits of a map just compiled, made on their own thread and looked
+        // for again soon.
+        match self.with_map(MapFeature::refresh_map_budget) {
+            Budgeting::Idle => {}
+            Budgeting::Shown => ui.ctx().request_repaint(),
+            Budgeting::Running => ui.ctx().request_repaint_after(PREVIEW_POLL),
         }
         // A playability check running on its own thread is looked for again soon (L-77).
         if self.with_map(MapFeature::poll_playability) {
@@ -2481,6 +2484,13 @@ impl Shell {
     #[cfg(test)]
     pub(crate) const fn checking_playability(&self) -> bool {
         self.features.map.checking_playability()
+    }
+
+    /// Whether the map's budget, which a compile starts, is still being made on its own
+    /// thread (L-79).
+    #[cfg(test)]
+    pub(crate) const fn making_budget(&self) -> bool {
+        self.features.map.making_budget()
     }
 
     /// Puts the map editor's 3D camera at `camera`, as a showcase or a script looks from.

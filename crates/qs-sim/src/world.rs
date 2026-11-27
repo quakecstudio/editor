@@ -226,6 +226,8 @@ pub struct Room {
     pub edicts: qc_edict::EdictCapacity,
     /// The precache lists' entries; `None` for the profile's.
     pub precaches: Option<qc_builtins::PrecacheRoom>,
+    /// The light style array's entries (LIMIT-6.4); `None` for id's 64.
+    pub light_styles: Option<usize>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -445,6 +447,9 @@ impl World {
             }
         }
         engine.precache_room = options.room.precaches;
+        if let Some(styles) = options.room.light_styles {
+            engine.set_lightstyle_room(styles);
+        }
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
         engine.clients_active = vec![false; MAXCLIENTS];
@@ -1058,6 +1063,19 @@ impl World {
             qc_builtins::Precache::Sound => &engine.sound_precache,
         };
         list.len().saturating_sub(1)
+    }
+
+    /// One more than the highest light style the program has set with `lightstyle`, 0 for
+    /// none (BUILTIN-12.6).
+    #[must_use]
+    pub fn light_styles_highest(&self) -> usize {
+        self.builtins
+            .mock
+            .engine()
+            .lightstyles
+            .iter()
+            .rposition(Option::is_some)
+            .map_or(0, |style| style.saturating_add(1))
     }
 
     /// The light styles the program has set with `lightstyle` (BUILTIN-12.6).

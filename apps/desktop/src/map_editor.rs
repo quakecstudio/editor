@@ -806,6 +806,16 @@ impl MapEditor {
         self.budget.set(found, at);
     }
 
+    /// Whether the engine limits shown are `found`, measured at `at`.
+    pub(crate) fn shows_budget(&self, found: &MapBudget, at: MapRevision) -> bool {
+        self.budget.shows(found, at)
+    }
+
+    /// Stops showing the engine limits (L-79).
+    pub(crate) fn clear_budget(&mut self) {
+        self.budget.clear();
+    }
+
     /// What the engine limits last found, for tests.
     #[cfg(test)]
     pub(crate) const fn budget(&self) -> &BudgetView {

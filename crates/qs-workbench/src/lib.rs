@@ -376,6 +376,8 @@ pub struct Workbench<L> {
     playable: map_playable::PlayFound,
     /// The issues `map.budget` last found, which `map.issues` lists (BUDGET-3.3).
     budget: map_budget::BudgetFound,
+    /// A budget being made on its own thread (BUDGET-1).
+    budget_run: Option<map_budget::BudgetRun>,
     /// A `map.playability` search running on its own thread (L-77).
     play_run: Option<map_playable::PlayRun>,
     /// The whole open map as it was last compiled, which `map.playability` reads again.
@@ -411,6 +413,7 @@ impl<L: Loader> Workbench<L> {
             logic: map_logic::LogicFound::default(),
             playable: map_playable::PlayFound::default(),
             budget: map_budget::BudgetFound::default(),
+            budget_run: None,
             play_run: None,
             last_compile: None,
             spawn_world: map_filter::SpawnWorld::default(),

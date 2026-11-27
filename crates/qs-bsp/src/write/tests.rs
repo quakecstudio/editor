@@ -326,7 +326,7 @@ fn counts_count_each_lump() {
 // loader's CalcSurfaceExtents computes it, the same extent Bsp::read finds
 #[test]
 fn the_face_extent_is_the_loaders() {
-    for (width, want) in [(64.0, 64), (256.0, 256), (1008.0, 1008)] {
+    for (width, want) in [(64.0, 64), (256.0, 256), (1008.0, 1008), (40000.0, 40000)] {
         let mut file = with_face(width, 0);
         let counts = file.counts();
         assert_eq!(counts.face_extent, want);

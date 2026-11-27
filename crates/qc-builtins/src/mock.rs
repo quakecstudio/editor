@@ -637,8 +637,16 @@ impl MockEngine {
         Ok(())
     }
 
+    /// Gives the light style array `styles` entries in place of id's
+    /// [`LIMIT_MAX_LIGHTSTYLES`], for counting a map that sets more (LIMIT-6.4); fewer than
+    /// id's are taken as id's.
+    pub fn set_lightstyle_room(&mut self, styles: usize) {
+        self.lightstyles
+            .resize(styles.max(LIMIT_MAX_LIGHTSTYLES), None);
+    }
+
     /// Sets lightstyle `style` to `value` (BUILTIN-12.6); `style` is already range-checked by
-    /// the caller to 0 to [`LIMIT_MAX_LIGHTSTYLES`] - 1.
+    /// the caller to the array, 0 to [`LIMIT_MAX_LIGHTSTYLES`] - 1 unless given more room.
     pub fn set_lightstyle(&mut self, style: usize, value: &[u8]) {
         if let Some(cell) = self.lightstyles.get_mut(style) {
             *cell = Some(String::from_utf8_lossy(value).into_owned());

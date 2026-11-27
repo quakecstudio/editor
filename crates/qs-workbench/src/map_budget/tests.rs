@@ -13,12 +13,14 @@ use std::path::{Path, PathBuf};
 use qc_engines::{Bound, Bsp2, Engine, MapFormat, MapLimit, Measure, Past};
 use qc_project::FsLoader;
 use qs_commands::{Registry, Session};
-use qs_map_edit::{LumpCounts, MAP_ISSUES, MAP_OPEN, MAP_SET_KEY, MapIssues, Written};
-use serde_json::json;
+use qs_map_edit::testing::level_bsp;
+use qs_map_edit::{BspLump, LumpCounts, MAP_ISSUES, MAP_OPEN, MAP_SET_KEY, MapIssues, Written};
+use serde_json::{Value, json};
 
 use super::{
-    BUDGET_NEAR_SHARE, BudgetLine, EngineBudget, LineBound, LumpSource, MAP_BUDGET, MapBudget,
-    Measured, Spawned, Standing, Used, engine_budget, room, worst_first,
+    BUDGET_NEAR_SHARE, BudgetLine, EngineBudget, LineBound, LumpSource, MAP_BUDGET,
+    MAP_BUDGET_FOUND, MapBudget, Measured, SpawnUse, Spawned, Standing, Styles, Unmeasured, Used,
+    engine_budget, room, worst_first,
 };
 use crate::map_compile::MAP_COMPILE;
 use crate::map_compile::tests::Context;
@@ -36,6 +38,8 @@ void(float style, string value) lightstyle = #35;
 void() worldspawn = { precache_model("progs/player.mdl"); lightstyle(0, "m"); lightstyle(5, "a"); };
 void() info_thing = { precache_model("progs/thing.mdl"); precache_sound("thing.wav"); };
 void() info_other = { precache_sound("other.wav"); };
+.float style;
+void() info_style = { lightstyle(self.style, "m"); };
 "#;
 
 /// The world's entity, a sealed box with a player start inside.
@@ -134,7 +138,9 @@ fn open_session(spec: &ProjectSpec<'_>) -> (Session<Context>, PathBuf) {
 }
 
 fn budget(session: &mut Session<Context>) -> MapBudget {
-    serde_json::from_value(session.execute(MAP_BUDGET, json!({})).unwrap()).unwrap()
+    let found: Option<MapBudget> =
+        serde_json::from_value(session.execute(MAP_BUDGET, json!({})).unwrap()).unwrap();
+    found.unwrap()
 }
 
 fn line(budget: &EngineBudget, limit: MapLimit) -> &BudgetLine {
@@ -148,6 +154,7 @@ fn line(budget: &EngineBudget, limit: MapLimit) -> &BudgetLine {
 fn count(line: &BudgetLine) -> usize {
     match line.used {
         Used::Count { count, .. } => count,
+        Used::AtLeast { .. } => panic!("{:?} ran out of room", line.limit),
         Used::NotMeasured { ref why } => panic!("{:?} not measured: {why}", line.limit),
     }
 }
@@ -185,7 +192,7 @@ fn measured(count: usize, format: MapFormat) -> Measured {
         face_extent: count,
         fitz_face_extent: count,
     };
-    let at = (count, Some(Skill::Easy));
+    let at = Some(SpawnUse::Counted(count, Skill::Easy));
     Measured {
         lumps: Ok((lumps, LumpSource::Bsp)),
         format,
@@ -193,7 +200,11 @@ fn measured(count: usize, format: MapFormat) -> Measured {
             edicts: at,
             models: at,
             sounds: at,
-            styles: at,
+            styles: Styles {
+                set: at,
+                highest: at,
+            },
+            ran_out: None,
         }),
     }
 }
@@ -217,8 +228,8 @@ fn the_command_needs_a_map() {
 fn the_target_then_ids() {
     let (mut session, _dir) = open_session(&ProjectSpec::default());
     let found = budget(&mut session);
-    let names: Vec<&str> = found.engines.iter().map(|e| e.engine.as_str()).collect();
-    assert_eq!(names, ["quakespasm", "vanilla"]);
+    let names: Vec<Engine> = found.engines.iter().map(|e| e.engine).collect();
+    assert_eq!(names, [Engine::QuakeSpasm, Engine::Vanilla]);
     assert_eq!(found.engines[0].bsp2, Bsp2::Reads);
     assert_eq!(found.engines[1].bsp2, Bsp2::DoesNotRead);
     assert_eq!(found.engines[0].lines.len(), MapLimit::ALL.len());
@@ -229,7 +240,7 @@ fn the_target_then_ids() {
     });
     let found = budget(&mut alone);
     assert_eq!(found.engines.len(), 1);
-    assert_eq!(found.engines[0].engine, "vanilla");
+    assert_eq!(found.engines[0].engine, Engine::Vanilla);
     let edicts = line(&found.engines[0], MapLimit::Edicts);
     assert!(matches!(edicts.used, Used::NotMeasured { .. }));
     assert_eq!(edicts.standing, Standing::Unknown);
@@ -401,7 +412,7 @@ fn each_limit_at_and_above_its_bound() {
                 Standing::Past,
                 "{engine:?} {limit:?}"
             );
-            let said = above.issues(engine, None);
+            let said = above.issues(None);
             let wanted = format!(
                 "{} {} is past {}'s limit of {}",
                 fact.most + 1,
@@ -438,7 +449,7 @@ fn shares_and_standings() {
     assert!(kex.lines.iter().all(|l| l.standing == Standing::Unknown));
     assert!(kex.lines.iter().all(|l| l.bound == LineBound::Unknown));
     // Near is an issue too.
-    let said = near.issues(Engine::Vanilla, None);
+    let said = near.issues(None);
     assert!(
         said.contains(&"540 edicts is 90% of Vanilla's limit of 600".to_owned()),
         "{said:?}"
@@ -454,7 +465,7 @@ fn the_worst_comes_first() {
         lumps.faces = 70000;
         lumps.entities = 1000;
     }
-    measured.spawned = Err("no project".to_owned());
+    measured.spawned = Err(Unmeasured::Spawn("no project".to_owned()));
     let budget = engine_budget(Engine::Vanilla, &measured);
     let order: Vec<MapLimit> = budget.lines.iter().take(3).map(|l| l.limit).collect();
     assert_eq!(
@@ -481,7 +492,7 @@ fn past_bsp29_is_offered_bsp2() {
         lumps.clipnodes = 40000;
     }
     let written = Written::Bsp2 {
-        lump: "clipnodes".to_owned(),
+        lump: Some(BspLump::Clipnodes),
     };
     let quakespasm = engine_budget(Engine::QuakeSpasm, &measured);
     // QuakeSpasm's 32767 is BSP29's loader's: a BSP2 map is within.
@@ -489,7 +500,7 @@ fn past_bsp29_is_offered_bsp2() {
         line(&quakespasm, MapLimit::Clipnodes).standing,
         Standing::Within
     );
-    let said = quakespasm.issues(Engine::QuakeSpasm, Some(&written));
+    let said = quakespasm.issues(Some(&written));
     assert_eq!(
         said,
         [
@@ -498,7 +509,7 @@ fn past_bsp29_is_offered_bsp2() {
         ]
     );
     let vanilla = engine_budget(Engine::Vanilla, &measured);
-    let said = vanilla.issues(Engine::Vanilla, Some(&written));
+    let said = vanilla.issues(Some(&written));
     assert!(
         said.contains(
             &"40000 clipnodes is past Vanilla's limit of 32767: id's compiler cannot write it"
@@ -513,7 +524,7 @@ fn past_bsp29_is_offered_bsp2() {
         )
     );
     let kex = engine_budget(Engine::Kex, &measured);
-    let said = kex.issues(Engine::Kex, Some(&written));
+    let said = kex.issues(Some(&written));
     assert_eq!(
         said,
         [
@@ -522,11 +533,9 @@ fn past_bsp29_is_offered_bsp2() {
         ]
     );
     // A BSP opened as BSP2 names no lump.
-    let opened = Written::Bsp2 {
-        lump: String::new(),
-    };
+    let opened = Written::Bsp2 { lump: None };
     assert_eq!(
-        quakespasm.issues(Engine::QuakeSpasm, Some(&opened)),
+        quakespasm.issues(Some(&opened)),
         ["the map is BSP2, which QuakeSpasm reads"]
     );
 }
@@ -535,14 +544,14 @@ fn past_bsp29_is_offered_bsp2() {
 #[test]
 fn what_each_past_says() {
     let measured = measured(1_000_000, MapFormat::Bsp29);
-    let said = engine_budget(Engine::QuakeSpasm, &measured).issues(Engine::QuakeSpasm, None);
+    let said = engine_budget(Engine::QuakeSpasm, &measured).issues(None);
     for end in [
         "QuakeSpasm refuses it",
         "QuakeSpasm loads it with a warning",
     ] {
         assert!(said.iter().any(|m| m.ends_with(end)), "{end}: {said:?}");
     }
-    let said = engine_budget(Engine::Vanilla, &measured).issues(Engine::Vanilla, None);
+    let said = engine_budget(Engine::Vanilla, &measured).issues(None);
     for end in [
         "id's compiler cannot write it",
         "Vanilla writes past its array, which is undefined",
@@ -584,6 +593,7 @@ fn the_spawn_limits_are_measured_in_a_spawn() {
         let used = at.used(limit, Engine::QuakeSpasm);
         let skill = match used {
             Used::Count { skill, .. } => skill,
+            Used::AtLeast { skill, .. } => Some(skill),
             Used::NotMeasured { .. } => None,
         };
         assert_eq!(
@@ -592,4 +602,145 @@ fn the_spawn_limits_are_measured_in_a_spawn() {
             "{limit:?}"
         );
     }
+}
+
+// spec BUDGET-2.4: a spawn that runs out of the room is past every bound: a map of 700
+// edicts' worth with an id target is at least 602 edicts, past id's 600
+#[test]
+fn a_spawn_out_of_room_is_past() {
+    let (mut session, _dir) = open_session(&ProjectSpec {
+        name: "out-of-room",
+        target: Some("quake"),
+        entities: entities("info_thing", 700),
+        ..ProjectSpec::default()
+    });
+    let found = budget(&mut session);
+    let edicts = line(&found.engines[0], MapLimit::Edicts);
+    assert!(
+        matches!(edicts.used, Used::AtLeast { count: 602, .. }),
+        "{edicts:?}"
+    );
+    assert_eq!(edicts.standing, Standing::Past);
+    // The other limits of a skill that ran out are not counted on it; no skill counted them.
+    let models = line(&found.engines[0], MapLimit::ModelPrecaches);
+    assert!(
+        matches!(&models.used, Used::NotMeasured { why } if why.contains("edicts")),
+        "{models:?}"
+    );
+    let messages = issue_messages(&mut session);
+    assert!(
+        messages.contains(
+            &"at least 602 edicts is past Vanilla's limit of 600: Vanilla refuses it".to_owned()
+        ),
+        "{messages:?}"
+    );
+}
+
+// spec LIMIT-6.4, BUDGET-2.3, BUDGET-2.4: a light style past id's 64 is counted for an engine
+// that has more, and past the room is past every bound
+#[test]
+fn light_styles_past_ids() {
+    let style = entity("info_style", "\"style\" \"100\"\n");
+    let (mut dp, _dir) = open_session(&ProjectSpec {
+        name: "styles-dp",
+        target: Some("dp"),
+        entities: style.clone(),
+        ..ProjectSpec::default()
+    });
+    let found = budget(&mut dp);
+    let darkplaces = line(&found.engines[0], MapLimit::LightStyles);
+    // Styles 0, 5 and 100 set, within DarkPlaces' 256.
+    assert_eq!(count(darkplaces), 3);
+    assert_eq!(darkplaces.standing, Standing::Within);
+    // Id's 64 is passed by style 100: one more than the highest is counted.
+    let vanilla = line(&found.engines[1], MapLimit::LightStyles);
+    assert_eq!(count(vanilla), 101);
+    assert_eq!(vanilla.standing, Standing::Past);
+    let (mut qs, _dir) = open_session(&ProjectSpec {
+        name: "styles-qs",
+        target: Some("quakespasm"),
+        entities: style,
+        ..ProjectSpec::default()
+    });
+    let found = budget(&mut qs);
+    let quakespasm = line(&found.engines[0], MapLimit::LightStyles);
+    assert!(
+        matches!(quakespasm.used, Used::AtLeast { count: 66, .. }),
+        "{quakespasm:?}"
+    );
+    assert_eq!(quakespasm.standing, Standing::Past);
+}
+
+// spec BUDGET-3.3: a budget is of the target too: changing the target drops its issues
+#[test]
+fn a_new_target_drops_the_issues() {
+    let (mut session, dir) = open_session(&ProjectSpec {
+        name: "retarget",
+        target: Some("quake"),
+        entities: entities("info_thing", 545),
+        ..ProjectSpec::default()
+    });
+    budget(&mut session);
+    let near = |messages: &[String]| messages.iter().any(|m| m.contains("edicts is 91%"));
+    assert!(near(&issue_messages(&mut session)));
+    std::fs::write(dir.join("quakec.toml"), manifest("quakespasm")).unwrap();
+    session
+        .execute(OPEN_PROJECT, json!({ "path": dir }))
+        .unwrap();
+    session
+        .execute(MAP_OPEN, json!({ "path": dir.join("maps/test.map") }))
+        .unwrap();
+    assert!(!near(&issue_messages(&mut session)));
+    let found: Option<MapBudget> =
+        serde_json::from_value(session.execute(MAP_BUDGET_FOUND, json!({})).unwrap()).unwrap();
+    assert!(found.is_none(), "a budget of another target is not found");
+}
+
+// spec BUDGET-1.1: with answer later, map.budget answers null and map.budget_found gives the
+// budget once its spawns are done, the same as one made at once
+#[test]
+fn a_budget_made_later() {
+    let (mut session, _dir) = open_session(&ProjectSpec {
+        name: "later",
+        ..ProjectSpec::default()
+    });
+    let now = budget(&mut session);
+    let started = session
+        .execute(MAP_BUDGET, json!({ "answer": "later" }))
+        .unwrap();
+    assert_eq!(started, Value::Null);
+    let later = loop {
+        let found: Option<MapBudget> =
+            serde_json::from_value(session.execute(MAP_BUDGET_FOUND, json!({})).unwrap()).unwrap();
+        if let Some(found) = found {
+            break found;
+        }
+        std::thread::yield_now();
+    };
+    assert_eq!(later, now);
+}
+
+// spec BUDGET-2.1: a map opened from a BSP counts the entities the editor holds
+#[test]
+fn a_bsp_counts_the_entities_held() {
+    let dir = std::env::temp_dir().join(format!("qs-wb-budget-bspfile-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("level.bsp");
+    std::fs::write(&path, level_bsp(&["wall"])).unwrap();
+    let (mut session, _project) = open_session(&ProjectSpec {
+        name: "bsp",
+        project: Opened::MapOnly,
+        ..ProjectSpec::default()
+    });
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    let before = count(line(&budget(&mut session).engines[0], MapLimit::Entities));
+    session
+        .execute(
+            "map.place_entity",
+            json!({ "classname": "info_null", "origin": [0.0, 0.0, 0.0] }),
+        )
+        .unwrap();
+    let after = count(line(&budget(&mut session).engines[0], MapLimit::Entities));
+    assert_eq!(after, before + 1);
 }
