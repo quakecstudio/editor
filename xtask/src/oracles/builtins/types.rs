@@ -463,6 +463,11 @@ const PROGRAMS: &[&str] = &[
     "enum E : float { A };",
     "enum E : S { A };",
     "enum E : 5 { A };",
+    // FTEF-19.85: a base read before the enum's type is made.
+    "enum E : E { A };",
+    "enum E : .E { A };",
+    "enum class E : E { A };",
+    "enum E : F { A }; enum F : E { B };",
     "enum E { A } x;",
     "enum E { A } x, y;",
     "enum E { A } *x;",

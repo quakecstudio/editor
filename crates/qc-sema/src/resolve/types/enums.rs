@@ -31,6 +31,15 @@ impl<'a> Resolver<'a> {
         location: Location,
     ) {
         self.resolve_uses(file, None, &decl.uses);
+        // FTEF-19.85: `QCC_PR_ParseEnum` reads the base before it makes the enum's type, so a
+        // base that names the enum is no type yet.
+        if item.first
+            && let Some(name) = &item.enum_name
+            && self.mentions(&item.base, name)
+        {
+            self.report(Code::E0203, location, format!("\"{name}\" is not a type"));
+            return;
+        }
         // FTEF-19.37: the base type after `:` is a type.
         if item.first && self.check_type_names(&item.base, &[], decl.span.start, location) {
             return;
@@ -153,6 +162,7 @@ impl<'a> Resolver<'a> {
         // lookups find before the older ones (`Hash_Add`, FTEF-19.33).
         if let Type::Named(strict) = &decl.ty
             && decl.ty != base
+            && !self.base_reaches(&base, strict)
         {
             self.strict_enums.insert(strict.to_string(), base.clone());
         }

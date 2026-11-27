@@ -673,6 +673,22 @@ fn a_typedef_named_as_another_type_is_refused() {
     );
 }
 
+// spec FTEF-19.85: an enum's base is read before the enum's type is made, so a base naming the
+// enum is no type, alone, in a field or as a strict enum's; and a base leading back to the enum
+// through another's makes no type the model follows forever (L-81)
+#[test]
+fn an_enum_base_naming_the_enum_is_no_type() {
+    for source in [
+        "enum E : E { A };",
+        "enum E : .E { A };",
+        "enum class E : E { A };",
+        "enum E : F { A }; enum F : E { B };",
+    ] {
+        assert_eq!(errors(source, &[]), [Code::E0203], "{source}");
+    }
+    assert_eq!(errors("enum F { B }; enum E : F { A };", &[]), []);
+}
+
 // spec FTEF-10.6: an accessor is declared wherever its type is written, so one with no base
 // in a body, a parameter, a member, a cast or a `sizeof` is refused, and a base that is the
 // accessor itself is no type

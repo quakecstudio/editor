@@ -182,3 +182,33 @@ proptest! {
         );
     }
 }
+
+// spec FTEF-19.85: the token soup that overflowed the stack on Linux (L-81, found from proptest
+// seed 2136 of a run of `every_location_is_inside_its_file`): an enum named `enum`'s base reads
+// back to itself through the includes; every location stays inside its file, on a stack the
+// size the property test's cases fit in
+#[test]
+fn an_enum_based_on_itself_keeps_locations_inside() {
+    let files = vec![
+        "\n#endif\n enum enum \n#endif\n virtual: virtual: entity \n#include \"f1.qc\"\n \n#endif\n \
+         typedef return \n#ifdef a\n typedef \n#include \"f1.qc\"\n accessor \n#endif\n $a \n#endif\n \
+         return \"s\" this return ba if"
+            .to_owned(),
+        "enum \n#endif\n \n#define a b\n if \"s\" this vector \"s\"".to_owned(),
+    ];
+    let checked = std::thread::Builder::new()
+        .stack_size(SMALL_STACK)
+        .spawn(move || {
+            let mut db = db_of(&files, Dialect::Fteqcc);
+            index_inside(&files, &db.module_index(&ids(&files)))?;
+            analysis_inside(&files, &db.analyze_module(&input(&files)))
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    checked.unwrap();
+}
+
+/// A stack the property test's ordinary cases fit in, so a recursion with no bound fails at
+/// once rather than after the default stack (L-81).
+const SMALL_STACK: usize = 96 * 1024;
