@@ -840,3 +840,36 @@ fn the_played_status_says_all_it_found() {
         Some("Playing room: 2 entities stand in the dark, the first a item_health")
     );
 }
+
+// spec ENGT-5.4: the compile report counts each lump of the BSP it wrote, and names BSP29
+#[test]
+fn the_report_counts_each_lump() {
+    let path = room("counted", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    let found = report(&mut session, MAP_COMPILE);
+    assert_eq!(found.format, qs_map_edit::Written::Bsp29);
+    let bytes = std::fs::read(path.with_extension("bsp")).unwrap();
+    let bsp = qs_bsp::Bsp::read(&bytes, qs_bsp::BspLoader::FitzQuake).unwrap();
+    let lumps = found.lumps;
+    assert_eq!(lumps.models, bsp.models.len());
+    assert_eq!(lumps.planes, bsp.planes.len());
+    assert_eq!(lumps.faces, bsp.faces.len());
+    assert_eq!(lumps.clipnodes, bsp.clipnodes.len());
+    assert_eq!(lumps.leafs, bsp.leafs.len());
+    assert_eq!(lumps.vertexes, bsp.vertexes.len());
+    assert_eq!(lumps.marksurfaces, bsp.marksurfaces.len());
+    assert_eq!(lumps.edges, bsp.edges.len());
+    assert_eq!(lumps.entity_text, bsp.entity_lump.len());
+    assert_eq!(lumps.entities, 2);
+    let largest = bsp
+        .faces
+        .iter()
+        .filter(|f| bsp.texinfo[f.texinfo].flags & qs_bsp::BSP_TEX_SPECIAL == 0)
+        .flat_map(|f| f.extents)
+        .max()
+        .unwrap();
+    assert_eq!(lumps.fitz_face_extent, usize::try_from(largest).unwrap());
+    assert!(lumps.face_extent > 0);
+    // A compile does not light or vis the map.
+    assert_eq!((lumps.lighting, lumps.visibility), (0, 0));
+}

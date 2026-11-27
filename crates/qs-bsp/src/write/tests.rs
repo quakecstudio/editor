@@ -260,3 +260,87 @@ fn vertexes_texinfo_and_surfedges_are_written() {
         assert_eq!(int(e), -5);
     }
 }
+
+/// `minimal` with one face of `width` by 16 units on its texinfo, the texture's axes the
+/// world's x and y; `flags` its texinfo's.
+fn with_face(width: f32, flags: i32) -> BspFile {
+    let mut file = minimal();
+    file.vertexes = vec![
+        [0.0, 0.0, 0.0],
+        [width, 0.0, 0.0],
+        [width, 16.0, 0.0],
+        [0.0, 16.0, 0.0],
+    ];
+    file.edges = vec![[0, 0], [0, 1], [1, 2], [2, 3], [3, 0]];
+    file.surfedges = vec![1, 2, 3, 4];
+    file.texinfo = vec![super::DiskTexinfo {
+        vecs: [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+        miptex: 0,
+        flags,
+    }];
+    file.faces = vec![DiskFace {
+        planenum: 0,
+        side: 0,
+        firstedge: 0,
+        numedges: 4,
+        texinfo: 0,
+        styles: [0, 255, 255, 255],
+        lightofs: -1,
+    }];
+    file.textures = 1_i32.to_le_bytes().to_vec();
+    file.lighting = vec![0; 7];
+    file.visibility = vec![0; 3];
+    file.marksurfaces = vec![0, 0];
+    file
+}
+
+// spec ENGT-5.4: a file's counts are each lump's records, bytes for the lumps of bytes, the
+// world's visleafs, the textures lump's count and the entities of its text
+#[test]
+fn counts_count_each_lump() {
+    let mut file = with_face(64.0, 0);
+    file.entities =
+        b"{\n\"classname\" \"worldspawn\"\n\"message\" \"{ a brace }\"\n}\n{\n}\n\0".to_vec();
+    let counts = file.counts();
+    assert_eq!(counts.models, 1);
+    assert_eq!(counts.entities, 2);
+    assert_eq!(counts.entity_text, file.entities.len());
+    assert_eq!(counts.planes, 1);
+    assert_eq!(counts.nodes, 1);
+    assert_eq!(counts.clipnodes, 1);
+    assert_eq!(counts.leafs, 2);
+    assert_eq!(counts.visleafs, 1);
+    assert_eq!(counts.vertexes, 4);
+    assert_eq!(counts.faces, 1);
+    assert_eq!(counts.marksurfaces, 2);
+    assert_eq!(counts.texinfo, 1);
+    assert_eq!(counts.edges, 5);
+    assert_eq!(counts.surfedges, 4);
+    assert_eq!(counts.textures, 1);
+    assert_eq!(counts.lighting, 7);
+    assert_eq!(counts.visibility, 3);
+    assert_eq!(BspFile::default().counts(), super::BspCounts::default());
+}
+
+// spec ENGT-5.4: the face extent is the largest of a face that is not TEX_SPECIAL, as each
+// loader's CalcSurfaceExtents computes it, the same extent Bsp::read finds
+#[test]
+fn the_face_extent_is_the_loaders() {
+    for (width, want) in [(64.0, 64), (256.0, 256), (1008.0, 1008)] {
+        let mut file = with_face(width, 0);
+        let counts = file.counts();
+        assert_eq!(counts.face_extent, want);
+        assert_eq!(counts.fitz_face_extent, want);
+        if width <= 256.0 {
+            file.textures.clear();
+            let bytes = file.to_bytes(BspFormat::Bsp29).unwrap();
+            let read = Bsp::read(&bytes, BspLoader::WinQuake).unwrap();
+            assert_eq!(
+                usize::try_from(read.faces[0].extents[0]).unwrap(),
+                counts.face_extent
+            );
+        }
+    }
+    // A special face's extent is not counted.
+    assert_eq!(with_face(1000.0, 1).counts().face_extent, 0);
+}

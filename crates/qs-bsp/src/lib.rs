@@ -448,6 +448,63 @@ impl BspLoader {
             Self::WinQuake | Self::GlQuake => false,
         }
     }
+
+    /// The `texturemins` and `extents` of a face whose texinfo axes are `vecs` and whose
+    /// vertices are `vertices`, in order, as this loader's `CalcSurfaceExtents` computes them
+    /// (BSP-9.7, BSP-9.10 to BSP-9.14, BSP-20.8, BSP-20.9), before its check of the extent
+    /// (BSP-9.4, BSP-9.17, BSP-20.10).
+    #[must_use]
+    pub fn surface_extents(
+        self,
+        vecs: [[f32; 4]; 2],
+        vertices: &[[f32; 3]],
+    ) -> ([i16; 2], [i16; 2]) {
+        let (mut mins, mut maxs) = if self.fitz() {
+            ([f32::MAX; 2], [f32::MIN; 2])
+        } else {
+            ([999_999.0_f32; 2], [-99_999.0_f32; 2])
+        };
+        for &vertex in vertices {
+            for (axis, axis_vecs) in vecs.iter().enumerate() {
+                let (Some(min), Some(max)) = (mins.get_mut(axis), maxs.get_mut(axis)) else {
+                    continue;
+                };
+                if self.fitz() {
+                    // BSP-20.8: C's comparisons, so a NaN replaces neither bound.
+                    let value = double_texture_coordinate(vertex, *axis_vecs);
+                    if value < *min {
+                        *min = value;
+                    }
+                    if value > *max {
+                        *max = value;
+                    }
+                } else {
+                    let value = x87_texture_coordinate(vertex, *axis_vecs);
+                    if x87_replaces(value, *min) {
+                        *min = value;
+                    }
+                    if x87_replaces(*max, value) {
+                        *max = value;
+                    }
+                }
+            }
+        }
+        let mut texturemins = [0; 2];
+        let mut extents = [0; 2];
+        for axis in 0..2 {
+            let min = mins.get(axis).copied().unwrap_or_default();
+            let max = maxs.get(axis).copied().unwrap_or_default();
+            let bmin = x86_double_to_int(f64::from(min / 16.0).floor());
+            let bmax = x86_double_to_int(f64::from(max / 16.0).ceil());
+            if let Some(slot) = texturemins.get_mut(axis) {
+                *slot = low_16(bmin.wrapping_mul(16));
+            }
+            if let Some(slot) = extents.get_mut(axis) {
+                *slot = low_16(bmax.wrapping_sub(bmin).wrapping_mul(16));
+            }
+        }
+        (texturemins, extents)
+    }
 }
 
 /// Why a BSP could not be read.
@@ -1484,11 +1541,6 @@ impl<'a> Bsp<'a> {
         element: usize,
         loader: BspLoader,
     ) -> Result<([i16; 2], [i16; 2]), BspError> {
-        let (mut mins, mut maxs) = if loader.fitz() {
-            ([f32::MAX; 2], [f32::MIN; 2])
-        } else {
-            ([999_999.0_f32; 2], [-99_999.0_f32; 2])
-        };
         let texinfo = self
             .texinfo
             .get(texinfo)
@@ -1497,52 +1549,18 @@ impl<'a> Bsp<'a> {
                 lump: LumpId::Faces,
                 element,
             })?;
-        let mut texturemins = [0; 2];
-        let mut extents = [0; 2];
+        let mut vertices = Vec::with_capacity(numedges);
         for edge in firstedge..firstedge.saturating_add(numedges) {
-            let vertex = self.surfedge_vertex(edge, element)?;
-            for (axis, vecs) in texinfo.vecs.iter().enumerate() {
-                let (Some(min), Some(max)) = (mins.get_mut(axis), maxs.get_mut(axis)) else {
-                    continue;
-                };
-                if loader.fitz() {
-                    // BSP-20.8: C's comparisons, so a NaN replaces neither bound.
-                    let value = double_texture_coordinate(vertex, *vecs);
-                    if value < *min {
-                        *min = value;
-                    }
-                    if value > *max {
-                        *max = value;
-                    }
-                } else {
-                    let value = x87_texture_coordinate(vertex, *vecs);
-                    if x87_replaces(value, *min) {
-                        *min = value;
-                    }
-                    if x87_replaces(*max, value) {
-                        *max = value;
-                    }
-                }
-            }
+            vertices.push(self.surfedge_vertex(edge, element)?);
         }
-        for axis in 0..2 {
-            let min = mins.get(axis).copied().unwrap_or_default();
-            let max = maxs.get(axis).copied().unwrap_or_default();
-            let bmin = x86_double_to_int(f64::from(min / 16.0).floor());
-            let bmax = x86_double_to_int(f64::from(max / 16.0).ceil());
-            let texturemin = low_16(bmin.wrapping_mul(16));
-            let extent = low_16(bmax.wrapping_sub(bmin).wrapping_mul(16));
-            if let Some(slot) = texturemins.get_mut(axis) {
-                *slot = texturemin;
-            }
-            if let Some(slot) = extents.get_mut(axis) {
-                *slot = extent;
-            }
-            if texinfo.flags & BSP_TEX_SPECIAL == 0
-                && i32::from(extent) > loader.max_surface_extent()
-            {
-                return Err(BspError::BadSurfaceExtents);
-            }
+        let (texturemins, extents) = loader.surface_extents(texinfo.vecs, &vertices);
+        let special = texinfo.flags & BSP_TEX_SPECIAL != 0;
+        if !special
+            && extents
+                .iter()
+                .any(|&extent| i32::from(extent) > loader.max_surface_extent())
+        {
+            return Err(BspError::BadSurfaceExtents);
         }
         Ok((texturemins, extents))
     }
