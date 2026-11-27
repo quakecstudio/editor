@@ -332,6 +332,55 @@ impl BspFile {
     }
 }
 
+impl crate::Bsp<'_> {
+    /// Its counts (ENGT-5.4), as it was read: each face's extent is the one its loader computed,
+    /// so both extents are that loader's.
+    #[must_use]
+    pub fn counts(&self) -> BspCounts {
+        let mut face_extent = 0;
+        for face in &self.faces {
+            let special = self
+                .texinfo
+                .get(face.texinfo)
+                .is_none_or(|texinfo| texinfo.flags & crate::BSP_TEX_SPECIAL != 0);
+            if special {
+                continue;
+            }
+            for extent in face.extents {
+                face_extent = face_extent.max(usize::try_from(extent).unwrap_or(0));
+            }
+        }
+        BspCounts {
+            models: self.models.len(),
+            entities: entity_count(self.entity_lump),
+            entity_text: self
+                .lumps
+                .get(LUMP_ENTITIES)
+                .map_or(0, |lump| usize::try_from(lump.filelen).unwrap_or(0)),
+            planes: self.planes.len(),
+            nodes: self.nodes.len(),
+            clipnodes: self.clipnodes.len(),
+            leafs: self.leafs.len(),
+            visleafs: self
+                .models
+                .first()
+                .and_then(|world| usize::try_from(world.visleafs).ok())
+                .unwrap_or(0),
+            vertexes: self.vertexes.len(),
+            faces: self.faces.len(),
+            marksurfaces: self.marksurfaces.len(),
+            texinfo: self.texinfo.len(),
+            edges: self.edges.len(),
+            surfedges: self.surfedges.len(),
+            textures: self.textures.len(),
+            lighting: self.lighting.len(),
+            visibility: self.visibility.len(),
+            face_extent,
+            fitz_face_extent: face_extent,
+        }
+    }
+}
+
 /// The entities of entity text: each `{` outside a quoted string.
 fn entity_count(text: &[u8]) -> usize {
     let mut quoted = false;

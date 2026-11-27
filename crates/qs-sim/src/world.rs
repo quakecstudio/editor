@@ -1048,6 +1048,31 @@ impl World {
             .and_then(Option::as_deref)
     }
 
+    /// The names precached in list `kind`, entry 0 not counted: for models, the world and its
+    /// submodels among them (LIMIT-6.2).
+    #[must_use]
+    pub fn precached(&self, kind: qc_builtins::Precache) -> usize {
+        let engine = self.builtins.mock.engine();
+        let list = match kind {
+            qc_builtins::Precache::Model => &engine.model_precache,
+            qc_builtins::Precache::Sound => &engine.sound_precache,
+        };
+        list.len().saturating_sub(1)
+    }
+
+    /// One more than the highest light style the program set with `lightstyle`, 0 for none
+    /// (BUILTIN-12.6).
+    #[must_use]
+    pub fn light_styles_set(&self) -> usize {
+        self.builtins
+            .mock
+            .engine()
+            .lightstyles
+            .iter()
+            .rposition(Option::is_some)
+            .map_or(0, |style| style.saturating_add(1))
+    }
+
     /// The sounds the server has started since the last call, oldest first.
     pub fn take_sounds(&mut self) -> Vec<Sound> {
         core::mem::take(&mut self.builtins.sounds)

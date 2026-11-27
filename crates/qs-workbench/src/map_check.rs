@@ -100,8 +100,15 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
         // L-77: what `map.playability` last found, while the map is the same; it needs no
         // project.
         let playable = self.playable.clone();
+        // BUDGET-3.3: what `map.budget` last found, while the map is the same.
+        let budget = self.budget.clone();
         let Ok(schema) = self.entity_schema() else {
-            return Some(Box::new(move |map| playable.problems(&map.to_bytes())));
+            return Some(Box::new(move |map| {
+                let text = map.to_bytes();
+                let mut problems = playable.problems(&text);
+                problems.extend(budget.problems(&text));
+                problems
+            }));
         };
         // FIRE-5.3: what `map.logic_issues` last found, while the map and the sources are the same.
         let logic = self.logic.clone();
@@ -111,6 +118,7 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
             let mut problems = entity_problems(&schema, map);
             problems.extend(logic.problems(&text, sources));
             problems.extend(playable.problems(&text));
+            problems.extend(budget.problems(&text));
             problems
         }))
     }

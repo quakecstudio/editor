@@ -18,7 +18,7 @@ use qc_project::ModuleKind;
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, Outcome};
 use qs_map::qbsp::load_map_file;
-use qs_sim::{LoadOptions, MapPlace, World};
+use qs_sim::{LoadOptions, MapPlace, Room, World};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -87,12 +87,20 @@ pub(crate) struct MapSpawn {
     places: Vec<usize>,
     path: PathBuf,
     root: Option<PathBuf>,
+    /// Room past id's limits (EDICT-1.10, LIMIT-6.3): id's unless `map.budget` gives more.
+    room: Room,
 }
 
 impl MapSpawn {
     /// The place in the document of each entity the lump holds, in the lump's order.
     pub(crate) fn places(&self) -> &[usize] {
         &self.places
+    }
+
+    /// This spawn with `room` past id's limits (BUDGET-2.4).
+    pub(crate) const fn with_room(mut self, room: Room) -> Self {
+        self.room = room;
+        self
     }
 
     /// Runs `with` on the map's world, spawned at `skill` in a game of `mode`, and the progs
@@ -123,6 +131,7 @@ impl MapSpawn {
         settings.extend(mode.settings());
         let options = LoadOptions {
             settings,
+            room: self.room,
             ..LoadOptions::default()
         };
         let name = self
@@ -240,6 +249,7 @@ impl<L: crate::Loader> Workbench<L> {
             places,
             path,
             root,
+            room: Room::default(),
         })
     }
 

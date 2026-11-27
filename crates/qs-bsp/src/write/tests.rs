@@ -344,3 +344,15 @@ fn the_face_extent_is_the_loaders() {
     // A special face's extent is not counted.
     assert_eq!(with_face(1000.0, 1).counts().face_extent, 0);
 }
+
+// spec ENGT-5.4: a read BSP counts as the file it was written from, its faces' extents the
+// loader's
+#[test]
+fn a_read_bsp_counts_as_written() {
+    let mut file = with_face(64.0, 0);
+    file.textures.clear();
+    let written = file.counts();
+    let bytes = file.to_bytes(BspFormat::Bsp29).unwrap();
+    let read = Bsp::read(&bytes, BspLoader::FitzQuake).unwrap().counts();
+    assert_eq!(read, written);
+}

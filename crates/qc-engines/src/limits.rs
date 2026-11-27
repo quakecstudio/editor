@@ -19,10 +19,16 @@ use qs_bsp::{BSP_MAX_MAP_LEAFS, BSP_MAX_SURFACE_EXTENT};
 
 use std::sync::LazyLock;
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
 use crate::{Engine, tables};
 
 /// A limit of an engine that a map can reach (ENGT-5.4).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum MapLimit {
     /// The models lump: the world and each brush entity's model.
     Models,
@@ -165,7 +171,8 @@ pub enum Measure {
 }
 
 /// What an engine does with a map past a limit (ENGT-5.5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Past {
     /// It stops: the map does not load, or the game ends with an error.
     Refused,
@@ -178,7 +185,8 @@ pub enum Past {
 }
 
 /// The formats a limit's check reads (ENGT-5.5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Applies {
     /// Every format the engine reads.
     AllFormats,
@@ -187,7 +195,8 @@ pub enum Applies {
 }
 
 /// The format a map is compiled to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum MapFormat {
     /// id's BSP29.
     Bsp29,
@@ -224,7 +233,8 @@ pub enum Bound {
 }
 
 /// Whether an engine reads BSP2 (ENGT-5.6).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Bsp2 {
     /// Its source loads BSP2.
     Reads,

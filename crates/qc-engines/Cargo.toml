@@ -17,6 +17,8 @@ qc-project = { workspace = true }
 qc-sema = { workspace = true }
 qc-syntax = { workspace = true }
 qs-bsp = { workspace = true }
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
 
 [dev-dependencies]
 qc-types = { workspace = true }

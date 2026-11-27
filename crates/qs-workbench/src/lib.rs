@@ -25,6 +25,7 @@ pub mod full_build;
 pub mod git;
 pub mod ids;
 pub mod map_balance;
+pub mod map_budget;
 pub mod map_check;
 pub mod map_compile;
 pub mod map_filter;
@@ -373,6 +374,8 @@ pub struct Workbench<L> {
     logic: map_logic::LogicFound,
     /// What `map.playability` last found, for `map.issues` (L-77).
     playable: map_playable::PlayFound,
+    /// The issues `map.budget` last found, which `map.issues` lists (BUDGET-3.3).
+    budget: map_budget::BudgetFound,
     /// A `map.playability` search running on its own thread (L-77).
     play_run: Option<map_playable::PlayRun>,
     /// The whole open map as it was last compiled, which `map.playability` reads again.
@@ -407,6 +410,7 @@ impl<L: Loader> Workbench<L> {
             opened_paths: None,
             logic: map_logic::LogicFound::default(),
             playable: map_playable::PlayFound::default(),
+            budget: map_budget::BudgetFound::default(),
             play_run: None,
             last_compile: None,
             spawn_world: map_filter::SpawnWorld::default(),
