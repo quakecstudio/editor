@@ -443,14 +443,14 @@ fn a_key_passed_to_two_builtins_takes_the_first() {
 
 // No spec statement: UI-24: a key's choices are the numbered lines under the first line that
 // quotes it, whether alone or in a sentence, up to the first line that is not one; a key with
-// no numbered lines has none
+// no numbered lines has none, nor one whose lines have no number or no name
 #[test]
 fn a_key_takes_its_choices_from_the_quaked_text() {
     let found = classes_of(
         "/*QUAKED func_door3 (0 .5 .8) ?\n\"wait\" wait before returning\n\
          \"noise\"\n0)\tno sound\n1) stone\n-1) silent\nmore text\n4) not a choice\n\
          Set \"lip\" to one of the following:\n1) base fast\n2) chain slow\n\
-         \"speed\"\n*/\n\
+         \"speed\"\nx) not a number\n1)\n*/\n\
          void() func_door3 = { if (self.wait) self.dmg = 1; if (self.noise) self.dmg = 2; \
          if (self.speed) self.dmg = 3; if (self.lip) self.dmg = 4; };\n",
     );

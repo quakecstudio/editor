@@ -375,7 +375,7 @@ impl Key {
                     (Some(Name::Def(global, 0)), _) if is_store(statement.op) => {
                         (global, statement.a)
                     }
-                    (_, Some(Name::Def(global, 0))) if is_load(statement.op) => {
+                    (_, Some(Name::Def(global, 0))) => {
                         (global, u32::try_from(at).ok().map(Name::Made))
                     }
                     _ => continue,
