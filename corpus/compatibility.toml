@@ -8,8 +8,8 @@
 
 [[gap]]
 codebase = "crmod7"
-behaviour = "Compared in the nightly differential, held to its accepted 87.7% of statements reached, below DIFF-12.5's 90%."
-issues = [661]
+behaviour = "Compared in the nightly differential, held to its accepted 87.7% of statements reached, below DIFF-12.5's 90% (accepted in #661): its match, team and client paths want a connected client and a running match the scenarios do not set up."
+issues = []
 
 [[gap]]
 codebase = "alkaline"
@@ -53,5 +53,5 @@ issues = []
 
 [[gap]]
 codebase = "xonotic"
-behaviour = "Not compared: written for GMQCC and DarkPlaces."
-issues = [186]
+behaviour = "Not compared: written for GMQCC and DarkPlaces. The language model reads and resolves GMQCC (#186); the compiler does not compile it."
+issues = []
