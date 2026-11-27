@@ -19,6 +19,30 @@ use crate::symbol::{DefKind, Definition, FileId, Location};
 use crate::ty::{SimpleType, Type};
 
 impl<'a> Resolver<'a> {
+    /// Whether the base of the enum whose first name is `item` is refused, reported at its
+    /// place: a `:` after a name already a type, a base naming the enum itself, or a name in
+    /// it that is no type.
+    fn enum_base_refused(&mut self, decl: &RawDecl, item: &EnumItem, location: Location) -> bool {
+        // FTEF-19.85: a name already a type is read as the legacy base (`QCC_PR_ParseType(false,
+        // true, false)`, FTEF-19.10), so a `:` after it is where `QCC_PR_Expect("{")` fails. An
+        // enum with no name has no such word; the flag is the last named enum's.
+        if self.enum_redeclared && item.enum_name.is_some() && item.colon.is_some() {
+            self.report(Code::E0204, location, "expected {, found :".to_owned());
+            return true;
+        }
+        // FTEF-19.85: `QCC_PR_ParseEnum` reads the base before it makes the enum's type, so a
+        // base that names the enum is no type yet.
+        if !self.enum_redeclared
+            && let Some(name) = &item.enum_name
+            && self.mentions(&item.base, name)
+        {
+            self.report(Code::E0203, location, format!("\"{name}\" is not a type"));
+            return true;
+        }
+        // FTEF-19.37: the base type after `:` is a type.
+        self.check_type_names(&item.base, &[], decl.span.start, location)
+    }
+
     /// An enum's name (FTEF-19.10): a constant of the enum's base type whose value is the one
     /// after `=`, a literal or a constant, or else the one before it plus one, doubled for
     /// `enumflags`. `QCC_PR_ParseEnum` makes it with `QCC_PR_DummyDef`, which looks for no
@@ -31,8 +55,7 @@ impl<'a> Resolver<'a> {
         location: Location,
     ) {
         self.resolve_uses(file, None, &decl.uses);
-        // FTEF-19.37: the base type after `:` is a type.
-        if item.first && self.check_type_names(&item.base, &[], decl.span.start, location) {
+        if item.first && self.enum_base_refused(decl, item, location) {
             return;
         }
         if item.legacy {
@@ -153,6 +176,9 @@ impl<'a> Resolver<'a> {
         // lookups find before the older ones (`Hash_Add`, FTEF-19.33).
         if let Type::Named(strict) = &decl.ty
             && decl.ty != base
+            // The same base for every name of the enum, so the chain is walked once.
+            && self.strict_enums.get(strict.as_ref()) != Some(&base)
+            && !self.base_reaches(&base, strict)
         {
             self.strict_enums.insert(strict.to_string(), base.clone());
         }

@@ -107,6 +107,9 @@ impl<'a> Resolver<'a> {
                     ),
                 );
             }
+            // FTEF-19.85: a base that leads back to the accessor makes no type of it; the
+            // name in the chain that is no type yet was reported where it was written.
+            None if self.base_reaches(&resolved, &decl.name) => {}
             None => {
                 self.accessor_bases.insert(key, resolved);
             }

@@ -40,6 +40,8 @@ pub(crate) struct EnumItem {
     /// The enum's own type name, which `QCC_PR_ParseEnum` keeps its names under; `None` for an
     /// enum with no name or a legacy base type (FTEF-19.36).
     pub enum_name: Option<String>,
+    /// Where the `:` before its base is written, when it is (FTEF-19.85).
+    pub colon: Option<Span>,
 }
 
 /// The kind of type a type's name names (FTEF-7.2).
@@ -543,10 +545,12 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
         .any(|t| t.kind() == SyntaxKind::EnumKw && cx.spells(&t, Keyword::Enumflags));
     // The base is the type after `:`, or a keyword type before the `{` with no `:`, the legacy
     // form (FTEF-8.7); a parameter list after the body is the declaration's.
-    let colon = en
+    let colon_at = en
         .syntax()
         .child_tokens()
-        .any(|t| t.kind() == SyntaxKind::Colon);
+        .find(|t| t.kind() == SyntaxKind::Colon)
+        .map(|t| t.span());
+    let colon = colon_at.is_some();
     let brace = en
         .syntax()
         .child_tokens()
@@ -633,6 +637,7 @@ pub(super) fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>)
             legacy: legacy && index == 0,
             first: index == 0,
             enum_name: enum_name.clone(),
+            colon: colon_at,
         });
         out.push(decl);
     }

@@ -112,6 +112,10 @@ impl Resolver<'_> {
                         self.report(Code::E0219, location, message);
                     }
                     Some(_) => {}
+                    // FTEF-19.85: a typedef whose type leads back to it through an enum's or
+                    // accessor's base makes no type of it; the name that was no type yet was
+                    // reported where that base is written.
+                    None if self.base_reaches(&ty, &decl.name) => {}
                     None => {
                         self.typedefs.insert(decl.name.clone(), ty);
                     }
@@ -125,7 +129,8 @@ impl Resolver<'_> {
                 let other = self.other_sized_type_named(&decl.name)
                     || self.struct_defs.contains_key(&self.type_key(&decl.name));
                 self.enum_redeclared = other || self.enum_types.contains_key(&decl.name);
-                if !self.enum_redeclared {
+                // FTEF-19.85: a base that leads back to the enum makes no type of it.
+                if !self.enum_redeclared && !self.base_reaches(&decl.ty, &decl.name) {
                     self.enum_types.insert(decl.name.clone(), decl.ty.clone());
                 }
                 if self.enum_redeclared {
@@ -426,6 +431,48 @@ impl Resolver<'_> {
             return plain(if union { Etype::Union } else { Etype::Struct });
         }
         None
+    }
+}
+
+impl Resolver<'_> {
+    /// Whether `ty` names the type `name` itself, or through a field, a pointer or a function's
+    /// return or parameter: a base that `QCC_PR_ParseType` reads before that type is made
+    /// (FTEF-19.85).
+    pub(in crate::resolve) fn mentions(&self, ty: &Type, name: &str) -> bool {
+        match ty {
+            Type::Named(named) => self.type_key(named) == self.type_key(name),
+            Type::Field(inner) | Type::Pointer(inner) => self.mentions(inner, name),
+            Type::Function(func) => {
+                self.mentions(&func.ret, name) || func.params.iter().any(|p| self.mentions(p, name))
+            }
+            Type::Simple(_) | Type::Unknown => false,
+        }
+    }
+
+    /// Whether `base`, or a base it leads to through the typedefs and the enums', strict enums'
+    /// and accessors' bases, names the type `name` (FTEF-19.85): a base that would make
+    /// `name` its own base, which FTEQCC cannot write, since a type's base is a type made
+    /// before it. Each named type is followed once, so the walk ends whatever the tables hold.
+    pub(in crate::resolve) fn base_reaches(&self, base: &Type, name: &str) -> bool {
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut todo: Vec<Type> = vec![self.resolved(base)];
+        while let Some(ty) = todo.pop() {
+            if self.mentions(&ty, name) {
+                return true;
+            }
+            for next in ty.named_types() {
+                if !seen.insert(self.type_key(next)) {
+                    continue;
+                }
+                let bases = [
+                    self.named(&self.strict_enums, next),
+                    self.named(&self.enum_types, next),
+                    self.named(&self.accessor_bases, &self.type_key(next)),
+                ];
+                todo.extend(bases.into_iter().flatten().map(|b| self.resolved(b)));
+            }
+        }
+        false
     }
 }
 

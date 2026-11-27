@@ -272,6 +272,20 @@ impl Type {
         matches!(self, Self::Field(_))
     }
 
+    /// The named types it holds, itself or through a field, a pointer or a function's return
+    /// and parameters, in order.
+    pub(crate) fn named_types(&self) -> Vec<&str> {
+        match self {
+            Self::Named(name) => vec![name],
+            Self::Field(inner) | Self::Pointer(inner) => inner.named_types(),
+            Self::Function(func) => std::iter::once(&func.ret)
+                .chain(&func.params)
+                .flat_map(Self::named_types)
+                .collect(),
+            Self::Simple(_) | Self::Unknown => Vec::new(),
+        }
+    }
+
     /// The class or other type a value of this type names, through one pointer: `Named` or
     /// `Pointer(Named)` (FTEF-17.3).
     #[must_use]
