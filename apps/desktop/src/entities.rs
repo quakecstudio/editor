@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use eframe::egui::{self, RichText, Ui};
-use qs_workbench::entities::Entities;
+use qs_workbench::entities::{Entities, Field};
 use qs_workbench::{PlayState, Preview};
 use qs_workbench::{Symbol, SymbolKind};
 
@@ -209,12 +209,12 @@ impl<'a> Shown<'a> {
         }
     }
 
-    /// What a field of `kind` offers while paused (UI-24): an entity field the edicts in use
+    /// What `field` offers while paused (UI-24): an entity field the edicts in use
     /// as the panel writes them, `monster_army #7`; a function field the project's functions,
     /// each with its file; nothing for a field of another kind, whose values are typed.
-    fn offers(&self, kind: &str) -> Option<Vec<Offer>> {
-        match kind {
-            ENTITY_KIND => Some(
+    fn offers(&self, field: &Field) -> Option<Vec<Offer>> {
+        if field.is_entity() {
+            return Some(
                 self.entities
                     .groups("")
                     .into_iter()
@@ -225,30 +225,24 @@ impl<'a> Shown<'a> {
                         })
                     })
                     .collect(),
-            ),
-            FUNCTION_KIND => Some(
-                self.symbols
-                    .iter()
-                    .filter(|symbol| symbol.kind == SymbolKind::Function)
-                    .map(|symbol| Offer {
-                        name: symbol.name.clone(),
-                        detail: symbol
-                            .range
-                            .path
-                            .file_name()
-                            .map_or_default(|name| name.to_string_lossy().into_owned()),
-                    })
-                    .collect(),
-            ),
-            _ => None,
+            );
         }
+        field.is_function().then(|| {
+            self.symbols
+                .iter()
+                .filter(|symbol| symbol.kind == SymbolKind::Function)
+                .map(|symbol| Offer {
+                    name: symbol.name.clone(),
+                    detail: symbol
+                        .range
+                        .path
+                        .file_name()
+                        .map_or_default(|name| name.to_string_lossy().into_owned()),
+                })
+                .collect()
+        })
     }
 }
-
-/// The kind of a field that holds an entity (BRIDGE-5.1).
-const ENTITY_KIND: &str = "entity";
-/// The kind of a field that holds a function (BRIDGE-5.1).
-const FUNCTION_KIND: &str = "function";
 
 /// The selected edict's fields: read only while the game runs, editable while it is paused,
 /// a function's name opening its definition.
@@ -297,7 +291,7 @@ pub(crate) fn properties(
     if paused {
         for field in &selected.fields {
             if !offers.contains_key(field.kind())
-                && let Some(made) = shown.offers(field.kind())
+                && let Some(made) = shown.offers(field)
             {
                 offers.insert(field.kind(), made);
             }
