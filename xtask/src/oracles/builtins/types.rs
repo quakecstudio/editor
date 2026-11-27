@@ -468,6 +468,8 @@ const PROGRAMS: &[&str] = &[
     "enum E : .E { A };",
     "enum class E : E { A };",
     "enum E : F { A }; enum F : E { B };",
+    "enum E : E() { A };",
+    "enum E : A { x }; accessor A : E; void() g = { local A a; a = a; };",
     "enum E { A } x;",
     "enum E { A } x, y;",
     "enum E { A } *x;",
