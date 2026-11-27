@@ -698,6 +698,13 @@ fn an_enum_base_naming_the_enum_is_no_type() {
     ] {
         assert_eq!(errors(source, &[]), [Code::E0204], "{source}");
     }
+    // An enum with no name, after one declared again, has no word for its `:` to follow.
+    for (source, args) in [
+        ("enum E { A }; enum E { A }; enum : float { B };", &[][..]),
+        ("enum E { A }; enum : float { B };", &["-Fautoproto"][..]),
+    ] {
+        assert_eq!(errors(source, args), [], "{source}");
+    }
     assert_eq!(errors("enum F { B }; enum E : F { A };", &[]), []);
 }
 

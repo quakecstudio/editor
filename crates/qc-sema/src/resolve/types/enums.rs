@@ -22,20 +22,12 @@ impl<'a> Resolver<'a> {
     /// Whether the base of the enum whose first name is `item` is refused, reported at its
     /// place: a `:` after a name already a type, a base naming the enum itself, or a name in
     /// it that is no type.
-    fn enum_base_refused(
-        &mut self,
-        file: FileId,
-        decl: &RawDecl,
-        item: &EnumItem,
-        location: Location,
-    ) -> bool {
+    fn enum_base_refused(&mut self, decl: &RawDecl, item: &EnumItem, location: Location) -> bool {
         // FTEF-19.85: a name already a type is read as the legacy base (`QCC_PR_ParseType(false,
-        // true, false)`, FTEF-19.10), so a `:` after it is where `QCC_PR_Expect("{")` fails.
-        if self.enum_redeclared
-            && let Some(colon) = item.colon
-        {
-            let at = Location { file, span: colon };
-            self.report(Code::E0204, at, "expected {, found :".to_owned());
+        // true, false)`, FTEF-19.10), so a `:` after it is where `QCC_PR_Expect("{")` fails. An
+        // enum with no name has no such word; the flag is the last named enum's.
+        if self.enum_redeclared && item.enum_name.is_some() && item.colon.is_some() {
+            self.report(Code::E0204, location, "expected {, found :".to_owned());
             return true;
         }
         // FTEF-19.85: `QCC_PR_ParseEnum` reads the base before it makes the enum's type, so a
@@ -63,7 +55,7 @@ impl<'a> Resolver<'a> {
         location: Location,
     ) {
         self.resolve_uses(file, None, &decl.uses);
-        if item.first && self.enum_base_refused(file, decl, item, location) {
+        if item.first && self.enum_base_refused(decl, item, location) {
             return;
         }
         if item.legacy {
