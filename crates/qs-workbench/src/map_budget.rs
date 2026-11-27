@@ -11,7 +11,9 @@
 
 use qc_builtins::{Precache, PrecacheRoom};
 use qc_edict::EdictCapacity;
-use qc_engines::{Bound, Bsp2, Engine, LimitFact, MapFormat, MapLimit, Measure, Past};
+use qc_engines::{Bound, Engine, LimitFact, MapFormat, Measure};
+
+pub use qc_engines::{Bsp2, MapLimit, Past};
 use qs_bsp::{Bsp, BspLoader, BspVersion};
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use qs_map_edit::{EntityProblem, LumpCounts, MapSource, Written};

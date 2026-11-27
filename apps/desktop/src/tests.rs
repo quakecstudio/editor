@@ -30,6 +30,7 @@ use qs_map_edit::EntityIndex;
 use qs_map_edit::texture_import::project_wad;
 use qs_wad::write::WadBuilder;
 use qs_workbench::debug::Location;
+use qs_workbench::map_budget::{MapLimit, Used};
 use qs_workbench::map_playable::ExitReach;
 use serde_json::json;
 
@@ -4278,6 +4279,57 @@ fn map_edits_are_reviewed_in_the_map_view() {
     harness.run();
     assert_eq!(waiting(&harness), 0);
     assert_eq!(map_text(&harness), before, "rejecting puts the map back");
+}
+
+// spec BUDGET-1.2: once the map is compiled, from anywhere, the Properties panel shows the target
+// engine's limits, the worst first; an edit drops them until the next compile
+#[test]
+fn a_compile_shows_the_engine_limits() {
+    let dir = keep_copy("budget");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label(Text::MapBudgetHeading.get())
+            .is_none()
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.find_leaks", json!({})).unwrap();
+    harness.run();
+    let found = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.map_editor().budget().found().cloned()
+    };
+    let budget = found(&harness).unwrap();
+    let target = budget.engines.first().unwrap();
+    assert_eq!(target.engine, "vanilla");
+    assert!(
+        harness
+            .query_by_label(Text::MapBudgetHeading.get())
+            .is_some()
+    );
+    let faces = target
+        .lines
+        .iter()
+        .find(|line| line.limit == MapLimit::Faces)
+        .unwrap();
+    assert!(
+        matches!(faces.used, Used::Count { count, .. } if count > 6),
+        "{faces:?}"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("map.brush_delete", json!({ "entity": 0, "brush": 2 }))
+        .unwrap();
+    harness.run();
+    assert!(found(&harness).is_none(), "an edit forgets the limits");
 }
 
 // No spec statement: P6-11, QBSP-9.8, MAP-6.8, L-77: with a wall gone, Check for leaks reports the

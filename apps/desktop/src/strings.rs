@@ -693,6 +693,10 @@ pub enum Text {
     MapRestoreBackup,
     /// What the leak check says of a map with no leak (P6-11).
     MapSealed,
+    /// The heading of the map's engine limits in the Properties panel (L-79).
+    MapBudgetHeading,
+    /// The fold of the map's engine limits past the worst few (L-79).
+    MapBudgetRest,
     /// What the playability check says of a map whose exit is reached (L-77).
     MapExitReached,
     /// What the playability check says of a map whose exit is not reached (L-77).
@@ -1256,7 +1260,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 618] = [
+    pub const ALL: [Self; 620] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1596,6 +1600,8 @@ impl Text {
         Self::MapShowPortals,
         Self::MapRestoreBackup,
         Self::MapSealed,
+        Self::MapBudgetHeading,
+        Self::MapBudgetRest,
         Self::MapExitReached,
         Self::MapExitNotReached,
         Self::MapNoExit,
@@ -2262,6 +2268,8 @@ impl Text {
             Self::MapShowPortals => "Show portals",
             Self::MapRestoreBackup => "Restore the newest backup",
             Self::MapSealed => "The map is sealed: no entity is in reach of the void.",
+            Self::MapBudgetHeading => "Engine limits",
+            Self::MapBudgetRest => "The other limits",
             Self::MapExitReached => "A player can reach the exit from the start.",
             Self::MapExitNotReached => {
                 "No exit is reached from the start: the map cannot be finished."
@@ -3251,6 +3259,31 @@ pub fn trap_count(traps: usize) -> String {
         1 => "1 place a player cannot leave, marked in the view".to_owned(),
         count => format!("{count} places a player cannot leave, marked in the view"),
     }
+}
+
+/// One meter of the map's engine limits (L-79): what the map uses of a limit and the limit,
+/// such as `601 of 8192 edicts`.
+#[must_use]
+pub fn budget_meter(used: usize, most: usize, limit: &str) -> String {
+    format!("{used} of {most} {limit}")
+}
+
+/// A limit of the map's that the engine sets none for (L-79).
+#[must_use]
+pub fn budget_unbounded(used: usize, limit: &str, engine: &str) -> String {
+    format!("{used} {limit}: no limit in {engine}")
+}
+
+/// A limit the map's use of, or the engine's bound on, is not known (L-79).
+#[must_use]
+pub fn budget_unknown(limit: &str, why: &str) -> String {
+    format!("{limit}: {why}")
+}
+
+/// Why an engine's limit is not shown: it has no source (ENGT-5.7).
+#[must_use]
+pub fn limit_unknown(engine: &str) -> String {
+    format!("{engine}'s limit is not known")
 }
 
 /// How many keys, weapons, items and secrets a player never reaches (L-77).

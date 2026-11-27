@@ -61,6 +61,7 @@ use qs_map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, Outline
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::map_balance::{BalanceParams, MAP_BALANCE, MapBalance};
+use qs_workbench::map_budget::{MAP_BUDGET, MapBudget};
 use qs_workbench::map_compile::{
     MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
 };
@@ -117,6 +118,8 @@ pub(crate) struct MapFeature {
     copied: Option<String>,
     /// The map's edits a playability check running on its own thread started at (L-77).
     playing: Option<MapRevision>,
+    /// The map's edits its engine limits were last measured at (L-79).
+    budgeted: Option<MapRevision>,
 }
 
 impl MapFeature {
@@ -509,6 +512,43 @@ impl MapFeature {
             self.check_playability(commands);
         }
         checked
+    }
+
+    /// Measures how much of the target engine's limits the open map uses (L-79) once it has a
+    /// compile's report, or was opened from a BSP, whoever compiled it: the agent, MCP or the
+    /// palette too; whether it did. The meters and the issues follow; a map whose budget cannot
+    /// be made shows no meters.
+    pub(crate) fn refresh_map_budget(&mut self, commands: &mut Commands<'_>) -> bool {
+        let at = commands.session().context().map_edits();
+        let measurable = commands
+            .session()
+            .context()
+            .workbench
+            .map()
+            .is_some_and(|document| {
+                document.report().is_some()
+                    || matches!(document.source(), qs_map_edit::MapSource::Bsp(_))
+            });
+        if !measurable || self.budgeted == Some(at) {
+            return false;
+        }
+        self.budgeted = Some(at);
+        self.check_budget(commands, at);
+        true
+    }
+
+    /// Measures the open map's budget at `at`, for the meters, and lists the map's issues
+    /// again, which its findings join (L-79).
+    fn check_budget(&mut self, commands: &mut Commands<'_>, at: MapRevision) {
+        let found: Result<MapBudget, ShellError> =
+            commands.attempt(MAP_BUDGET, &serde_json::json!({}));
+        match found {
+            Ok(found) => {
+                self.map_editor.set_budget(found, at);
+                drop(self.check_map_issues(commands));
+            }
+            Err(error) => tracing::warn!(%error, "the map's budget could not be made"),
+        }
     }
 
     /// Starts checking that the open map, just compiled, can be finished (L-77), the search on

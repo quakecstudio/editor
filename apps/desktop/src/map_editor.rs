@@ -29,6 +29,7 @@ use qs_map_edit::{
 };
 use qs_render::Camera;
 use qs_workbench::map_balance::MapBalance;
+use qs_workbench::map_budget::MapBudget;
 use qs_workbench::map_filter::{GameMode, Skill};
 use qs_workbench::map_logic::{LogicIssues, MapFired};
 use qs_workbench::map_playable::Playability;
@@ -38,6 +39,7 @@ use crate::icons::{self, Icon, Toggled};
 use crate::keymap;
 use crate::map_balance::BalancePane;
 use crate::map_browser::{ClassDrag, EntityBrowser};
+use crate::map_budget::BudgetView;
 use crate::map_fields::{Field, Typed, spawnflags};
 use crate::map_groups::{GroupAction, Grouping, layers_ui, overview_keys, selection_ui};
 use crate::map_issues::IssueBrowser;
@@ -407,6 +409,8 @@ pub struct MapEditor {
     leaks: LeakView,
     /// What the playability check last found of the map (L-77).
     playable: PlayView,
+    /// What `map.budget` last found (L-79).
+    budget: BudgetView,
     /// The prefab browser (P6-23).
     prefabs: PrefabBrowser,
     /// The issue browser and search (P6-19).
@@ -797,6 +801,17 @@ impl MapEditor {
         self.bottom = BottomTab::Balance;
     }
 
+    /// Takes what `map.budget` found in the map at `at` (L-79).
+    pub(crate) fn set_budget(&mut self, found: MapBudget, at: MapRevision) {
+        self.budget.set(found, at);
+    }
+
+    /// What the engine limits last found, for tests.
+    #[cfg(test)]
+    pub(crate) const fn budget(&self) -> &BudgetView {
+        &self.budget
+    }
+
     /// Takes what `map.playability` found in the map at `at` (L-77).
     pub(crate) fn set_playability(&mut self, found: Playability<EntityIndex>, at: MapRevision) {
         self.playable.set(found, at);
@@ -856,6 +871,7 @@ impl MapEditor {
         self.logic.follow(document.edits());
         self.balance.follow(document.edits());
         self.playable.follow(document.edits());
+        self.budget.follow(document.edits());
         // The one entity selected, which the Logic tab's Fire fires.
         let one_selected = document.selected().filter(|_| self.also.is_empty());
         // Wrapped, so a tab's controls that do not fit go to a second line rather than make
@@ -1792,6 +1808,7 @@ impl MapEditor {
         actions.extend(self.review.properties(ui, theme));
         actions.extend(self.profiles.controls(ui, theme));
         self.leaks.properties(ui, theme, report);
+        self.budget.properties(ui, theme);
         self.playable.properties(ui, theme);
         if self.disk != DiskNotice::None {
             ui.label(

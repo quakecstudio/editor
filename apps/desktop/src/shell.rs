@@ -1951,6 +1951,10 @@ impl Shell {
             // The Properties panel, drawn before the map this frame, shows them on the next.
             ui.ctx().request_repaint();
         }
+        // L-79: the engine limits of a map just compiled, shown on the next frame.
+        if self.with_map(MapFeature::refresh_map_budget) {
+            ui.ctx().request_repaint();
+        }
         // A playability check running on its own thread is looked for again soon (L-77).
         if self.with_map(MapFeature::poll_playability) {
             ui.ctx().request_repaint_after(PREVIEW_POLL);

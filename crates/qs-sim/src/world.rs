@@ -1060,8 +1060,7 @@ impl World {
         list.len().saturating_sub(1)
     }
 
-    /// One more than the highest light style the program set with `lightstyle`, 0 for none
-    /// (BUILTIN-12.6).
+    /// The light styles the program has set with `lightstyle` (BUILTIN-12.6).
     #[must_use]
     pub fn light_styles_set(&self) -> usize {
         self.builtins
@@ -1069,8 +1068,8 @@ impl World {
             .engine()
             .lightstyles
             .iter()
-            .rposition(Option::is_some)
-            .map_or(0, |style| style.saturating_add(1))
+            .filter(|style| style.is_some())
+            .count()
     }
 
     /// The sounds the server has started since the last call, oldest first.

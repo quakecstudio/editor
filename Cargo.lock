@@ -6344,6 +6344,7 @@ dependencies = [
  "cc",
  "clap",
  "miniz_oxide 0.9.1",
+ "qc-builtins",
  "qc-codegen",
  "qc-entities",
  "qc-ide",

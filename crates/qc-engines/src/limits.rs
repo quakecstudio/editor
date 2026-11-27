@@ -72,7 +72,7 @@ pub enum MapLimit {
     ModelPrecaches,
     /// The sounds precached (LIMIT-6.2).
     SoundPrecaches,
-    /// The light styles, numbered from 0: one more than the highest style set.
+    /// The light styles the program sets, each numbered below the limit.
     LightStyles,
 }
 

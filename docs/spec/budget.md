@@ -57,8 +57,8 @@ compile.
   spawns it, on each skill 0 to 3 in single player, and running the two frames that settle a
   started game: the edicts are `num_edicts` (EDICT-1.4), the world and the client slots
   among them; the precaches each list's names after its empty entry 0 (LIMIT-6.2), the world
-  and its submodels among the models; the light styles one more than the highest style the
-  program set (BUILTIN-12.6). Each is the most of the four skills, with the first skill that
+  and its submodels among the models; the light styles the styles the program set
+  (BUILTIN-12.6), a style numbered past the limit failing the spawn (BUDGET-2.5). Each is the most of the four skills, with the first skill that
   uses that most.
 - **BUDGET-2.4** The spawn has room past id's limits (EDICT-1.10, LIMIT-6.3): one more edict
   and one more precache of each kind than the largest bound of the engines answered for, id's

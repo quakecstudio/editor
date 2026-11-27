@@ -372,6 +372,19 @@ fn scripts() -> Vec<Script> {
                 Step::Click("Count"),
             ],
         },
+        // L-79: after a compile the Properties panel shows the target engine's limits, the worst
+        // first, the spawn's counts made by the fixture's program.
+        Script {
+            name: "map-budget",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": balance_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": balance_fixture().join("maps/balance.map") }),
+                ),
+                Step::Run("map.find_leaks", json!({})),
+            ],
+        },
         Script {
             name: "map-uv",
             steps: vec![

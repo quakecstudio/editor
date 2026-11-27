@@ -300,8 +300,8 @@ fn the_spawn_counts() {
             skill: Some(Skill::Easy)
         }
     );
-    // Styles 0 and 5 set: six styles.
-    assert_eq!(count(line(target, MapLimit::LightStyles)), 6);
+    // Styles 0 and 5 set: two styles.
+    assert_eq!(count(line(target, MapLimit::LightStyles)), 2);
 }
 
 // spec BUDGET-2.4: a map of 601 edicts is spawned and counted: past id's 600 and inside

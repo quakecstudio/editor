@@ -740,10 +740,12 @@ jobs:
       # L-76: with --logic, each map's triggers are fired with each program and the logic
       # issues printed as a record (FIRE-4). L-78: with --balance, each map's balance sheets on
       # every skill count the program's own total_monsters and total_secrets (BALANCE-2.5).
+      # L-79: with --budget, each map's budget counts the edicts, precaches and light styles of
+      # the game started on it (BUDGET-2.3).
       - name: Check the entity definitions against their golden files and the maps
         if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
         run: |
-          cargo xtask entity-corpus --logic --balance --maps "$QS_TEST_ASSETS/librequake-lite" \
+          cargo xtask entity-corpus --logic --balance --budget --maps "$QS_TEST_ASSETS/librequake-lite" \
             "$QS_TEST_ASSETS/codebase/id-1.01" "$QS_TEST_ASSETS/codebase/rerelease"
       # P2-14: the language server, driven over the protocol against the rerelease, gives the
       # answers its golden file records (docs/spec/vectors/lsp/rerelease.txt).
