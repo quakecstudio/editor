@@ -1814,8 +1814,9 @@ groups:
       Split from P3-33 (#689) by Justin on 2026-11-06. The compiler differential calls each function from worlds the mock engine sets up, where nothing moves and every trace hits nothing (DIFF-1.5, DIFF-7.1), so code that runs only when something is hit or moves stays unexecuted: crmod7's `T_Damage`, `Killed`, `ClientObituary`, its `webhook_stats_info` (which needs frags) and `match_log_score` (crmod7 aborts a match no player moves in). qs-sim already runs id's server physics and collision and matches id's server frame by frame (DIFF-16), but takes one client (`MAXCLIENTS` 1) and id's builtins only.
     depends:
     - P3-33
+    - L-84
     deliverable:
-    - 'crates/qs-sim: more than one client (connect, signon and the messages per client) and the engine profiles of qc-builtins (vkQuake''s builtins and limits)'
+    - 'crates/qs-sim: the engine profiles of qc-builtins (vkQuake''s builtins and limits); its several clients are L-84''s (Justin, 2026-11-27)'
     - 'crates/qs-differential/src/calls.rs: the compiler differential''s worlds and calls on qs-sim''s world, on LibreQuake maps, with their DIFF-12 statements in docs/spec/differential.md'
     - 'crates/qs-differential/src/runner/fixtures.rs: scenarios on real maps whose players move, fire and score, and crmod7''s match played to its end'
     acceptance:
@@ -3489,3 +3490,119 @@ groups:
     - 'The goldens of the panels that changed rendered again; screenshots before and after, in the PR'
     verify:
     - 'cargo nextest run -p quakec-studio -p qc-entities; the screenshots in the PR'
+  - key: L-84
+    title: Run several clients in the server simulation
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:feature
+    size: L
+    reqs:
+    - ENG-18
+    - ENG-15
+    depends: []
+    summary: |
+      Justin, 2026-11-27: "I'd like to be able to build deathmatch and coop maps and play against local bot clients", with several local players and bots (ADR-0031) and real networking left for later. qs-sim takes one client: `MAXCLIENTS` is 1 (`crates/qs-sim/src/world.rs`), `ServerMessages` holds one `ClientSlot` (`messages.rs`), the frame reads one move, and NET-1.3 says the preview host keeps its one client. The map filter and `map.balance` already spawn a map as coop or deathmatch, and `qs-client` already has id's scoreboards, so the server is what is missing. This is a whole-path port: the per-client path of id's server, inventoried function by function at the pinned commit before any code is written.
+    deliverable:
+    - 'crates/qs-sim: the per-client path of `WinQuake/sv_main.c`, `sv_user.c`, `host_cmd.c` and `host.c` ported whole: connecting, dropping and checking for new clients; each client''s string commands and move, in slot order; each client sent its messages, its entities culled from its own view; the client prints and broadcasts; the per-client host commands; the frag, name and colour updates every client is sent; each client''s spawn parms carried over `changelevel`; and what id does differently with more than one client (the pause while the console is open, the saved game), each quoted from the source'
+    - 'crates/qs-sim: the client slots a list sized by a `maxplayers` setting up to id''s limit, each addressed by a `ClientId` newtype and of a kind, a local connection or a bot with none; `World::connect`, `set_command`, `take_messages` and `player_view` take a client, and every caller (qs-game, the scenarios, the fixtures) names the first'
+    - 'crates/qs-sim and crates/qc-builtins: `spawnclient` as vkQuake has it (ADR-0018), giving a bot slot the mod''s QuakeC drives, and `clienttype` answering for it'
+    - 'docs/spec/engine/net.md, physics.md and docs/spec/builtins: NET-1.3''s one-client clause withdrawn and replaced, NET-1 to NET-5, PHYS-10 and PHYS-11 widened to several clients, a BUILTIN-18 statement for `spawnclient`'
+    acceptance:
+    - 'qs-sim tests citing each new statement: two to four clients connecting in turn, one dropping and its slot taken again; a full server refusing a client; deathmatch frags and the updates every client is sent; `say` reaching every client; each client''s entities culled from its own view; `changelevel` carrying each client''s spawn parms; `spawnclient` with a free slot and with none'
+    - 'Every existing qs-sim, qs-game and scenario test passes with one client as before'
+    verify:
+    - cargo nextest run -p qs-sim -p qs-game -p qs-tests
+  - key: L-85
+    title: Compare several clients with id's server frame by frame
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:test
+    size: M
+    reqs:
+    - ENG-15
+    - ENG-18
+    depends:
+    - L-84
+    summary: |
+      The simulation differential (DIFF-16) proves qs-sim against id's server with one client: the engine oracle starts id's server with one client slot and drives it (`oracles/README.md`). Several clients (L-84) need the same proof, so the multiplayer server is no less id-exact than the single player one.
+    deliverable:
+    - 'oracles/engine/: id''s server started with several client slots, each driven as the one client is now; the route form names a client on its `move` and `cmd` lines, documented in oracles/README.md'
+    - 'xtask/src/sim_diff.rs: routes with several clients played through both and compared frame by frame, DIFF-16 widened in docs/spec/differential.md'
+    - 'oracles/engine/routes/: coop with two players on a LibreQuake start map, and deathmatch with four players who move, fire and frag on a LibreQuake deathmatch map; CI plays both beside the start route'
+    acceptance:
+    - '`cargo xtask sim-diff` agrees on every frame of both routes, recorded in the PR and run by CI'
+    verify:
+    - cargo xtask sim-diff oracles/engine/routes/<route>
+  - key: L-86
+    title: Play coop and deathmatch with several local players
+    labels:
+    - L7-ui
+    - area:preview
+    - type:feature
+    size: M
+    reqs:
+    - ENG-18
+    depends:
+    - L-84
+    summary: |
+      The second half of option a in ADR-0031: more than one player on the modder's machine. Each local player is a client joined to the server through an in-process loopback connection, as id's `net_loop.c` joins its local client, so a network connection can later be added beside it with no change to the server. The prior art is Roblox Studio's local test, which starts a server with a number of players and a window for each.
+    deliverable:
+    - 'crates/qs-game: a loopback connection between a `Client` and its server slot; one `World` and one viewer per local player; player one in the Game tab or the docked window as now (ADR-0028), each other player in a docked window of its own, the keys going to the focused one'
+    - 'crates/qs-commands and qs-workbench: `preview.play` and `map.play_from_here` take the game (single, coop or deathmatch), the local players, the bots and the bots'' skill; the defaults are single player with no bots, as now; docs/commands.md and docs/keymap.md regenerated'
+    - 'docs/design/: a mockup of the play options in the run toolbar, and apps/desktop: the toolbar matching it'
+    acceptance:
+    - 'A headless qs-game test with two local players, each one''s messages read by its own client'
+    - 'A test for each play option reaching the world''s settings, and one that the defaults give single player with no bots'
+    - 'The toolbar''s golden rendered again; a screenshot in the PR'
+    verify:
+    - cargo nextest run -p qs-game -p qs-workbench -p quakec-studio
+  - key: L-87
+    title: Play against bots that work with any mod
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:feature
+    size: L
+    reqs:
+    - ENG-18
+    depends:
+    - L-84
+    summary: |
+      Justin decided on 2026-11-27 (ADR-0031) that a bot's thinking lives in the preview host: id1 and LibreQuake have no bot code, and `spawnclient` only makes an empty slot. A bot is a client with no connection whose moves come from Rust code, so the mod's own player QuakeC plays it and the server stays id-exact. The prior art is Quake III's botlib (navigation areas, goals weighted by item, aim and combat apart from moving); the Reaper Bot and Frogbot are bots in QuakeC. `qs-map-gen`'s playability check (`playable::Ground`) already models how a player gets around a compiled map, and bots move by the same model.
+    deliverable:
+    - 'crates/qs-bots (new, L4 in layers.toml, docs/layers.md rewritten): a bot''s `UserCmd` each server frame from what a client in its place could see; goals weighted by need (weapons, armour, health, ammunition) and distance along the graph, the enemies seen in deathmatch, the nearest player and the monsters seen in coop; aim with an error and a reaction delay its skill sets; the weapon chosen by id1''s weapon impulses from a table a mod may replace; fire pressed to respawn; each bot''s own seeded random numbers'
+    - 'crates/qs-map-gen: `Ground` answers a path between two points, which the bots follow'
+    - 'crates/qs-sim and crates/qs-commands: the console''s `addbot [skill] [name]` and `removebot [name]`, and the commands `game.add_bot` and `game.remove_bot`; names and colours from a list'
+    - 'crates/qs-game: a bot slot per bot, its brain given the world each frame'
+    - 'docs/spec/bots.md: BOT-1 onwards, this project''s design, cited by the tests'
+    acceptance:
+    - 'qs-bots tests citing each statement: a path through a room with a lift and a door; the goal chosen for each kind of need; the aim error at each skill; a dead bot respawning'
+    - 'A qs-tests scenario: four bots on a LibreQuake deathmatch map for a fixed number of frames score frags, and the same frags over repeated runs (SCN-2.5)'
+    - 'A qs-tests scenario: in coop one bot follows the player and damages a monster'
+    verify:
+    - cargo nextest run -p qs-bots -p qs-map-gen -p qs-tests
+  - key: L-88
+    title: Check and play deathmatch and coop maps from the map editor
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-39
+    depends:
+    - L-86
+    - L-87
+    summary: |
+      The map editor's side of ADR-0031: a modder building a deathmatch or coop map sees what would spoil it before playing, and plays it with bots from where the camera is. An agent can do the same, since agents create maps unattended.
+    deliverable:
+    - 'crates/qs-workbench: `map.issues` finds a deathmatch map with fewer `info_player_deathmatch` starts than the players chosen (4 by default), a start in solid or two starts close enough to telefrag, and a coop map with no `info_player_coop`, with what id1''s `client.qc` does then quoted; each with a quick fix where there is one'
+    - 'crates/qs-workbench: `map.play_from_here` in deathmatch or coop with the bots chosen'
+    - 'docs/map-editor.md: the checks and the play options'
+    acceptance:
+    - 'A test for each issue found and not found, and each quick fix'
+    - 'A test: `map.play_from_here` in deathmatch with three bots spawns the player and the bots'
+    verify:
+    - cargo nextest run -p qs-workbench

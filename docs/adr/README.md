@@ -43,6 +43,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0028](0028-embedded-game-view.md) | Show the game inside the IDE by running the preview host's game in the IDE's process | Accepted |
 | [0029](0029-license-review.md) | Release under the license review's findings, and port id's map tools as GPL | Accepted |
 | [0030](0030-fteqw-iqm-porting-upstream.md) | Make FTEQW's model converter a porting upstream for model import | Accepted |
+| [0031](0031-bots-and-local-players.md) | Play coop and deathmatch with local players and bots the preview host drives | Accepted |
 <!-- /adr:index -->
 
 A `type:decision` issue reserves the ADR number its deliverable names in `plan/backlog/`;
