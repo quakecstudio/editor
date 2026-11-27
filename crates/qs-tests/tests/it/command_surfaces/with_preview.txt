@@ -88,6 +88,7 @@ map.face_uv
 map.find_leaks
 map.fire
 map.flip
+map.game_files
 map.generate
 map.group
 map.hide
@@ -173,12 +174,14 @@ preview.step_by
 preview.stop
 preview.unwatch
 preview.watch
+preview.watch_names
 project.build
 project.check
 project.compile
 project.entities
 project.export
 project.files
+project.functions
 project.info
 project.open
 project.reference
