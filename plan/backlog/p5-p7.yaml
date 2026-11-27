@@ -3415,3 +3415,27 @@ groups:
     - 'The goldens of the panels that changed rendered again; screenshots of the Properties panel before and after, in the PR'
     verify:
     - 'cargo nextest run -p quakec-studio; the screenshots in the PR'
+  - key: L-81
+    title: The semantic model overflows its stack on some random input
+    labels:
+    - L3-semantics
+    - area:language
+    - type:bug
+    size: S
+    reqs:
+    - LANG-4
+    - PRIN-7
+    depends: []
+    summary: |
+      Found by CI on PR 1146 (L-79), a change that touches neither crate nor anything they depend on: the Unit Tests (linux) job, a debug build with `--all-features`, aborted in `qc-sema`'s property test `tests::properties::every_location_is_inside_its_file` (QC-9.7), "thread 'tests::properties::every_location_is_inside_its_file' has overflowed its stack ... fatal runtime error: stack overflow, aborting", run 45940866187, job 140314772019, 2026-11-27. The input is token soup of at most 40 fragments in each of one to three files, and ordinary cases fit in a 64 KB stack, so the overflow is a recursion with no bound, not a deep but finite input: a crash in a shipped crate on text a modder can type (PRIN-7). It did not reproduce on macOS: two runs of 20,000 cases with a 256 KB and a 1 MB stack, and direct inputs for self and cyclic `#include`s, a doubling macro twelve deep, cyclic `typedef`s, classes, accessors and enums, and `super::`, all passed. The abort leaves no seed: proptest records a failing case only when the test returns.
+    environment: |
+      ubuntu-latest, Rust 1.100.0, cargo-nextest 0.9.148, `cargo nextest run --locked --workspace --all-features`, PR 1146 at 79b1f04a
+    deliverable:
+    - 'The input that overflows, found on Linux: the property run in a loop of seeds with the case printed before each is resolved, or under a smaller stack so it fails sooner'
+    - 'crates/qc-sema (or the crate the recursion is in): the recursion bounded where the language rule bounds it, or made a loop, with no panic and no abort; a statement in docs/spec/ for the rule when it is a language rule'
+    - 'crates/qc-sema/src/tests/properties.rs: the failing input kept as a regression case that runs on every platform'
+    acceptance:
+    - 'A test with the input found fails before the fix (the test process aborts) and passes after it, citing the statement the fix follows'
+    - '`every_location_is_inside_its_file` passes 20,000 cases on Linux with the CI profile, recorded in the PR'
+    verify:
+    - 'cargo nextest run -p qc-sema; the 20,000-case run on Linux recorded in the PR'
