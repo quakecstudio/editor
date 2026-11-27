@@ -107,6 +107,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.find_leaks`](#mapfind_leaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.fire`](#mapfire) | Fires an entity of the open map as the game would, its use or its touch run in the simulation with the project's program, and answers what the QuakeC did about it in order: each use, touch and think the firing reached, each entity looked up by its targetname, removed or spawned, each centerprint and sound, and the fields written. Changes nothing: not the map, not a game that is playing it. |
 | [`map.flip`](#mapflip) | Mirrors entities and brushes along an axis through the middle of their box: brushes and point entities' origins, and their facing, as TrenchBroom's Flip. |
+| [`map.game_files`](#mapgame_files) | Lists the levels, models or sounds of the project's folder and the game's search path, each by the name the engine is given (a level as map takes it, a model by its path, a sound by its path under sound/) and where it is; the project's takes the game's place for a name both have. |
 | [`map.generate`](#mapgenerate) | Makes a random playable level and opens it: rooms of several shapes on several floors joined by passages, stairs and doors, from a start to an exit, with loops, a balcony dropped from, locks (keys, a button, an arena), a secret room, lights, monsters and weapons, textured from the game's own levels, and no trap a player cannot leave: each level is compiled and checked as map.playability checks a map, with no jump, and a seed whose level fails gives way to the seeds after it. One seed gives one level. |
 | [`map.group`](#mapgroup) | Puts entities and brushes of the world in a new group, in the layer or group the first is in, as TrenchBroom writes a group. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
@@ -5754,6 +5755,53 @@ Parameters:
     "axis"
   ],
   "title": "FlipParams",
+  "type": "object"
+}
+```
+
+## `map.game_files`
+
+Lists the levels, models or sounds of the project's folder and the game's search path, each by the name the engine is given (a level as map takes it, a model by its path, a sound by its path under sound/) and where it is; the project's takes the game's place for a name both have.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "GameFileKind": {
+      "description": "A kind of file a key or a command names.",
+      "oneOf": [
+        {
+          "const": "level",
+          "description": "A level, by the name `map` and `changelevel` take: `e1m1` for `maps/e1m1.bsp`.",
+          "type": "string"
+        },
+        {
+          "const": "model",
+          "description": "A model, by its path: `progs/ogre.mdl`.",
+          "type": "string"
+        },
+        {
+          "const": "sound",
+          "description": "A sound, by its path under `sound/`: `doors/drclos4.wav`.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.game_files`.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/GameFileKind",
+      "description": "The kind of file to list."
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "GameFilesParams",
   "type": "object"
 }
 ```

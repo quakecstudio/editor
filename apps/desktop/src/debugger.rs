@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 use eframe::egui::{self, RichText, Ui};
+use qs_sim::ConsoleName;
 use qs_workbench::debug::Location;
 use qs_workbench::ids::WatchIndex;
 use qs_workbench::{
@@ -16,7 +17,8 @@ use qs_workbench::{
 };
 
 use crate::features::{Commands, ShellRequest};
-use crate::strings::Text;
+use crate::strings::{Text, key_detail};
+use crate::suggest::{Offer, Suggest, Taken};
 use crate::theme::{Theme, Token};
 
 /// The debugger's columns: the call stack, the watches and the breakpoints.
@@ -51,12 +53,125 @@ pub(crate) enum DebugAction {
     Console(String),
 }
 
-/// The text typed in the watch and console boxes, kept between frames.
-#[derive(Debug, Default)]
+/// The console commands whose word after them is a level (`Host_Map_f`, `Host_Changelevel_f`).
+const LEVEL_COMMANDS: [&str; 2] = ["map", "changelevel"];
+
+/// The text typed in the watch and console boxes, kept between frames, and what the console
+/// box offers.
+#[derive(Debug)]
 pub(crate) struct DebugInput {
     watch: String,
     console: String,
     filter: String,
+    /// The console's commands and settings, each with what it is (CON-4.3).
+    names: Vec<Offer>,
+    /// The levels `map` and `changelevel` take, read once a game runs; `None` until then.
+    levels: Option<Vec<String>>,
+}
+
+impl Default for DebugInput {
+    fn default() -> Self {
+        let names = ConsoleName::all()
+            .into_iter()
+            .map(|name| match name {
+                ConsoleName::Command(name) => Offer {
+                    name,
+                    detail: Text::ConsoleOfferCommand.get().to_owned(),
+                },
+                ConsoleName::Setting { name, default } => Offer {
+                    name: name.to_owned(),
+                    detail: key_detail(Text::ConsoleOfferSetting.get(), Some(default), None),
+                },
+            })
+            .collect();
+        Self {
+            watch: String::new(),
+            console: String::new(),
+            filter: String::new(),
+            names,
+            levels: None,
+        }
+    }
+}
+
+impl DebugInput {
+    /// Whether the levels are to be read: a game runs and they have not been.
+    pub(crate) const fn levels_unread(&self) -> bool {
+        self.levels.is_none()
+    }
+
+    /// Keeps the levels `map` and `changelevel` offer, or with `None` forgets them, so the next
+    /// game reads them again.
+    pub(crate) fn set_levels(&mut self, levels: Option<Vec<String>>) {
+        self.levels = levels;
+    }
+
+    /// The console's `]` prompt and its box, which offers the commands and settings as they
+    /// are typed (UI-24); the line to run once Enter is pressed on it.
+    fn command_box(&mut self, ui: &mut Ui, theme: &Theme) -> Option<DebugAction> {
+        ui.label(
+            RichText::new(Text::ConsolePrompt.get())
+                .monospace()
+                .color(theme.color(Token::Accent)),
+        );
+        let offers = self.console_offers(&self.console);
+        let field = Suggest {
+            name: Text::ConsoleCommand.get(),
+            offers: &offers,
+            width: ui.available_width(),
+        };
+        let (typed, taken) = field.take(ui, theme, &mut self.console);
+        let entered = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        match taken {
+            // An offer taken is put in the box, a space after it for its words.
+            Some(Taken::Offer(mut line)) => {
+                line.push(' ');
+                typed.request_focus();
+                // The caret keeps its place by count, which leaves it in the
+                // middle of a line put in whole: after it, typing goes on at the end.
+                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), typed.id) {
+                    let end = egui::text::CCursor::new(line.chars().count());
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::one(end)));
+                    state.store(ui.ctx(), typed.id);
+                }
+                self.console = line;
+            }
+            Some(Taken::Typed(line)) if entered && !line.is_empty() => {
+                // The box keeps the keyboard so the next command can be typed at
+                // once.
+                self.console.clear();
+                typed.request_focus();
+                return Some(DebugAction::Console(line));
+            }
+            Some(Taken::Typed(_)) | None => {}
+        }
+        None
+    }
+
+    /// What the console box offers for `typed`: after `map` or `changelevel` and a space,
+    /// that command with each level; otherwise every command and setting.
+    fn console_offers(&self, typed: &str) -> Vec<Offer> {
+        let typed = typed.trim_start();
+        let command = LEVEL_COMMANDS.iter().find(|command| {
+            typed
+                .strip_prefix(**command)
+                .is_some_and(|rest| rest.starts_with(' '))
+        });
+        match command {
+            Some(command) => self
+                .levels
+                .iter()
+                .flatten()
+                .map(|level| Offer {
+                    name: format!("{command} {level}"),
+                    detail: Text::ConsoleOfferLevel.get().to_owned(),
+                })
+                .collect(),
+            None => self.names.clone(),
+        }
+    }
 }
 
 /// A frame's place, written as the call stack shows it: `weapons.qc:33`, or `engine`.
@@ -201,28 +316,9 @@ pub(crate) fn console(
                 let [command, filter] = columns else {
                     return;
                 };
-                command.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(Text::ConsolePrompt.get())
-                            .monospace()
-                            .color(theme.color(Token::Accent)),
-                    );
-                    let typed = ui.add(
-                        egui::TextEdit::singleline(&mut input.console)
-                            .hint_text(Text::ConsoleCommand.get())
-                            .code_editor()
-                            .frame(egui::Frame::NONE)
-                            .desired_width(f32::INFINITY),
-                    );
-                    let typed = typed.accessible_name(Text::ConsoleCommand.get());
-                    let entered =
-                        typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if entered && !input.console.trim().is_empty() {
-                        // The box keeps the keyboard so the next command can be typed at once.
-                        typed.request_focus();
-                        action = Some(DebugAction::Console(std::mem::take(&mut input.console)));
-                    }
-                });
+                if let Some(line) = command.horizontal(|ui| input.command_box(ui, theme)).inner {
+                    action = Some(line);
+                }
                 let field = filter.add(
                     egui::TextEdit::singleline(&mut input.filter)
                         .hint_text(Text::FilterConsole.get())
@@ -292,3 +388,6 @@ impl DebugAction {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

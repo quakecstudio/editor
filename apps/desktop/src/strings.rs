@@ -378,6 +378,12 @@ pub enum Text {
     EngineFrame,
     /// The hint in the console's command box.
     ConsoleCommand,
+    /// What an offered console command is.
+    ConsoleOfferCommand,
+    /// What an offered console setting is, before its default.
+    ConsoleOfferSetting,
+    /// What an offered level after map or changelevel is.
+    ConsoleOfferLevel,
     /// The breakpoints column with none set.
     NoBreakpoints,
     /// The Debugger tab while the game runs.
@@ -1260,7 +1266,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 620] = [
+    pub const ALL: [Self; 623] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1378,6 +1384,9 @@ impl Text {
         Self::StepOut,
         Self::EngineFrame,
         Self::ConsoleCommand,
+        Self::ConsoleOfferCommand,
+        Self::ConsoleOfferSetting,
+        Self::ConsoleOfferLevel,
         Self::NoBreakpoints,
         Self::NotStopped,
         Self::NotRead,
@@ -2022,6 +2031,9 @@ impl Text {
             Self::StepOut => "Step out",
             Self::EngineFrame => "engine",
             Self::ConsoleCommand => "Console command, for example impulse 9",
+            Self::ConsoleOfferCommand => "command",
+            Self::ConsoleOfferSetting => "setting",
+            Self::ConsoleOfferLevel => "level",
             Self::NoBreakpoints => "Click a line number to set a breakpoint.",
             Self::NotStopped => {
                 "The call stack and watches show when the game stops at a breakpoint or a step."

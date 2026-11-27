@@ -36,6 +36,24 @@ pub(crate) struct Suggest<'a> {
     pub(crate) width: f32,
 }
 
+/// How the field's edit was done.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Taken {
+    /// An offer was taken, by Enter on its marked row or a click.
+    Offer(String),
+    /// The text typed was left, by Enter or the keyboard gone elsewhere.
+    Typed(String),
+}
+
+impl Taken {
+    /// The value taken.
+    pub(crate) fn value(self) -> String {
+        match self {
+            Self::Offer(value) | Self::Typed(value) => value,
+        }
+    }
+}
+
 /// The list's state between frames.
 #[derive(Clone, Copy, Debug, Default)]
 struct Shown {
@@ -65,6 +83,17 @@ impl Suggest<'_> {
     /// Draws the field over `typed`, and its list below it while it has the keyboard; the
     /// value once the edit is done: an offer taken, Enter, or the keyboard gone elsewhere.
     pub(crate) fn show(self, ui: &mut Ui, theme: &Theme, typed: &mut String) -> Option<String> {
+        self.take(ui, theme, typed).1.map(Taken::value)
+    }
+
+    /// As [`Suggest::show`], with the field, and saying whether an offer was taken or the text
+    /// typed left.
+    pub(crate) fn take(
+        self,
+        ui: &mut Ui,
+        theme: &Theme,
+        typed: &mut String,
+    ) -> (egui::Response, Option<Taken>) {
         // Sized exactly, as the key editor's other fields are, so a grid's column takes its
         // width in the first frame rather than growing to it over several.
         let edit = egui::TextEdit::singleline(typed).hint_text(self.name);
@@ -107,7 +136,7 @@ impl Suggest<'_> {
             if let Some(offer) = shown.marked.and_then(|m| matching.get(m))
                 && enter
             {
-                done = Some(offer.name.clone());
+                done = Some(Taken::Offer(offer.name.clone()));
             }
         }
         if (response.has_focus() || on_list) && !matching.is_empty() && done.is_none() {
@@ -148,7 +177,7 @@ impl Suggest<'_> {
                                         row.scroll_to_me(None);
                                     }
                                     if row.clicked() {
-                                        done = Some(offer.name.clone());
+                                        done = Some(Taken::Offer(offer.name.clone()));
                                     }
                                 }
                             });
@@ -159,9 +188,9 @@ impl Suggest<'_> {
             shown.at = None;
         }
         if done.is_none() && response.lost_focus() && !on_list {
-            done = Some(typed.trim().to_owned());
+            done = Some(Taken::Typed(typed.trim().to_owned()));
         }
-        if let Some(value) = &done {
+        if let Some(Taken::Offer(value) | Taken::Typed(value)) = &done {
             typed.clone_from(value);
             shown = Shown::default();
             if response.has_focus() {
@@ -169,7 +198,7 @@ impl Suggest<'_> {
             }
         }
         ui.data_mut(|d| d.insert_temp(id, shown));
-        done
+        (response, done)
     }
 }
 

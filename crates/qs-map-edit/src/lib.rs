@@ -53,6 +53,7 @@ pub use disk::{
 };
 pub use error::MapEditError;
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
+pub use game_files::{FileOrigin, GameFile, GameFileKind, GameFilesParams, MAP_GAME_FILES};
 pub use generate::{
     FormMade, GenerateParams, LevelSize, LockMade, MAP_GENERATE, MapGenerated, RoomMade,
 };
@@ -93,6 +94,7 @@ mod containers;
 mod disk;
 mod error;
 mod flags;
+mod game_files;
 mod generate;
 mod groups;
 mod inspect;
@@ -1578,8 +1580,8 @@ pub fn register_map_edit<C: HasMap + 'static>(
 }
 
 /// Registers the map commands only a context that can run a game offers: `texture.import`,
-/// `map.issues` and `map.face_uv`, which read the game's files beside the project's, and
-/// `map.face_align`. A context with no game finds no game folder to read (`GameFolders`).
+/// `map.issues`, `map.face_uv` and `map.game_files`, which read the game's files beside the
+/// project's, and `map.face_align`. A context with no game finds no game folder to read (`GameFolders`).
 ///
 /// # Errors
 ///
@@ -1590,7 +1592,8 @@ pub fn register_map_game<C: HasMap + 'static>(
     registry.register(TextureImport)?;
     registry.register(issues::MapIssuesCommand)?;
     registry.register(FaceUv)?;
-    registry.register(FaceAlign)
+    registry.register(FaceAlign)?;
+    registry.register(game_files::MapGameFiles)
 }
 
 /// The map context and the map fixtures the map editor's tests use, and the workbench's map

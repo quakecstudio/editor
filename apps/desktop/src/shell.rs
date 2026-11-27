@@ -28,7 +28,9 @@ use qs_layout::{
     HasLayout, Layout, MovePanelParams, Outline, Panel, RESIZE_PANEL, ResizePanelParams,
     ShowPanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams, WhenShown, Zoom, ZoomParams,
 };
-use qs_map_edit::{MAP_GENERATE, opens_in_map_editor};
+use qs_map_edit::{
+    GameFile, GameFileKind, GameFilesParams, MAP_GAME_FILES, MAP_GENERATE, opens_in_map_editor,
+};
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::GitHub;
@@ -1453,6 +1455,7 @@ impl Shell {
         let selected = preview.entities().selected().map(|selected| selected.edict);
         let game = preview.state();
         self.features.map.properties.follow(selected, game);
+        self.follow_console_levels(game);
         // P3-35: the background check's results for the latest edit, once it has finished.
         if self.run::<_, bool>(TAKE_CHECKED, &serde_json::json!({})) == Some(true) {
             ui.ctx().request_repaint();
@@ -1980,6 +1983,29 @@ impl Shell {
             ui.ctx().request_repaint();
         }
         true
+    }
+
+    /// Reads the levels the console's `map` and `changelevel` offer once a game runs, and
+    /// forgets them when it stops, so the next game reads a level compiled since (UI-24).
+    fn follow_console_levels(&mut self, game: PlayState) {
+        let input = &mut self.features.debugger.input;
+        match game {
+            PlayState::Stopped => input.set_levels(None),
+            PlayState::Playing | PlayState::Paused | PlayState::NotAnswering
+                if input.levels_unread() =>
+            {
+                let params = GameFilesParams {
+                    kind: GameFileKind::Level,
+                };
+                let files: Option<Vec<GameFile>> = self.run(MAP_GAME_FILES, &params);
+                let levels = files.unwrap_or_default().into_iter().map(|file| file.name);
+                self.features
+                    .debugger
+                    .input
+                    .set_levels(Some(levels.collect()));
+            }
+            PlayState::Playing | PlayState::Paused | PlayState::NotAnswering => {}
+        }
     }
 
     /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
