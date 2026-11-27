@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-27
 - **Decided by:** Justin Plock
-- **Issue:** [#737](https://github.com/quakecstudio/editor/issues/737) (L-15); the work is L-84 to L-88
+- **Issue:** [#737](https://github.com/quakecstudio/editor/issues/737) (L-15); the work is [#1154](https://github.com/quakecstudio/editor/issues/1154) to [#1158](https://github.com/quakecstudio/editor/issues/1158) (L-84 to L-88)
 - **Requirements:** ENG-18, MAP-39, ENG-15
 
 ## Question
