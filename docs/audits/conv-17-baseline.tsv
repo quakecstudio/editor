@@ -681,10 +681,6 @@ magic-number	crates/qc-vm/src/ops.rs	mul_vf:3
 magic-number	crates/qc-vm/src/ops.rs	store_vector:3
 magic-number	crates/qc-vm/src/ops.rs	storep_vector:3
 magic-number	crates/qc-vm/src/ops.rs	vector_binop:3
-magic-number	crates/qs-bsp/src/lib.rs	Bsp::calc_surface_extents:16
-magic-number	crates/qs-bsp/src/lib.rs	Bsp::calc_surface_extents:16.0
-magic-number	crates/qs-bsp/src/lib.rs	Bsp::calc_surface_extents:99999.0
-magic-number	crates/qs-bsp/src/lib.rs	Bsp::calc_surface_extents:999999.0
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::mod_load_clipnodes:4
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::mod_load_clipnodes:6
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::mod_load_clipnodes:8

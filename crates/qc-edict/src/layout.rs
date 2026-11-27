@@ -17,7 +17,6 @@
 use core::fmt;
 
 use qc_progs::Progs;
-use qc_progs::limits::LIMIT_MAX_EDICTS;
 use qc_types::{EntityRef, PointerRef};
 
 use crate::{
@@ -164,22 +163,13 @@ impl EdictLayout {
         EntityRef::from_number(number.to_i32()?, self.edict_size)
     }
 
-    /// The edict number an entity value names, if it names one, id's `PROG_TO_EDICT` read back
-    /// through `NUM_FOR_EDICT`.
-    ///
-    /// Implements EDICT-1.9: a value names edict `n` when it is `n` times the edict size for a
-    /// whole number `n` from 0 to [`LIMIT_MAX_EDICTS`](qc_progs::limits::LIMIT_MAX_EDICTS) - 1;
-    /// any other value names none. It does not check whether edict `n` is in use or free: the
-    /// array holds all the edicts.
+    /// The number an entity value is the multiple of the edict size of, if it is a whole
+    /// non-negative one (EDICT-1.9); whether the array holds that edict is the store's
+    /// ([`EdictStore::edict_number`](crate::EdictStore::edict_number)).
     #[must_use]
-    pub fn edict_number(&self, value: EntityRef) -> Option<EdictNumber> {
+    pub(crate) fn multiple_of_edict(&self, value: EntityRef) -> Option<usize> {
         let number = value.number(self.edict_size)?;
-        let max = i32::try_from(LIMIT_MAX_EDICTS).ok()?;
-        if number >= 0 && number < max {
-            EdictNumber::from_i32(number)
-        } else {
-            None
-        }
+        usize::try_from(number).ok()
     }
 
     /// The pointer value for field slot `field` of edict `number`, id's `OP_ADDRESS`

@@ -88,6 +88,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
 | [`map.brushes`](#mapbrushes) | Lists the brushes of an entity of the open map, the world's when none is named: each brush's place, which the map.brush_* tools take, the box around it and its textures; all of them, or those touching a box. The brush tools answer the places of the brushes they make, so this is for brushes whose places are not known: a map someone else built, or after a tool that changed how many brushes the entity has. |
+| [`map.budget`](#mapbudget) | How much of the target engine's limits the open map uses, and of id's: for each BSP lump, the face extent, edicts, precached models and sounds and light styles, what the map uses, the engine's limit with what the engine does past it, the share and whether it is past, near or within, worst first. The lumps come from the last compile while the map is unchanged; the edicts, precaches and light styles from the map spawned by the project's program on each skill. Limits past and near the target's join map.issues while the map, the target and the sources are the same. With answer "later" it answers null at once and spawns on its own thread; map.budget_found gives the answer. |
+| [`map.budget_found`](#mapbudget_found) | Answers what map.budget found of the open map as it is now: the answer of a budget started with answer "later" once it is made, or the last answer while the map, the target and the sources have not changed since; null while one is being made, and when there is none. |
 | [`map.build_passage`](#mapbuild_passage) | Builds a passage between two doorways of the open map that face each other along x or along y, 112 wide and 128 high, with stairs where their floors differ, a light, and a door when one is asked for. |
 | [`map.build_room`](#mapbuild_room) | Builds one room of a shape of id's levels into the open map, sealed but for the doorways asked for, with its lights: a pillared hall, an eight-sided domed chamber, a hall around a pit crossed by bridges, a room on two levels, a courtyard, a cross of two aisles, a vaulted room, or an atrium with a balcony. Answers its doorways, for map.build_passage, and where things may stand. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. It reads the file alone, so it says a world that names no WAD is one as id's qbsp does; map.issues and map.find_leaks say whether a texture of the open map is missing. |
@@ -4170,6 +4172,62 @@ Parameters:
     }
   },
   "title": "BrushesParams",
+  "type": "object"
+}
+```
+
+## `map.budget`
+
+How much of the target engine's limits the open map uses, and of id's: for each BSP lump, the face extent, edicts, precached models and sounds and light styles, what the map uses, the engine's limit with what the engine does past it, the share and whether it is past, near or within, worst first. The lumps come from the last compile while the map is unchanged; the edicts, precaches and light styles from the map spawned by the project's program on each skill. Limits past and near the target's join map.issues while the map, the target and the sources are the same. With answer "later" it answers null at once and spawns on its own thread; map.budget_found gives the answer.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Answer": {
+      "description": "When `map.playability` gives its answer.",
+      "oneOf": [
+        {
+          "const": "now",
+          "description": "The search runs, and its answer is given.",
+          "type": "string"
+        },
+        {
+          "const": "later",
+          "description": "The map is compiled, the search started on its own thread, and nothing is answered:\n`map.playability_found` gives the answer once the search is done, so that a window\nstays live while a large map is searched.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.budget`.",
+  "properties": {
+    "answer": {
+      "$ref": "#/$defs/Answer",
+      "default": "now",
+      "description": "When the answer is given: at once, the default, or later, the spawns run on their own\nthread and the answer taken with `map.budget_found`."
+    }
+  },
+  "title": "BudgetParams",
+  "type": "object"
+}
+```
+
+## `map.budget_found`
+
+Answers what map.budget found of the open map as it is now: the answer of a budget started with answer "later" once it is made, or the last answer while the map, the target and the sources have not changed since; null while one is being made, and when there is none.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

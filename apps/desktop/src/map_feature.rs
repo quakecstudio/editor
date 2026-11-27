@@ -61,6 +61,7 @@ use qs_map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, Outline
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::map_balance::{BalanceParams, MAP_BALANCE, MapBalance};
+use qs_workbench::map_budget::{BudgetParams, MAP_BUDGET, MAP_BUDGET_FOUND, MapBudget};
 use qs_workbench::map_compile::{
     MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
 };
@@ -117,6 +118,19 @@ pub(crate) struct MapFeature {
     copied: Option<String>,
     /// The map's edits a playability check running on its own thread started at (L-77).
     playing: Option<MapRevision>,
+    /// The map's edits a budget being made on its own thread started at (L-79).
+    budgeting: Option<MapRevision>,
+}
+
+/// What [`MapFeature::refresh_map_budget`] did with the map's budget (L-79).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Budgeting {
+    /// Nothing: the meters shown are current, or the map cannot be measured.
+    Idle,
+    /// It shows a budget it did not show before.
+    Shown,
+    /// One is being made on its own thread.
+    Running,
 }
 
 impl MapFeature {
@@ -511,6 +525,70 @@ impl MapFeature {
         checked
     }
 
+    /// Measures how much of the target engine's limits the open map uses (L-79) once it has a
+    /// compile's report, or was opened from a BSP, whoever compiled it: the agent, MCP or the
+    /// palette too, and again when its edits, its target or the project's sources change. The
+    /// spawns run on their own thread; each call looks for their answer without waiting, and
+    /// lists the map's issues again when it comes.
+    pub(crate) fn refresh_map_budget(&mut self, commands: &mut Commands<'_>) -> Budgeting {
+        let at = commands.session().context().map_edits();
+        if let Some(started) = self.budgeting {
+            let found: Result<Option<MapBudget>, ShellError> =
+                commands.attempt(MAP_BUDGET_FOUND, &serde_json::json!({}));
+            match found {
+                Ok(None) if started == at => return Budgeting::Running,
+                Ok(Some(found)) if started == at => {
+                    self.budgeting = None;
+                    self.map_editor.set_budget(found, at);
+                    drop(self.check_map_issues(commands));
+                    return Budgeting::Shown;
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "the map's budget could not be made"),
+            }
+            self.budgeting = None;
+        }
+        let measurable = commands
+            .session()
+            .context()
+            .workbench
+            .map()
+            .is_some_and(|document| {
+                document.report().is_some()
+                    || matches!(document.source(), qs_map_edit::MapSource::Bsp(_))
+            });
+        if !measurable {
+            return Budgeting::Idle;
+        }
+        // The budget kept is found only while the map, the target and the sources are those it
+        // was made of (BUDGET-3.3); none found means one is to be made.
+        let current: Result<Option<MapBudget>, ShellError> =
+            commands.attempt(MAP_BUDGET_FOUND, &serde_json::json!({}));
+        if let Ok(Some(found)) = current {
+            if self.map_editor.shows_budget(&found, at) {
+                return Budgeting::Idle;
+            }
+            self.map_editor.set_budget(found, at);
+            return Budgeting::Shown;
+        }
+        // The meters shown are of another target or other sources.
+        self.map_editor.clear_budget();
+        let params = BudgetParams {
+            answer: Answer::Later,
+        };
+        let started: Result<Option<MapBudget>, ShellError> = commands.attempt(MAP_BUDGET, &params);
+        match started {
+            Ok(_) => {
+                self.budgeting = Some(at);
+                Budgeting::Running
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the map's budget could not be made");
+                Budgeting::Idle
+            }
+        }
+    }
+
     /// Starts checking that the open map, just compiled, can be finished (L-77), the search on
     /// its own thread so that the window stays live; [`MapFeature::poll_playability`] takes the
     /// answer. A map that cannot be checked, such as one with no player start, which its issues
@@ -525,6 +603,13 @@ impl MapFeature {
         self.playing = started
             .is_ok()
             .then(|| commands.session().context().map_edits());
+    }
+
+    /// Whether a budget [`MapFeature::refresh_map_budget`] started has not answered yet, for
+    /// tests that wait on its thread.
+    #[cfg(test)]
+    pub(crate) const fn making_budget(&self) -> bool {
+        self.budgeting.is_some()
     }
 
     /// Whether a check [`MapFeature::check_playability`] started has not answered yet, for tests

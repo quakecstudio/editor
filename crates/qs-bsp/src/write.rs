@@ -207,6 +207,196 @@ pub struct BspFile {
     pub models: Vec<DiskModel>,
 }
 
+/// What a BSP file holds, counted (ENGT-5.4): each lump's records, or bytes for the lumps of
+/// bytes, the world's `visleafs`, and the largest extent of a face that is not `TEX_SPECIAL`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BspCounts {
+    /// Models, the world's first.
+    pub models: usize,
+    /// Entities of the entity text: each `{` outside a quoted string, as `COM_Parse` reads
+    /// the text (BSP-2).
+    pub entities: usize,
+    /// Bytes of entity text, its NUL included.
+    pub entity_text: usize,
+    /// Planes.
+    pub planes: usize,
+    /// Nodes.
+    pub nodes: usize,
+    /// Clipnodes.
+    pub clipnodes: usize,
+    /// Leaves.
+    pub leafs: usize,
+    /// The world model's `visleafs`; 0 with no model.
+    pub visleafs: usize,
+    /// Vertexes.
+    pub vertexes: usize,
+    /// Faces.
+    pub faces: usize,
+    /// Marksurfaces.
+    pub marksurfaces: usize,
+    /// Texinfo.
+    pub texinfo: usize,
+    /// Edges.
+    pub edges: usize,
+    /// Surfedges.
+    pub surfedges: usize,
+    /// Textures: the textures lump's count (BSP-4.1); 0 for an empty lump.
+    pub textures: usize,
+    /// Bytes of lighting.
+    pub lighting: usize,
+    /// Bytes of visibility.
+    pub visibility: usize,
+    /// The largest extent, in texels, on either axis, of a face that is not `TEX_SPECIAL`,
+    /// as WinQuake's `CalcSurfaceExtents` computes it (BSP-9.7, BSP-9.10 to BSP-9.14), read
+    /// as an unsigned 16-bit value: an extent the engine's `short` wraps negative counts as
+    /// the 32768 or more it is.
+    pub face_extent: usize,
+    /// The same as the FitzQuake lineage computes it (BSP-20.8, BSP-20.9).
+    pub fitz_face_extent: usize,
+}
+
+impl BspFile {
+    /// Its counts (ENGT-5.4).
+    #[must_use]
+    pub fn counts(&self) -> BspCounts {
+        let textures = self
+            .textures
+            .get(..core::mem::size_of::<i32>())
+            .and_then(|count| <[u8; 4]>::try_from(count).ok())
+            .map(i32::from_le_bytes)
+            .and_then(|count| usize::try_from(count).ok())
+            .unwrap_or(0);
+        BspCounts {
+            models: self.models.len(),
+            entities: entity_count(&self.entities),
+            entity_text: self.entities.len(),
+            planes: self.planes.len(),
+            nodes: self.nodes.len(),
+            clipnodes: self.clipnodes.len(),
+            leafs: self.leafs.len(),
+            visleafs: self
+                .models
+                .first()
+                .and_then(|world| usize::try_from(world.visleafs).ok())
+                .unwrap_or(0),
+            vertexes: self.vertexes.len(),
+            faces: self.faces.len(),
+            marksurfaces: self.marksurfaces.len(),
+            texinfo: self.texinfo.len(),
+            edges: self.edges.len(),
+            surfedges: self.surfedges.len(),
+            textures,
+            lighting: self.lighting.len(),
+            visibility: self.visibility.len(),
+            face_extent: self.largest_extent(crate::BspLoader::WinQuake),
+            fitz_face_extent: self.largest_extent(crate::BspLoader::FitzQuake),
+        }
+    }
+
+    /// The vertices of face `face`, in order, through its surfedges (BSP-9.2, BSP-14.2): those
+    /// it names that the file holds.
+    fn face_vertices(&self, face: &DiskFace) -> Vec<[f32; 3]> {
+        let first = usize::try_from(face.firstedge).unwrap_or(0);
+        let count = usize::try_from(face.numedges).unwrap_or(0);
+        self.surfedges
+            .iter()
+            .skip(first)
+            .take(count)
+            .filter_map(|&surfedge| {
+                let edge = self
+                    .edges
+                    .get(usize::try_from(surfedge.unsigned_abs()).ok()?)?;
+                let vertex = if surfedge >= 0 { edge[0] } else { edge[1] };
+                self.vertexes.get(usize::try_from(vertex).ok()?).copied()
+            })
+            .collect()
+    }
+
+    /// The largest extent of a face that is not `TEX_SPECIAL`, by `loader`'s rule.
+    fn largest_extent(&self, loader: crate::BspLoader) -> usize {
+        let mut largest = 0;
+        for face in &self.faces {
+            let Some(texinfo) = usize::try_from(face.texinfo)
+                .ok()
+                .and_then(|n| self.texinfo.get(n))
+            else {
+                continue;
+            };
+            if texinfo.flags & crate::BSP_TEX_SPECIAL != 0 {
+                continue;
+            }
+            let (_, extents) = loader.surface_extents(texinfo.vecs, &self.face_vertices(face));
+            for extent in extents {
+                largest = largest.max(usize::from(extent.cast_unsigned()));
+            }
+        }
+        largest
+    }
+}
+
+impl crate::Bsp<'_> {
+    /// Its counts (ENGT-5.4), as it was read: each face's extent is the one its loader computed,
+    /// so both extents are that loader's.
+    #[must_use]
+    pub fn counts(&self) -> BspCounts {
+        let mut face_extent = 0;
+        for face in &self.faces {
+            let special = self
+                .texinfo
+                .get(face.texinfo)
+                .is_none_or(|texinfo| texinfo.flags & crate::BSP_TEX_SPECIAL != 0);
+            if special {
+                continue;
+            }
+            for extent in face.extents {
+                face_extent = face_extent.max(usize::from(extent.cast_unsigned()));
+            }
+        }
+        BspCounts {
+            models: self.models.len(),
+            entities: entity_count(self.entity_lump),
+            entity_text: self
+                .lumps
+                .get(LUMP_ENTITIES)
+                .map_or(0, |lump| usize::try_from(lump.filelen).unwrap_or(0)),
+            planes: self.planes.len(),
+            nodes: self.nodes.len(),
+            clipnodes: self.clipnodes.len(),
+            leafs: self.leafs.len(),
+            visleafs: self
+                .models
+                .first()
+                .and_then(|world| usize::try_from(world.visleafs).ok())
+                .unwrap_or(0),
+            vertexes: self.vertexes.len(),
+            faces: self.faces.len(),
+            marksurfaces: self.marksurfaces.len(),
+            texinfo: self.texinfo.len(),
+            edges: self.edges.len(),
+            surfedges: self.surfedges.len(),
+            textures: self.textures.len(),
+            lighting: self.lighting.len(),
+            visibility: self.visibility.len(),
+            face_extent,
+            fitz_face_extent: face_extent,
+        }
+    }
+}
+
+/// The entities of entity text: each `{` outside a quoted string.
+fn entity_count(text: &[u8]) -> usize {
+    let mut quoted = false;
+    let mut count = 0_usize;
+    for &byte in text {
+        match byte {
+            b'"' => quoted = !quoted,
+            b'{' if !quoted => count = count.saturating_add(1),
+            _ => {}
+        }
+    }
+    count
+}
+
 /// Little-endian records in one of the formats.
 trait Record {
     /// Appends the record; BSP29's narrower fields refuse a value they cannot hold.

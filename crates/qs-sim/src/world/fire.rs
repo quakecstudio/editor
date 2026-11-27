@@ -337,7 +337,6 @@ fn edict_at(machine: &Machine, slot: i32) -> Option<usize> {
     let value = machine.global(slot).ok()?;
     machine
         .edicts()
-        .layout()
         .edict_number(EntityRef::from_bits(value.as_i32()))
         .map(EdictNumber::index)
 }

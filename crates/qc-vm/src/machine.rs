@@ -143,8 +143,21 @@ impl Machine {
     /// [`LayoutError`] when the progs cannot back an edict store (too few globals or fields,
     /// or too many fields; EDICT-2.4, EDICT-3.3, EDICT-3.5).
     pub fn new(progs: &Progs<'_>, maxclients: usize) -> Result<Self, MachineError> {
+        Self::with_capacity(progs, maxclients, qc_edict::EdictCapacity::ID)
+    }
+
+    /// [`Machine::new`] with an edict array of `capacity` edicts (EDICT-1.10).
+    ///
+    /// # Errors
+    ///
+    /// As [`Machine::new`].
+    pub fn with_capacity(
+        progs: &Progs<'_>,
+        maxclients: usize,
+        capacity: qc_edict::EdictCapacity,
+    ) -> Result<Self, MachineError> {
         let layout = qc_edict::EdictLayout::for_progs(progs)?;
-        let edicts = EdictStore::new(layout, maxclients)?;
+        let edicts = EdictStore::with_capacity(layout, maxclients, capacity)?;
         let mut globals: Vec<Slot> = progs.globals().iter().collect();
         globals.extend(std::iter::repeat_n(Slot::ZERO, GLOBAL_SLACK));
         Ok(Self {

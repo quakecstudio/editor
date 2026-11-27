@@ -4,7 +4,7 @@
 //! hull, and the BSP, portal file and leak file written (QBSP-1).
 
 use crate::light_flags::{LeafKind, SurfaceFlags};
-use qs_bsp::write::{BspFormat, DiskTexinfo};
+use qs_bsp::write::{BspCounts, BspFormat, DiskTexinfo};
 use qs_map::MapFile;
 use qs_map::qbsp::{QbspMap, load_map_file};
 use qs_wad::Wad;
@@ -48,6 +48,8 @@ pub struct Compiled {
     /// In the extended dialect, what each leaf is to a light sample, in the BSP's order
     /// (QBSP-15.55); none in the id dialect.
     pub leaves: Vec<LeafKind>,
+    /// What the BSP holds, counted (ENGT-5.4).
+    pub counts: BspCounts,
 }
 
 /// What the world's fill wrote: the portal and leak files, and the leak's trail.
@@ -380,6 +382,7 @@ impl Compiler {
             warnings,
             surfaces: Vec::new(),
             leaves: Vec::new(),
+            counts: out.file.counts(),
         })
     }
 }

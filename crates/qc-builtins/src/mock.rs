@@ -259,6 +259,26 @@ impl EngineProfile {
     }
 }
 
+/// The entries of each precache list when a caller gives more than the profile's (LIMIT-6.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrecacheRoom {
+    /// The model list's entries, entry 0 among them.
+    pub models: usize,
+    /// The sound list's entries, entry 0 among them.
+    pub sounds: usize,
+}
+
+impl PrecacheRoom {
+    /// The entries of list `kind`.
+    #[must_use]
+    pub const fn entries(self, kind: Precache) -> usize {
+        match kind {
+            Precache::Model => self.models,
+            Precache::Sound => self.sounds,
+        }
+    }
+}
+
 /// One of the two precache lists (BUILTIN-10, LIMIT-6.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precache {
@@ -333,6 +353,9 @@ pub struct MockEngine {
     pub server_active: bool,
     /// Whose rules the mock follows (BUILTIN-18); id's unless the caller chooses another.
     pub profile: EngineProfile,
+    /// Precache lists of more entries than the profile's, for counting a map's precaches
+    /// past them (LIMIT-6.3); `None`, the profile's.
+    pub precache_room: Option<PrecacheRoom>,
     /// What a builtin number with no implementation does; the engine's error unless the
     /// caller chooses otherwise (DIFF-12.26).
     pub unimplemented: Unimplemented,
@@ -549,6 +572,7 @@ impl MockEngine {
             clients_active: Vec::new(),
             server_active: false,
             profile: EngineProfile::Id,
+            precache_room: None,
             unimplemented: Unimplemented::Error,
             tokens: Tokens::default(),
             clients: Clients::default(),
@@ -602,15 +626,27 @@ impl MockEngine {
             Precache::Sound => &mut self.sound_precache,
             Precache::Model => &mut self.model_precache,
         };
-        if list.len() >= self.profile.precache_limit(kind) {
+        let limit = self.precache_room.map_or_else(
+            || self.profile.precache_limit(kind),
+            |room| room.entries(kind),
+        );
+        if list.len() >= limit {
             return Err(Overflow);
         }
         list.push(name.to_owned());
         Ok(())
     }
 
+    /// Gives the light style array `styles` entries in place of id's
+    /// [`LIMIT_MAX_LIGHTSTYLES`], for counting a map that sets more (LIMIT-6.4); fewer than
+    /// id's are taken as id's.
+    pub fn set_lightstyle_room(&mut self, styles: usize) {
+        self.lightstyles
+            .resize(styles.max(LIMIT_MAX_LIGHTSTYLES), None);
+    }
+
     /// Sets lightstyle `style` to `value` (BUILTIN-12.6); `style` is already range-checked by
-    /// the caller to 0 to [`LIMIT_MAX_LIGHTSTYLES`] - 1.
+    /// the caller to the array, 0 to [`LIMIT_MAX_LIGHTSTYLES`] - 1 unless given more room.
     pub fn set_lightstyle(&mut self, style: usize, value: &[u8]) {
         if let Some(cell) = self.lightstyles.get_mut(style) {
             *cell = Some(String::from_utf8_lossy(value).into_owned());

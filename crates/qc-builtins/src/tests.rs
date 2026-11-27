@@ -763,6 +763,48 @@ mod mock_engine {
         );
     }
 
+    // spec LIMIT-6.3: given more room, a precache list takes names past id's 256 entries and
+    // overflows at the room's; without room it overflows at id's
+    #[test]
+    fn precache_room() {
+        let mut engine = MockEngine::new("start", 0, 1);
+        let fill = |engine: &mut MockEngine, kind, count: usize| {
+            (0..count)
+                .map(|n| engine.precache(kind, &format!("x{n}")))
+                .filter(Result::is_err)
+                .count()
+        };
+        // Entry 0 is empty: 255 more sounds fit id's list.
+        assert_eq!(fill(&mut engine, Precache::Sound, 255), 0);
+        assert_eq!(engine.precache(Precache::Sound, "one more"), Err(Overflow));
+        let mut roomy = MockEngine::new("start", 0, 1);
+        roomy.precache_room = Some(crate::PrecacheRoom {
+            models: 300,
+            sounds: 400,
+        });
+        assert_eq!(fill(&mut roomy, Precache::Sound, 399), 0);
+        assert_eq!(roomy.sound_precache.len(), 400);
+        assert_eq!(roomy.precache(Precache::Sound, "one more"), Err(Overflow));
+        // The model list holds entry 0 and the world already.
+        assert_eq!(fill(&mut roomy, Precache::Model, 298), 0);
+        assert_eq!(roomy.precache(Precache::Model, "one more"), Err(Overflow));
+        assert_eq!(roomy.sound_precache.first().map(String::as_str), Some(""));
+    }
+
+    // spec LIMIT-6.4: given more room, the light style array holds styles past id's 64; less
+    // than id's keeps id's 64
+    #[test]
+    fn lightstyle_room() {
+        let mut engine = MockEngine::new("start", 0, 1);
+        assert_eq!(engine.lightstyles.len(), 64);
+        engine.set_lightstyle_room(10);
+        assert_eq!(engine.lightstyles.len(), 64);
+        engine.set_lightstyle_room(257);
+        assert_eq!(engine.lightstyles.len(), 257);
+        engine.set_lightstyle(256, b"m");
+        assert_eq!(engine.lightstyles[256].as_deref(), Some("m"));
+    }
+
     // spec BUILTIN-13.3: append_message adds to the buffer up to its limit; an append that
     // would exceed the limit leaves the size unchanged and reports overflow. MSG_ONE is never
     // kept and never overflows.

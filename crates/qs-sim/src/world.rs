@@ -213,6 +213,21 @@ pub struct LoadOptions {
     /// Console text a new host runs before the map's settings are read, as QuakeSpasm's
     /// `Host_Init` runs `exec quake.rc` before the first map (INPUT-3.7); empty for none.
     pub startup: Vec<u8>,
+    /// Room past id's limits for counting a map that passes them: more edicts (EDICT-1.10) and
+    /// longer precache lists (LIMIT-6.3); id's by default.
+    pub room: Room,
+}
+
+/// Room past id's limits in a world, for `map.budget` to count a map past them (EDICT-1.10,
+/// LIMIT-6.3). The default is id's: 600 edicts and the profile's precache lists.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Room {
+    /// The edict array's size.
+    pub edicts: qc_edict::EdictCapacity,
+    /// The precache lists' entries; `None` for the profile's.
+    pub precaches: Option<qc_builtins::PrecacheRoom>,
+    /// The light style array's entries (LIMIT-6.4); `None` for id's 64.
+    pub light_styles: Option<usize>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -405,8 +420,8 @@ impl World {
         files: ModelFiles,
         options: LoadOptions,
     ) -> Result<Self, WorldError> {
-        let machine =
-            Machine::new(progs, MAXCLIENTS).map_err(|e| WorldError::Progs(e.to_string()))?;
+        let machine = Machine::with_capacity(progs, MAXCLIENTS, options.room.edicts)
+            .map_err(|e| WorldError::Progs(e.to_string()))?;
         let submodels = bsp.models.len().saturating_sub(1);
         // MOVE-6.1: the random source starts at state 1, or at a scenario's seed (SCN-1.3).
         let seed = options.seed.unwrap_or(RANDOM_SEED);
@@ -430,6 +445,10 @@ impl World {
                     engine.cvars.create(name, value);
                 }
             }
+        }
+        engine.precache_room = options.room.precaches;
+        if let Some(styles) = options.room.light_styles {
+            engine.set_lightstyle_room(styles);
         }
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
@@ -1032,6 +1051,43 @@ impl World {
             .lightstyles
             .get(style)
             .and_then(Option::as_deref)
+    }
+
+    /// The names precached in list `kind`, entry 0 not counted: for models, the world and its
+    /// submodels among them (LIMIT-6.2).
+    #[must_use]
+    pub fn precached(&self, kind: qc_builtins::Precache) -> usize {
+        let engine = self.builtins.mock.engine();
+        let list = match kind {
+            qc_builtins::Precache::Model => &engine.model_precache,
+            qc_builtins::Precache::Sound => &engine.sound_precache,
+        };
+        list.len().saturating_sub(1)
+    }
+
+    /// One more than the highest light style the program has set with `lightstyle`, 0 for
+    /// none (BUILTIN-12.6).
+    #[must_use]
+    pub fn light_styles_highest(&self) -> usize {
+        self.builtins
+            .mock
+            .engine()
+            .lightstyles
+            .iter()
+            .rposition(Option::is_some)
+            .map_or(0, |style| style.saturating_add(1))
+    }
+
+    /// The light styles the program has set with `lightstyle` (BUILTIN-12.6).
+    #[must_use]
+    pub fn light_styles_set(&self) -> usize {
+        self.builtins
+            .mock
+            .engine()
+            .lightstyles
+            .iter()
+            .filter(|style| style.is_some())
+            .count()
     }
 
     /// The sounds the server has started since the last call, oldest first.

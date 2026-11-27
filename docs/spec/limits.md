@@ -139,6 +139,14 @@ Code uses these names, never the bare numbers. Implemented by `qc-progs` (LIMIT-
   name when all 256 entries are used fails with `PF_precache_sound: overflow` or
   `PF_precache_model: overflow`. So at most 255 sounds can be precached, and at most 255 models
   including the world model in entry 1 and its submodels after it.
+- **LIMIT-6.3** Not id's: the mock engine may be given precache lists of more entries than
+  its profile's (`PrecacheRoom`), an engine's (ENGT-5.8), so that a map past id's 255 models
+  or sounds is spawned and its precaches counted (BUDGET-2). LIMIT-6.2 then holds with those
+  entries; entry 0 stays the empty string.
+- **LIMIT-6.4** Not id's: the mock engine's light style array may likewise be given more
+  entries than `LIMIT_MAX_LIGHTSTYLES`, an engine's (ENGT-5.8); BUILTIN-12.6's range is then
+  that array's, so a map that sets style 100 is spawned and counted for an engine that has
+  256 (BUDGET-2.4).
 
 ### Constants
 

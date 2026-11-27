@@ -38,6 +38,7 @@ use crate::display::Display;
 use crate::map_view::DEPTH_FORMAT;
 use crate::map_view::tests::DepthRenderer;
 use crate::strings::Text;
+use crate::tests::{APP_STEPS, settle_playability};
 use crate::theme::{Contrast, Mode, Motion};
 
 /// The window's size in points, the play-loop mockup's.
@@ -372,6 +373,19 @@ fn scripts() -> Vec<Script> {
                 Step::Click("Count"),
             ],
         },
+        // L-79: after a compile the Properties panel shows the target engine's limits, the worst
+        // first, the spawn's counts made by the fixture's program.
+        Script {
+            name: "map-budget",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": balance_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": balance_fixture().join("maps/balance.map") }),
+                ),
+                Step::Run("map.find_leaks", json!({})),
+            ],
+        },
         Script {
             name: "map-uv",
             steps: vec![
@@ -513,6 +527,7 @@ fn harness() -> Harness<'static, Option<App>> {
     let mut harness = Harness::builder()
         .with_size(SIZE)
         .with_pixels_per_point(1.0)
+        .with_max_steps(APP_STEPS)
         .renderer(DepthRenderer {
             offscreen: Offscreen::from_state(state.clone(), DEPTH_FORMAT),
         })
@@ -595,6 +610,18 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
             }
         }
         harness.run();
+    }
+    // A compile starts the playability check and the budget on their own threads (L-77,
+    // L-79): the last frame shows what they found. A script that started neither takes no
+    // more frames, which would move a text cursor's blink.
+    let working = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .is_some_and(|app| app.shell().checking_playability() || app.shell().making_budget())
+    };
+    if working(&harness) {
+        settle_playability(&mut harness);
     }
     harness
 }

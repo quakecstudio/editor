@@ -410,3 +410,94 @@ ENGT-4.16 on 2026-10-20.
 | `vector() getmousepos = #66;` called, DarkPlaces, menu module | none | ENGT-3.11, ENGT-4.8 |
 | `string(float ascii) chr = #78;` called, DarkPlaces, menu module | none | ENGT-3.11, ENGT-4.8 |
 | the same, FTEQW, menu module | `W0311` "chr is builtin #78, which FTEQW does not have" | ENGT-4.8 |
+
+## ENGT-5 Map limits
+
+**Source:** id's limits are BSP-16 (`docs/spec/bsp.md`, the compiler's `MAX_MAP_*` of
+`WinQuake/bspfile.h`), BSP-6 (`Mod_DecompressVis`'s row of `MAX_MAP_LEAFS` leaves), BSP-9.4
+(`CalcSurfaceExtents` in `WinQuake/model.c`) and LIMIT-6 (`docs/spec/limits.md`, from
+`WinQuake/quakedef.h`), at id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`. The
+other engines' are read from the files of `sources.toml`'s `[[limit_file]]` entries, each at
+the commit of the builtin source of ENGT-1 it names, fetched and checked by SHA-256 as ENGT-1.2
+says:
+
+| Engine | Source | File | SHA-256 |
+| --- | --- | --- | --- |
+| QuakeSpasm | `quakespasm` | `Quake/quakedef.h` | `ba07e7c8f5af47452fde846099e764033fd52d7bf2e83a8ac284895a55cbb3b1` |
+| QuakeSpasm | `quakespasm` | `Quake/host.c` | `607cb27beeb25e2d7822af730f3da0aea1851141ebcfcc7b3d05148c0e8ea6e1` |
+| QuakeSpasm | `quakespasm` | `Quake/gl_model.c` | `68d164a29fbeaa102a2c77a6d7736fe7c0e302a35d6683c2e5c2fd4e8054d10f` |
+| Ironwail | `ironwail` | `Quake/quakedef.h` | `82fbd2e1337fb4968e9b6cab45be7294da24bcb998a0a1b42c716707d7de239c` |
+| Ironwail | `ironwail` | `Quake/host.c` | `3a87428cb0a090dc1bc198e013126a7d6200b1831575b21bdd8db9efc8458738` |
+| Ironwail | `ironwail` | `Quake/gl_model.c` | `20005b669b1fbf4f983e4913592a09cf40dc04a09c3dbcca62940ffde3bfb6a7` |
+| vkQuake | `vkquake` | `Quake/quakedef.h` | `2ee7cfbe17e32b3ce81cd4a290fda62d35d5fdf38740242a1e856a717013549a` |
+| vkQuake | `vkquake` | `Quake/host.c` | `0e4327f08aeba5452ee8e2bf59a45f7a952e4873b2367b4fbb399847f3ed5c48` |
+| vkQuake | `vkquake` | `Quake/gl_model.c` | `9d2469a131dc50e43ea769ab91484824a858291f4d10ae86ae8b883dc8c4d197` |
+| DarkPlaces | `darkplaces` | `qdefs.h` | `92048b2c48e538ded09a9e5d84ffc690ec1da9e6d6391789af84f84413686b31` |
+| DarkPlaces | `darkplaces` | `model_brush.c` | `ffae2201a9bc6db3c5cf78c94a70fa4cdbef78a2dea5f8c86ee015073a19d900` |
+| FTEQW | `fteqw` | `engine/common/bothdefs.h` | `42286821361025dedbdb537327243c22e5c7bb74eb142fa8e8a83b2d5069556b` |
+| FTEQW | `fteqw` | `engine/server/pr_cmds.c` | `2bd90c0efb94e35247cde061d8d1d2f06d9d2fea4370fb0b0aa499dac544ff59` |
+| FTEQW | `fteqw` | `engine/gl/gl_model.c` | `31d1023442fe965f29efb61196ec0d2e423f1e304e37b70e3fa621a3921d67ea` |
+
+Each carries its repository's license as its builtin source does (ENGT-1); only numbers are
+taken from them, as from the builtin sources. The KEX rerelease's engine has no source.
+
+### Behaviour
+
+- **ENGT-5.1** Each limit file names a builtin source of ENGT-1 whose repository, commit and
+  license file it shares, and one of the five engines QuakeSpasm, Ironwail, vkQuake, FTEQW
+  and DarkPlaces. A file naming another source or engine, a limit or a `past` not of ENGT-5.4
+  and ENGT-5.5, or neither a limit nor a `bsp2` quote, is an error, and nothing is written.
+  The generated `tables.rs` records each file in `LIMIT_SOURCES` with its SHA-256.
+- **ENGT-5.2** A limit is read from a quote of its file's code: the quote and the file are each
+  split into C tokens with comments dropped, as ENGT-2.11 splits a C source, a directive's
+  rest compared with its runs of whitespace collapsed, and the quote must occur in the file
+  exactly once; its `at`, the whole quote when not given, must be part of it. Otherwise it is
+  an error, and nothing is written. So a quote reads the code, never a comment.
+- **ENGT-5.3** The limit is taken from the numbers of `at` in order (each number literal,
+  decimal or after `0x`, its `u` and `l` suffixes dropped; each string literal that is a
+  decimal number; and those of a directive's rest), by its `reading`: `number`, the first is
+  the most; `entries`, the first is a list's entries with entry 0 kept empty, so one fewer is
+  the most; `luxels`, the first is a lightmap's most samples on an axis, so the most extent is
+  one fewer times 16 texels; `shift`, the first shifted left by the second; `unsigned_short`,
+  the quote declares an index `unsigned short`, so 65536. A reading with no number to take is
+  an error.
+- **ENGT-5.4** The limits are each lump's count of BSP-16 (models, entities, entity text in
+  bytes, planes, nodes, clipnodes, leafs, vertexes, faces, marksurfaces, texinfo, edges,
+  surfedges, textures, lighting and visibility in bytes), the world model's `visleafs`, the
+  largest extent of a face that is not `TEX_SPECIAL` (BSP-9.4), and the server's edicts,
+  precached models, precached sounds and light styles (LIMIT-6). The lumps and the face extent
+  are measured in a compiled BSP; the others in the map spawned by the game's code.
+- **ENGT-5.5** Past its limit an engine refuses the map (it does not load, or the game stops
+  with an error); warns and goes on; checks nothing while id's compiler cannot write the map
+  (`tools`, BSP-16.1); or checks nothing and writes past an array, which is undefined. A
+  limit applies to every format, or to BSP29 only when its check is in a loader of BSP29's
+  16-bit lumps.
+- **ENGT-5.6** An engine reads BSP2 (BSP-17) when its limit file quotes the code that loads
+  it: QuakeSpasm's, Ironwail's and vkQuake's `case BSP2VERSION_BSP2: bsp2 = 2;`
+  (`Mod_LoadBrushModel`), DarkPlaces' `void Mod_BSP2_Load(` and FTEQW's registration of
+  `"Quake1 BSP2 Map (bsp)"` (`gl_model.c`). id's engine reads BSP29 alone (BSP-1.2). Whether
+  KEX reads BSP2 is unknown.
+- **ENGT-5.7** An engine's bound on a limit for a map of a format is the least of its limits
+  of ENGT-5.4 that apply to that format. id's are BSP-16's compiler limits, `tools` past
+  them; `visleafs` at `MAX_MAP_LEAFS`, 8192, undefined past it (BSP-6); a face extent of 256,
+  refused past it (BSP-9.4); 600 edicts (LIMIT-6.1), 255 models and 255 sounds (LIMIT-6.2),
+  all refused past them; and 64 light styles, undefined past them (`LIMIT_MAX_LIGHTSTYLES`,
+  which `PF_lightstyle` does not check, BUILTIN-12.6). An engine with a source and no limit of
+  ENGT-5.4 for a limit sets none: its loader at the pinned commit has no check on that count.
+  Every limit of KEX is unknown, never guessed.
+- **ENGT-5.8** The limits read are:
+
+  | Limit | QuakeSpasm | Ironwail | vkQuake | FTEQW | DarkPlaces |
+  | --- | --- | --- | --- | --- | --- |
+  | edicts | 8192 refused: `host.c`, `cvar_t max_edicts = {"max_edicts", "8192"`, which `SV_SpawnServer` takes as `sv.max_edicts`, and `ED_Alloc`'s `Host_Error ("ED_Alloc: no free edicts (max_edicts is %i)"` | 16384, as QuakeSpasm | 32000, as QuakeSpasm | 131072 refused: `pr_cmds.c`, `cvar_t pr_maxedicts = CVARAFD("pr_maxedicts", "131072"`, and `ED_Alloc: no free edicts` | 32768 refused: `qdefs.h`, `#define MAX_EDICTS 32768`, the `limit_edicts` of the default protocol (`sv_main.c`, `else prog->limit_edicts = MAX_EDICTS;`), and `PRVM_ED_Alloc: no free edicts` |
+  | precached models | 4095 refused: `quakedef.h`, `#define MAX_MODELS 4096`, entry 0 empty, `PR_RunError ("PF_precache_model: overflow")` | 4095, as QuakeSpasm | 8191: `#define MAX_MODELS 8192` | 16383: `bothdefs.h`, `#define MAX_PRECACHE_MODELS 16384` | 8191: `#define MAX_MODELS 8192` |
+  | precached sounds | 2047 refused: `#define MAX_SOUNDS 2048` | 2047 | 2047 | 4095: `#define MAX_PRECACHE_SOUNDS 4096` | 4095: `#define MAX_SOUNDS 4096` |
+  | light styles | 64 warned: `#define MAX_LIGHTSTYLES 64`; `PF_lightstyle`'s `Con_DWarning("PF_lightstyle: invalid style %d\n", style);` | 64 | 64 | 65536 warned: `#define lightstyleindex_t unsigned short` under `Q1BSPS`; `PF_applylightstyle`'s `WARNING: Bad lightstyle` | 256 refused: `#define MAX_LIGHTSTYLES 256`; `PF_lightstyle`'s `prog->error_cmd` |
+  | face extent | 2000 refused: `gl_model.c`, `s->extents[i] > 2000)` then `Sys_Error ("Bad surface extents")` | 2000 | 2000 | none: the check in `gl_q2bsp.c` is commented out | 4080 refused: `model_brush.c`, `if (ssize > 256 \|\| tsize > 256) Host_Error("Bad surface extents");` of the Quake BSP loader, 256 luxels |
+  | faces, nodes, clipnodes, marksurfaces | 32767 warned, BSP29: `if (count > 32767 ...) Con_DWarning ("%i faces exceeds standard limit of 32767.\n", count);` and the same for the others | as QuakeSpasm | as QuakeSpasm | clipnodes 65536 refused, BSP29: `if (count > (1u<<16)) {` | none |
+  | leafs | 32767 refused, BSP29: `Host_Error ("Mod_LoadLeafs: %i leafs exceeds limit of 32767.", count);` | as QuakeSpasm | as QuakeSpasm | none | none |
+  | visleafs | 8192 warned: `if (out->visleafs > 8192) Con_DWarning` | as QuakeSpasm | as QuakeSpasm | none | none |
+
+  The QuakeSpasm lineage's `max_edicts` is a setting, clamped to `MIN_EDICTS` 256 and
+  `MAX_EDICTS` 32000, so its default is the bound; FTEQW's `pr_maxedicts` likewise, below its
+  `MAX_EDICTS` of `(1<<22)-1`.

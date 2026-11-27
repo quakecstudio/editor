@@ -36,6 +36,7 @@ pub mod keymap;
 pub mod launch;
 mod map_balance;
 mod map_browser;
+mod map_budget;
 pub mod map_editor;
 mod map_feature;
 mod map_fields;

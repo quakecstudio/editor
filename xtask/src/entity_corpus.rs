@@ -33,6 +33,12 @@
 //! printed, the record of a run. A map the program cannot spawn is listed and fails nothing, but
 //! a program that gives no map a sheet, as one that does not build, fails the check.
 //!
+//! With `--budget`, each map is opened with each codebase and its budget made as `map.budget`
+//! makes it (L-79, BUDGET-2.3): its edicts, precached models and sounds and light styles must
+//! be those of the game started on the same map with id's limits, on each skill, or the check
+//! fails; a map past id's limits, which that game cannot start, is listed and compared with
+//! nothing. Each map's target line is printed, the record of a run.
+//!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,13 +46,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qc_entities::{EntitySchema, MapDiagnosticKind};
+
+use crate::codegen_corpus::server_progs;
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::MapFile;
 use qs_map_edit::{EntityIndex, MAP_OPEN};
 use qs_map_gen::playable::{ExitReach, Ground, Moves, Skill};
 use qs_pak::Pak;
 use qs_workbench::entity_classes::PROJECT_ENTITIES;
-use qs_workbench::map_balance::{MAP_BALANCE, MapBalance};
+use qs_workbench::map_balance::{MAP_BALANCE, MapBalance, SKILLS};
+use qs_workbench::map_budget::{MAP_BUDGET, MapBudget, MapLimit, Used};
 use qs_workbench::map_filter::GameMode;
 use qs_workbench::map_logic::MAP_LOGIC_ISSUES;
 use qs_workbench::{Config, Dialect, FsLoader, OPEN_PROJECT, Workbench, register};
@@ -77,6 +86,10 @@ pub(crate) struct Args {
     /// Also make each map's balance sheets with each codebase's program (`map.balance`).
     #[arg(long)]
     balance: bool,
+    /// Also make each map's budget with each codebase's program (`map.budget`) and compare
+    /// its spawn counts with the game's.
+    #[arg(long)]
+    budget: bool,
     /// Each codebase directory.
     #[arg(required = true)]
     codebases: Vec<PathBuf>,
@@ -92,7 +105,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 let classname = String::from_utf8_lossy(classname).into_owned();
                 used.entry(classname).or_default().insert(label.clone());
             }
-            if args.logic || args.playable || args.balance {
+            if args.logic || args.playable || args.balance || args.budget {
                 compiled.push((label.clone(), bsp));
             }
             maps.push((label, map));
@@ -116,6 +129,9 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         }
         if args.balance {
             ok &= check_balance(codebase, &corpus)?;
+        }
+        if args.budget {
+            ok &= check_budget(codebase, &corpus)?;
         }
     }
     println!(
@@ -392,6 +408,140 @@ fn fire_maps(
         println!("ok    {name}: no logic issue in the {GENERATED_LEVELS} generated levels");
     }
     Ok(ours_ok)
+}
+
+/// The game's counts of a map started with id's limits on each skill, the most of the skills
+/// (BUDGET-2.3): edicts, precached models, precached sounds and light styles; `Err` when a
+/// skill's game does not start.
+fn started_counts(progs: &[u8], bsp: &[u8]) -> Result<[usize; 4], String> {
+    let progs = qc_progs::Progs::read(progs).map_err(|e| format!("{e:?}"))?;
+    let bsp = Bsp::read(bsp, BspLoader::default()).map_err(|e| e.to_string())?;
+    let mut most = [0_usize; 4];
+    for skill in SKILLS {
+        let files: qs_sim::ModelFiles = std::rc::Rc::new(|_: &str| None);
+        let options = qs_sim::LoadOptions {
+            settings: vec![("skill".to_owned(), skill.setting().to_owned())],
+            ..qs_sim::LoadOptions::default()
+        };
+        let mut world =
+            qs_sim::World::load(&progs, "map", &bsp, files, options).map_err(|e| e.to_string())?;
+        world.settle(&progs).map_err(|e| e.to_string())?;
+        let counts = [
+            world.num_edicts(),
+            world.precached(qc_builtins::Precache::Model),
+            world.precached(qc_builtins::Precache::Sound),
+            world.light_styles_set(),
+        ];
+        for (slot, count) in most.iter_mut().zip(counts) {
+            *slot = (*slot).max(count);
+        }
+    }
+    Ok(most)
+}
+
+/// Makes the budget of every map with one codebase's program, as `map.budget` does (L-79), and
+/// checks its spawn counts against the game started on the map (BUDGET-2.3).
+fn check_budget(dir: &Path, maps: &[(String, Vec<u8>)]) -> Result<bool, String> {
+    let dialect = dialect_of(dir)?;
+    let progs = server_progs(dir, dialect)?;
+    let mut registry = qs_commands::Registry::new();
+    register(&mut registry).map_err(|e| e.to_string())?;
+    let config = Config {
+        dialect: Some(dialect),
+        ..Config::default()
+    };
+    let mut session = qs_commands::Session::new(Workbench::new(FsLoader, config), registry);
+    session
+        .execute(OPEN_PROJECT, serde_json::json!({ "path": dir }))
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    let scratch = std::env::temp_dir().join(format!("xtask-budget-corpus-{}", std::process::id()));
+    fs::create_dir_all(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    let made = budget_maps(&mut session, &scratch, dir, &progs, maps);
+    // The scratch directory holds nothing else, and goes whether the budgets were made or not.
+    fs::remove_dir_all(&scratch).ok();
+    made
+}
+
+/// [`check_budget`]'s budgets of each map, in `scratch`.
+fn budget_maps(
+    session: &mut qs_commands::Session<Workbench<FsLoader>>,
+    scratch: &Path,
+    dir: &Path,
+    progs: &[u8],
+    maps: &[(String, Vec<u8>)],
+) -> Result<bool, String> {
+    let name = dir.display();
+    let mut ok = true;
+    let mut compared = 0_usize;
+    for (label, bsp) in maps {
+        let path = scratch.join("map.bsp");
+        fs::write(&path, bsp).map_err(|e| format!("{}: {e}", path.display()))?;
+        session
+            .execute(MAP_OPEN, serde_json::json!({ "path": path }))
+            .map_err(|e| format!("{label}: {e}"))?;
+        let found = session
+            .execute(MAP_BUDGET, serde_json::json!({}))
+            .map_err(|e| format!("{label}: {e}"))?;
+        let budget: MapBudget =
+            serde_json::from_value(found).map_err(|e| format!("{label}: {e}"))?;
+        let Some(target) = budget.engines.first() else {
+            return Err(format!("{label}: no engine's budget"));
+        };
+        let used = |limit: MapLimit| {
+            target
+                .lines
+                .iter()
+                .find(|line| line.limit == limit)
+                .and_then(|line| match line.used {
+                    Used::Count { count, .. } => Some(count),
+                    // A map past the budget's room is past what the game started with too.
+                    Used::AtLeast { .. } | Used::NotMeasured { .. } => None,
+                })
+        };
+        let limits = [
+            MapLimit::Edicts,
+            MapLimit::ModelPrecaches,
+            MapLimit::SoundPrecaches,
+            MapLimit::LightStyles,
+        ];
+        let budgeted: Option<Vec<usize>> = limits.iter().map(|&limit| used(limit)).collect();
+        match (budgeted, started_counts(progs, bsp)) {
+            (Some(budgeted), Ok(started)) => {
+                compared = compared.saturating_add(1);
+                if budgeted != started {
+                    ok = false;
+                    println!(
+                        "FAIL  {name}: {label}: map.budget counts {budgeted:?} edicts, models, \
+                         sounds and light styles; the game started {started:?}"
+                    );
+                } else {
+                    println!(
+                        "info  {name}: {label}: {} edicts, {} models, {} sounds, {} light styles",
+                        started[0], started[1], started[2], started[3]
+                    );
+                }
+            }
+            (None, Ok(started)) => {
+                ok = false;
+                println!(
+                    "FAIL  {name}: {label}: map.budget measured no spawn; the game started with \
+                     {started:?}"
+                );
+            }
+            (_, Err(error)) => println!("info  {name}: {label}: the game did not start: {error}"),
+        }
+    }
+    if compared == 0 && !maps.is_empty() {
+        ok = false;
+        println!("FAIL  {name}: no map of {} was compared", maps.len());
+    }
+    if ok {
+        println!(
+            "ok    {name}: the budget of each of {compared} maps counts the edicts, precaches \
+             and light styles of the game started on it"
+        );
+    }
+    Ok(ok)
 }
 
 /// The label of a level `qs-map-gen` made, before its seed.

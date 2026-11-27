@@ -50,6 +50,6 @@ pub use world::{
     CLIENT_EDICT, Callback, Change, ChangeKind, ClientCommand, EdictChange, EditError, Entity,
     EvalError, FIRE_MAX_SECONDS, FIRE_SECONDS, FireBy, FireError, FireOptions, FireTrace,
     HostCommand, HostState, KeyFocus, LineHit, LoadOptions, MapPlace, Migration, NamedValue,
-    QcValue, RawState, Reason, SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms, State,
-    SwapError, TraceEnd, TraceEvent, Tracking, World, WorldError, command_words, read_state,
+    QcValue, RawState, Reason, Room, SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms,
+    State, SwapError, TraceEnd, TraceEvent, Tracking, World, WorldError, command_words, read_state,
 };

@@ -19,7 +19,7 @@ use qs_sim::debug::{Debugger, locate};
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
 use qs_sim::spawn::LoadError;
-use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World, WorldError};
+use qs_sim::{HostState, LoadOptions, Room, SaveGame, SpawnParms, World, WorldError};
 use qs_vfs::zip::Zip;
 use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 
@@ -646,6 +646,8 @@ impl Args {
             // NET-6.11: QuakeSpasm's `-protocol`, which a later level's kept host overrides.
             protocol: self.protocol.version(),
             startup,
+            // EDICT-1.10, LIMIT-6.3: the game has id's limits.
+            room: Room::default(),
         };
         // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
         // it is one for this progs (LNO-4.1).

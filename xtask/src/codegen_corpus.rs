@@ -88,6 +88,34 @@ fn compile(
     dialect: Dialect,
     autoproto: bool,
 ) -> Result<Result<usize, String>, String> {
+    Ok(compiled(module, dialect, autoproto)?.map(|compiled| compiled.progs.statements.len()))
+}
+
+/// The server program of the codebase in `dir`, its first `ssqc` module compiled in
+/// `dialect` and written as a progs (`cargo xtask entity-corpus --budget`).
+pub(crate) fn server_progs(dir: &Path, dialect: Dialect) -> Result<Vec<u8>, String> {
+    let project = open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let autoproto = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(autoprototypes);
+    let module = project
+        .modules
+        .iter()
+        .find(|module| module.kind == qc_project::ModuleKind::Ssqc)
+        .ok_or_else(|| format!("{}: no server module", dir.display()))?;
+    let built = compiled(module, dialect, autoproto)?
+        .map_err(|problem| format!("{}: {problem}", dir.display()))?;
+    qc_progs::write(&built.progs).map_err(|e| format!("{}: {e}", dir.display()))
+}
+
+/// Compiles `module` in `dialect`: the compiled program, or why it did not compile. `Err` only
+/// when a file cannot be read.
+fn compiled(
+    module: &Module,
+    dialect: Dialect,
+    autoproto: bool,
+) -> Result<Result<qc_codegen::Compiled, String>, String> {
     let mut db = Db::new();
     db.set_dialect(dialect.into());
     db.set_autoproto(autoproto);
@@ -105,10 +133,7 @@ fn compile(
     let result = compile_module(&mut db, &input, |id| {
         names.get(id.index()).cloned().unwrap_or_default()
     });
-    Ok(match result {
-        Ok(compiled) => Ok(compiled.progs.statements.len()),
-        Err(error) => Err(describe(&db, &error)),
-    })
+    Ok(result.map_err(|error| describe(&db, &error)))
 }
 
 /// Why a module did not compile, the first problem at its file and line.

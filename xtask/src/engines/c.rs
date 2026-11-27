@@ -696,5 +696,78 @@ pub(crate) fn extract(text: &str, table: &Table, targets: Option<&Facts>) -> Res
     Ok(facts)
 }
 
+/// Whether two tokens are the same code: a directive's rest compared with its runs of
+/// whitespace collapsed (ENGT-5.2).
+fn same(a: &Tok, b: &Tok) -> bool {
+    match (a, b) {
+        (Tok::Directive(word_a, rest_a), Tok::Directive(word_b, rest_b)) => {
+            word_a == word_b && rest_a.split_whitespace().eq(rest_b.split_whitespace())
+        }
+        _ => a == b,
+    }
+}
+
+/// Where `quote`'s tokens occur in `tokens`.
+fn occurrences(tokens: &[Tok], quote: &[Tok]) -> Vec<usize> {
+    if quote.is_empty() {
+        return Vec::new();
+    }
+    tokens
+        .windows(quote.len())
+        .enumerate()
+        .filter(|(_, window)| window.iter().zip(quote).all(|(a, b)| same(a, b)))
+        .map(|(at, _)| at)
+        .collect()
+}
+
+/// A number literal's value: decimal, or hexadecimal after `0x`, with any `u` and `l`
+/// suffixes dropped.
+fn number_value(text: &str) -> Option<u64> {
+    let digits = text.trim_end_matches(['u', 'U', 'l', 'L']);
+    match digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => digits.parse().ok(),
+    }
+}
+
+/// The numbers `tokens` hold, in order (ENGT-5.3): each number literal, each string literal
+/// that is a decimal number, and those of a directive's rest.
+fn numbers(tokens: &[Tok]) -> Result<Vec<u64>, String> {
+    let mut out = Vec::new();
+    for token in tokens {
+        match token {
+            Tok::Number(text) => out.extend(number_value(text)),
+            Tok::Str(text) => out.extend(text.parse::<u64>().ok()),
+            Tok::Directive(_, rest) => out.extend(numbers(&lex(rest)?)?),
+            Tok::Ident(_) | Tok::Char | Tok::Punct(_) => {}
+        }
+    }
+    Ok(out)
+}
+
+/// The numbers of `at`, a part of `quote`, where `quote` is code that occurs in `text`
+/// exactly once (ENGT-5.2, ENGT-5.3): each is split into tokens with its comments dropped.
+///
+/// # Errors
+///
+/// When the file cannot be read, when `quote` occurs in it other than once, or when `at` is
+/// not part of `quote`.
+pub(crate) fn quoted_numbers(text: &str, quote: &str, at: &str) -> Result<Vec<u64>, String> {
+    let tokens = lex(text)?;
+    let quoted = lex(quote)?;
+    let found = occurrences(&tokens, &quoted).len();
+    if found != 1 {
+        return Err(format!("{quote:?} occurs {found} times, not once"));
+    }
+    let part = lex(at)?;
+    if occurrences(&quoted, &part).is_empty() {
+        return Err(format!("{at:?} is not part of {quote:?}"));
+    }
+    numbers(&part)
+}
+
 #[cfg(test)]
 mod tests;

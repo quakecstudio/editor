@@ -538,6 +538,7 @@ fn compile_in_pool(
         leak_file,
         leak_trail,
         warnings: run.warnings,
+        counts: run.writer.file.counts(),
         surfaces: run.writer.surfaces,
         leaves: run.writer.leaves,
     })

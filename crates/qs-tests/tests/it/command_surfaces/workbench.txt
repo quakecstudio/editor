@@ -66,6 +66,8 @@ map.brush_texture
 map.brush_vertex
 map.brush_vertices
 map.brushes
+map.budget
+map.budget_found
 map.build_passage
 map.build_room
 map.check

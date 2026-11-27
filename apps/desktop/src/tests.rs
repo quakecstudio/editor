@@ -30,6 +30,7 @@ use qs_map_edit::EntityIndex;
 use qs_map_edit::texture_import::project_wad;
 use qs_wad::write::WadBuilder;
 use qs_workbench::debug::Location;
+use qs_workbench::map_budget::{Engine, MapLimit, Used};
 use qs_workbench::map_playable::ExitReach;
 use serde_json::json;
 
@@ -57,8 +58,9 @@ use crate::theme::{Contrast, Mode, Motion, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
 /// The frames the whole window may take to settle in a test: egui styles a widget from its state
-/// in the frame before, so a popup that appears asks for one frame more, and the map's disk
-/// watch asks for one after its interval.
+/// in the frame before, so a popup that appears asks for one frame more, the map's disk watch
+/// asks for one after its interval, and a map budget made on its own thread asks for one when
+/// it is shown (L-79).
 pub(crate) const APP_STEPS: u64 = 8;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -959,16 +961,18 @@ fn the_match_count_reads_as_words() {
     assert_eq!(match_count(12), "12 matches");
 }
 
-/// Runs frames until the check that the map can be finished, which a compile or a leak check
-/// starts on its own thread (L-77), has answered, then until the window settles. The thread
-/// takes a different number of frames on each machine, and the shell asks for a frame while it
-/// runs, so `Harness::run` alone may give up before it answers.
+/// Runs frames until the check that the map can be finished and the map's budget, which a
+/// compile or a leak check starts on their own threads (L-77, L-79), have answered, then until
+/// the window settles. The threads take a different number of frames on each machine, and the
+/// shell asks for a frame while they run, so `Harness::run` alone may give up before they
+/// answer.
 pub(crate) fn settle_playability(harness: &mut Harness<'static, Option<App>>) {
+    harness.step();
     harness.step();
     while harness
         .state()
         .as_ref()
-        .is_some_and(|app| app.shell().checking_playability())
+        .is_some_and(|app| app.shell().checking_playability() || app.shell().making_budget())
     {
         std::thread::yield_now();
         harness.step();
@@ -980,6 +984,7 @@ pub(crate) fn settle_playability(harness: &mut Harness<'static, Option<App>>) {
 fn accessible() -> Harness<'static, Option<App>> {
     let mut harness = Harness::builder()
         .with_size([1440.0, 900.0])
+        .with_max_steps(APP_STEPS)
         .build_ui_state(
             |ui, app: &mut Option<App>| {
                 if let Some(app) = app {
@@ -4278,6 +4283,57 @@ fn map_edits_are_reviewed_in_the_map_view() {
     harness.run();
     assert_eq!(waiting(&harness), 0);
     assert_eq!(map_text(&harness), before, "rejecting puts the map back");
+}
+
+// spec BUDGET-1.2: once the map is compiled, from anywhere, the Properties panel shows the target
+// engine's limits, the worst first; an edit drops them until the next compile
+#[test]
+fn a_compile_shows_the_engine_limits() {
+    let dir = keep_copy("budget");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label(Text::MapBudgetHeading.get())
+            .is_none()
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.find_leaks", json!({})).unwrap();
+    settle_playability(&mut harness);
+    let found = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.map_editor().budget().found().cloned()
+    };
+    let budget = found(&harness).unwrap();
+    let target = budget.engines.first().unwrap();
+    assert_eq!(target.engine, Engine::Vanilla);
+    assert!(
+        harness
+            .query_by_label(Text::MapBudgetHeading.get())
+            .is_some()
+    );
+    let faces = target
+        .lines
+        .iter()
+        .find(|line| line.limit == MapLimit::Faces)
+        .unwrap();
+    assert!(
+        matches!(faces.used, Used::Count { count, .. } if count > 6),
+        "{faces:?}"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("map.brush_delete", json!({ "entity": 0, "brush": 2 }))
+        .unwrap();
+    harness.run();
+    assert!(found(&harness).is_none(), "an edit forgets the limits");
 }
 
 // No spec statement: P6-11, QBSP-9.8, MAP-6.8, L-77: with a wall gone, Check for leaks reports the

@@ -73,7 +73,7 @@ pub use prefabs::{
     Copied, CopyParams, MAP_COPY, MAP_PASTE, MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB,
     PREFAB_FOLDER, PasteParams, PlacePrefabParams, Prefab, PrefabSaved, Prefabs, SavePrefabParams,
 };
-pub use report::{MapReport, Seal};
+pub use report::{BspLump, LumpCounts, MapReport, Seal, Written};
 pub use review::{
     HunkEntity, HunkSide, MAP_ACCEPT, MAP_REJECT, MAP_STAGE, MAP_STAGED, MAP_UNSTAGE, MapHunk,
     MapHunkNumber, MapHunksParams,

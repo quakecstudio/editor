@@ -139,7 +139,7 @@ fn workspace_with(spec: &WorkspaceSpec<'_>) -> Workspace {
 #[test]
 fn the_checked_in_tables_record_every_pin() {
     let tables = fs::read_to_string(root().join(TABLES)).unwrap();
-    let pins = load(&root()).unwrap();
+    let (pins, _) = load(&root()).unwrap();
     // Every `[[source]]` of sources.toml is a pin, however many there are.
     let sources = fs::read_to_string(root().join("crates/qc-engines/sources.toml")).unwrap();
     let declared = sources
@@ -203,7 +203,7 @@ fn the_rerelease_pin_agrees_with_the_corpus() {
     let ws = workspace("disagree", "fedcba9876543210fedcba9876543210fedcba98");
     let err = run(&ws.dir, false, &ws.net).unwrap_err();
     assert!(err.contains("quake-rerelease-qc"), "{err}");
-    let real = load(&root()).unwrap();
+    let (real, _) = load(&root()).unwrap();
     super::agree_with_corpus(&root(), &real).unwrap();
 }
 
@@ -274,7 +274,7 @@ fn bad_tables_are_errors() {
 // sources with none (ENGT-2.11)
 #[test]
 fn the_pinned_tables() {
-    let pins = load(&root()).unwrap();
+    let (pins, _) = load(&root()).unwrap();
     let mut readings = Vec::new();
     for pin in &pins {
         for table in &pin.tables {
@@ -332,7 +332,7 @@ fn the_pinned_tables() {
 // and vkquake-ext's extension names from qcextensions
 #[test]
 fn the_pinned_c_readings() {
-    let pins = load(&root()).unwrap();
+    let (pins, _) = load(&root()).unwrap();
     let mut seen: Vec<(String, String)> = Vec::new();
     let mut quoted = Vec::new();
     let mut columns = Vec::new();

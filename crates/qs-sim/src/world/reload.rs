@@ -119,8 +119,9 @@ impl World {
         new: &Progs<'_>,
         table: BuiltinTable,
     ) -> Result<Migration, WorldError> {
-        let mut machine =
-            Machine::new(new, MAXCLIENTS).map_err(|e| WorldError::Progs(e.to_string()))?;
+        let capacity = self.machine.edicts().capacity();
+        let mut machine = Machine::with_capacity(new, MAXCLIENTS, capacity)
+            .map_err(|e| WorldError::Progs(e.to_string()))?;
         let store = self
             .machine
             .edicts()

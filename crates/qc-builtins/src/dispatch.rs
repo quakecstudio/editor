@@ -28,8 +28,8 @@ use crate::error::{BuiltinError, FatalError, RuntimeError};
 use crate::math;
 use crate::mock::{
     BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_FLY, BUILTIN_FL_NOTARGET, BUILTIN_FL_ONGROUND,
-    BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
-    MockEngine, Overflow, Precache, Unimplemented, VKQUAKE_MAX_DATAGRAM,
+    BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, MessageDest, MockEngine, Overflow,
+    Precache, Unimplemented, VKQUAKE_MAX_DATAGRAM,
 };
 use crate::strbuf::{BufferSlot, Placement, StringIndex};
 use crate::tokenize::MAX_SEPARATORS;
@@ -2277,14 +2277,15 @@ impl MockBuiltins {
     }
 
     /// `lightstyle(style, value)` (BUILTIN-12.6, BUILTIN-12.7): store the style; a number
-    /// outside 0 to 63 is `invalid lightstyle`.
+    /// outside 0 to 63, or outside the room the mock was given (LIMIT-6.4), is `invalid
+    /// lightstyle`.
     fn b_lightstyle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let style = read_parm_int(context, PARM0)?;
         let value = read_parm_string(context, &self.engine, PARM1)?;
         // BUILTIN-12.6: fail before storing anything for a style outside the array.
         let index = usize::try_from(style)
             .ok()
-            .filter(|&n| n < LIMIT_MAX_LIGHTSTYLES)
+            .filter(|&n| n < self.engine.lightstyles.len())
             .ok_or_else(|| BuiltinError::from(RuntimeError::InvalidLightstyle))?;
         // BUILTIN-12.7: when active, also send svc_lightstyle to clients, not kept (DIFF-6.5).
         self.engine.set_lightstyle(index, &value);
