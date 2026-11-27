@@ -40,9 +40,9 @@ checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
 
 [[package]]
 name = "cc"
-version = "1.11.2"
+version = "1.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45"
+checksum = "02f0e023adb368345ce0ca6cdfc0f24a06554468d0e8503e14a0841de79bfa69"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -268,9 +268,9 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "pin-project-lite"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+checksum = "c938015719552d665fd0553b90d96cd7ff58e83e4c061ca99e6bb78865a72752"
 
 [[package]]
 name = "proc-macro2"
@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "qc-builtins"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-edict",
  "qc-progs",
@@ -293,11 +293,11 @@ dependencies = [
 
 [[package]]
 name = "qc-diag"
-version = "2026.11.4"
+version = "2026.11.5"
 
 [[package]]
 name = "qc-edict"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-progs",
  "qc-types",
@@ -305,7 +305,7 @@ dependencies = [
 
 [[package]]
 name = "qc-engines"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-builtins",
  "qc-diag",
@@ -321,7 +321,7 @@ dependencies = [
 
 [[package]]
 name = "qc-ide"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-diag",
  "qc-engines",
@@ -333,14 +333,14 @@ dependencies = [
 
 [[package]]
 name = "qc-lexer"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-diag",
 ]
 
 [[package]]
 name = "qc-preproc"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-lexer",
  "qc-progs",
@@ -349,14 +349,14 @@ dependencies = [
 
 [[package]]
 name = "qc-progs"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-types",
 ]
 
 [[package]]
 name = "qc-project"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-lexer",
  "qc-preproc",
@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "qc-sema"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-diag",
  "qc-lexer",
@@ -379,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "qc-syntax"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-lexer",
  "qc-preproc",
@@ -387,18 +387,18 @@ dependencies = [
 
 [[package]]
 name = "qc-trace"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "qc-types"
-version = "2026.11.4"
+version = "2026.11.5"
 
 [[package]]
 name = "qc-vm"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-edict",
  "qc-progs",
@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "qs-bsp"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-progs",
  "qs-wad",
@@ -416,7 +416,7 @@ dependencies = [
 
 [[package]]
 name = "qs-commands"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "interprocess",
  "schemars",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "qs-differential"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "clap",
  "qc-builtins",
@@ -473,7 +473,7 @@ dependencies = [
 
 [[package]]
 name = "qs-log"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qs-paths",
  "tracing",
@@ -482,11 +482,11 @@ dependencies = [
 
 [[package]]
 name = "qs-map"
-version = "2026.11.4"
+version = "2026.11.5"
 
 [[package]]
 name = "qs-mdl"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "miniz_oxide",
  "qc-progs",
@@ -494,25 +494,25 @@ dependencies = [
 
 [[package]]
 name = "qs-pak"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-progs",
 ]
 
 [[package]]
 name = "qs-paths"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "qs-porting-example"
-version = "2026.11.4"
+version = "2026.11.5"
 
 [[package]]
 name = "qs-settings"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qs-commands",
  "schemars",
@@ -524,7 +524,7 @@ dependencies = [
 
 [[package]]
 name = "qs-sim"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-builtins",
  "qc-edict",
@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "qs-sound"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-builtins",
  "qc-edict",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "qs-vfs"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "miniz_oxide",
  "qc-progs",
@@ -561,21 +561,21 @@ dependencies = [
 
 [[package]]
 name = "qs-wad"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-progs",
 ]
 
 [[package]]
 name = "qs-wav"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "qc-progs",
 ]
 
 [[package]]
 name = "quakec-lsp"
-version = "2026.11.4"
+version = "2026.11.5"
 dependencies = [
  "mimalloc",
  "qc-ide",
@@ -738,9 +738,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "smallvec"
-version = "1.16.5"
+version = "1.16.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
+checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
 
 [[package]]
 name = "strsim"

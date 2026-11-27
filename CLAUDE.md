@@ -168,7 +168,7 @@ python3 plan/status.py                            # the current phase's progress
 python3 plan/status.py --readme                   # refresh the README's Next run block (current phase and /goal command)
 ```
 
-**Toolchain:** Rust 1.100.0, edition 2024, pinned in `rust-toolchain.toml`; max line width 100.
+**Toolchain:** Rust 1.100.1, edition 2024, pinned in `rust-toolchain.toml`; max line width 100.
 Python 3 with PyYAML for `plan/`.
 
 ## Code conventions
