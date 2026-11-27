@@ -208,9 +208,9 @@ jobs:
       # cargo-nextest stops scheduling tests after the first failure (its
       # fail-fast default), so a job with a failing test ends at that test.
       # The workspace has no doc tests: every rustdoc code block is `text`.
-      - uses: taiki-e/install-action@v2.90.5
+      - uses: taiki-e/install-action@v2.90.6
         with:
-          tool: cargo-nextest@0.9.148
+          tool: cargo-nextest@0.9.152
       - uses: Swatinem/rust-cache@v2.9.3
         with:
           shared-key: debug-${{ runner.os }}
@@ -412,9 +412,9 @@ jobs:
           persist-credentials: false
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: taiki-e/install-action@v2.90.5
+      - uses: taiki-e/install-action@v2.90.6
         with:
-          tool: cargo-deny@0.20.2
+          tool: cargo-deny@0.22.0
       # plan/check.py and its tests run inside cargo xtask ci and need PyYAML.
       - uses: actions/setup-python@v7.1.0
         with:
@@ -458,9 +458,9 @@ jobs:
       # which the cargo xtask ci job skips because this job runs it.
       - name: Set up the Rust toolchain
         run: rustup toolchain install
-      - uses: taiki-e/install-action@v2.90.5
+      - uses: taiki-e/install-action@v2.90.6
         with:
-          tool: cargo-deny@0.20.2
+          tool: cargo-deny@0.22.0
       - run: cargo deny --locked --all-features check advisories bans licenses sources
 
   dependency-review:
