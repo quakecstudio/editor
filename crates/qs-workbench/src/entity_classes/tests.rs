@@ -73,8 +73,10 @@ fn project_entities_lists_the_classes_and_writes_an_fgd() {
     assert_eq!(
         class["keys"],
         json!([
-            { "name": "target", "ty": "string", "default": null, "comment": null },
-            { "name": "wait", "ty": "float", "default": "0.2", "comment": "between fires" },
+            { "name": "target", "ty": "string", "default": null, "comment": null,
+              "choices": [], "file": null },
+            { "name": "wait", "ty": "float", "default": "0.2", "comment": "between fires",
+              "choices": [], "file": null },
         ])
     );
     assert_eq!(

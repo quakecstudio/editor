@@ -87,10 +87,11 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
 
     fn entity_class(&mut self, classname: &str) -> Option<ClassInfo> {
         let classes = self.entity_classes().ok()?;
+        let files = self.file_keys();
         classes
             .iter()
             .find(|class| class.name == classname)
-            .map(class_info)
+            .map(|class| class_info(class, &files))
     }
 
     fn targeting_keys(&mut self) -> Vec<String> {

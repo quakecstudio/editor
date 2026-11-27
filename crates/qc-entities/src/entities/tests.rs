@@ -6,7 +6,9 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use super::{EntityClass, Fgd, Found, Key, KeyType, Shape, parse_quaked, quaked_comments};
+use super::{
+    Choice, EntityClass, Fgd, FileUse, Found, Key, KeyType, Shape, parse_quaked, quaked_comments,
+};
 use qc_sema::{Db, FileId, ModuleInput};
 
 /// The definitions every fixture declares, as id's `defs.qc` does.
@@ -372,6 +374,115 @@ fn targeting_keys_are_read_from_the_code() {
         );
     }
     assert!(targeting(&ModuleSpec::default()).is_empty());
+}
+
+/// The keys that name files in the module `spec` describes, [`DEFS`] its first file.
+fn files(spec: &ModuleSpec<'_>) -> Vec<(String, FileUse)> {
+    let mut db = Db::new();
+    db.set_dialect(spec.dialect);
+    let mut input = ModuleInput::default();
+    for (index, text) in std::iter::once(&DEFS).chain(spec.files).enumerate() {
+        let id = FileId::new(index);
+        db.set_file(id, format!("f{index}.qc").into(), text.as_bytes().to_vec());
+        input.compiled.push(id);
+    }
+    Key::files(&mut db, &input)
+}
+
+// spec MAP-8.11: a key names a file when the code passes its field to changelevel,
+// precache_model or precache_sound, or their 2 forms, or stores it in a global one of them is
+// passed; a string literal or a global no field is stored in names no key. However the
+// dialect passes the argument (FTEF-32.19)
+#[test]
+fn keys_that_name_files_are_read_from_the_code() {
+    let code = ".string map, mdl, noise1, noise2, message; string nextmap, other_map;\n\
+        void(string s) changelevel = #70; string(string s) precache_model = #20;\n\
+        string(string s) precache_sound = #19; string(string s) precache_sound2 = #76;\n\
+        void() changelevel_touch = { nextmap = self.map; changelevel (nextmap); };\n\
+        void() misc_model = { precache_model (self.mdl); precache_sound (self.noise1); };\n\
+        void() door = { precache_sound2 (self.noise2); precache_sound (\"misc/null.wav\"); \
+            other_map = \"e1m1\"; changelevel (other_map); };\n";
+    let by_operands = format!("#pragma target fte_5768\n{code}");
+    let expected = [
+        ("map".to_owned(), FileUse::Changelevel),
+        ("mdl".to_owned(), FileUse::PrecacheModel),
+        ("noise1".to_owned(), FileUse::PrecacheSound),
+        ("noise2".to_owned(), FileUse::PrecacheSound),
+    ];
+    for (files_of, dialect) in [
+        ([code], qc_syntax::Dialect::Vanilla),
+        ([code], qc_syntax::Dialect::Fteqcc),
+        ([by_operands.as_str()], qc_syntax::Dialect::Fteqcc),
+    ] {
+        assert_eq!(
+            files(&ModuleSpec {
+                files: &files_of,
+                dialect
+            }),
+            expected,
+            "{dialect:?}"
+        );
+    }
+    assert!(files(&ModuleSpec::default()).is_empty());
+}
+
+// spec MAP-8.11: a key passed to two of the builtins is taken for the first by their order
+#[test]
+fn a_key_passed_to_two_builtins_takes_the_first() {
+    let code = ".string mdl;\nstring(string s) precache_model = #20;\n\
+        string(string s) precache_sound = #19;\n\
+        void() thing = { precache_sound (self.mdl); precache_model (self.mdl); };\n";
+    assert_eq!(
+        files(&ModuleSpec {
+            files: &[code],
+            ..ModuleSpec::default()
+        }),
+        [("mdl".to_owned(), FileUse::PrecacheModel)]
+    );
+}
+
+// No spec statement: UI-24: a key's choices are the numbered lines under the first line that
+// quotes it, whether alone or in a sentence, up to the first line that is not one; a key with
+// no numbered lines has none
+#[test]
+fn a_key_takes_its_choices_from_the_quaked_text() {
+    let found = classes_of(
+        "/*QUAKED func_door3 (0 .5 .8) ?\n\"wait\" wait before returning\n\
+         \"noise\"\n0)\tno sound\n1) stone\n-1) silent\nmore text\n4) not a choice\n\
+         Set \"lip\" to one of the following:\n1) base fast\n2) chain slow\n\
+         \"speed\"\n*/\n\
+         void() func_door3 = { if (self.wait) self.dmg = 1; if (self.noise) self.dmg = 2; \
+         if (self.speed) self.dmg = 3; if (self.lip) self.dmg = 4; };\n",
+    );
+    let choice = |value: &str, name: &str| Choice {
+        value: value.to_owned(),
+        name: name.to_owned(),
+    };
+    let choices: Vec<(&str, &[Choice])> = class(&found, "func_door3")
+        .keys
+        .iter()
+        .map(|key| (key.name.as_str(), key.choices.as_slice()))
+        .collect();
+    assert_eq!(
+        choices,
+        [
+            (
+                "lip",
+                [choice("1", "base fast"), choice("2", "chain slow")].as_slice()
+            ),
+            (
+                "noise",
+                [
+                    choice("0", "no sound"),
+                    choice("1", "stone"),
+                    choice("-1", "silent")
+                ]
+                .as_slice()
+            ),
+            ("speed", [].as_slice()),
+            ("wait", [].as_slice()),
+        ]
+    );
 }
 
 // No spec statement: P5-03, a field's key type is its value's: an entity by number, a

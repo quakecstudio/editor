@@ -741,6 +741,12 @@ pub enum Text {
     MapRemoveKey,
     /// The mark beside a targeting key whose value no entity has as its targetname.
     MapNoSuchTarget,
+    /// The mark beside a file key whose name no file has.
+    MapNoSuchFile,
+    /// What an offered file in the project's folder is.
+    MapFileInProject,
+    /// What an offered file of the game is.
+    MapFileInGame,
     /// The key editor's hint in the new key's field.
     MapKey,
     /// The key editor's hint in the new value's field.
@@ -1266,7 +1272,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 623] = [
+    pub const ALL: [Self; 626] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1630,6 +1636,9 @@ impl Text {
         Self::MapCompare,
         Self::MapRemoveKey,
         Self::MapNoSuchTarget,
+        Self::MapNoSuchFile,
+        Self::MapFileInProject,
+        Self::MapFileInGame,
         Self::MapKey,
         Self::MapValue,
         Self::SuggestList,
@@ -2310,6 +2319,9 @@ impl Text {
             Self::MapCompare => "Compare",
             Self::MapRemoveKey => "Remove",
             Self::MapNoSuchTarget => "No entity has this targetname yet",
+            Self::MapNoSuchFile => "No file of this name in the project or the game",
+            Self::MapFileInProject => "in the project",
+            Self::MapFileInGame => "in the game",
             Self::MapKey => "New key",
             Self::MapValue => "Its value",
             Self::SuggestList => "Suggestions",

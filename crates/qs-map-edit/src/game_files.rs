@@ -32,7 +32,9 @@ const MODEL_ENDINGS: [&str; 3] = [".mdl", ".bsp", ".spr"];
 const BOX_MODEL: &str = "b_";
 
 /// A kind of file a key or a command names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum GameFileKind {
     /// A level, by the name `map` and `changelevel` take: `e1m1` for `maps/e1m1.bsp`.
@@ -44,6 +46,9 @@ pub enum GameFileKind {
 }
 
 impl GameFileKind {
+    /// Every kind.
+    pub const ALL: [Self; 3] = [Self::Level, Self::Model, Self::Sound];
+
     /// The name the engine is given for the file at `path` on the search path, when it is a
     /// file of this kind.
     fn name_of(self, path: &str) -> Option<String> {

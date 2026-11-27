@@ -152,9 +152,12 @@ fn the_project_answers_the_map_editor_from_its_quakec() {
             "model": null,
             "doc": [],
             "keys": [
-                { "name": "killtarget", "ty": "string", "default": null, "comment": null },
-                { "name": "speed", "ty": "float", "default": "100", "comment": null },
-                { "name": "target", "ty": "string", "default": null, "comment": null },
+                { "name": "killtarget", "ty": "string", "default": null, "comment": null,
+                  "choices": [], "file": null },
+                { "name": "speed", "ty": "float", "default": "100", "comment": null,
+                  "choices": [], "file": null },
+                { "name": "target", "ty": "string", "default": null, "comment": null,
+                  "choices": [], "file": null },
             ],
             "spawnflags": [
                 { "value": 1, "name": "START_ON" },
@@ -168,6 +171,29 @@ fn the_project_answers_the_map_editor_from_its_quakec() {
     );
     assert_eq!(workbench.entity_class("worldspawn"), None);
     assert_eq!(workbench.entity_class("func_nothing"), None);
+}
+
+// spec MAP-8.11: a key the project's code passes to precache_sound is given to the map editor
+// as naming a sound, and the values the class's comment numbers for a key as its choices
+#[test]
+fn a_keys_file_and_choices_reach_the_map_editor() {
+    let code = "entity self; .string classname, noise; .float sounds;\n\
+        string(string s) precache_sound = #19;\n\
+        void() worldspawn = {};\n\
+        /*QUAKED trap_buzzer (1 0 0) (-8 -8 -8) (8 8 8)\n\"sounds\"\n1) buzz\n2) click\n*/\n\
+        void() trap_buzzer = { if (self.sounds) self.sounds = 1; precache_sound (self.noise); };\n";
+    let mut workbench = workbench("files", code);
+    let class = workbench.entity_class("trap_buzzer").unwrap();
+    let key = |name: &str| class.keys.iter().find(|key| key.name == name).unwrap();
+    assert_eq!(key("noise").file, Some(qs_map_edit::GameFileKind::Sound));
+    assert!(key("noise").choices.is_empty());
+    assert_eq!(key("sounds").file, None);
+    let choices: Vec<(&str, &str)> = key("sounds")
+        .choices
+        .iter()
+        .map(|choice| (choice.value.as_str(), choice.name.as_str()))
+        .collect();
+    assert_eq!(choices, [("1", "buzz"), ("2", "click")]);
 }
 
 // No spec statement: P6-40: with no project open the workbench has no folder, no class, no

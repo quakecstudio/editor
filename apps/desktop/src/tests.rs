@@ -6797,7 +6797,11 @@ fn fire_shows_what_the_quakec_did() {
 /// The keep project with its map open, the camera outside the keep and entity `selected`
 /// selected (UI-24's tests).
 fn keep_with_selected(name: &str, selected: usize) -> Harness<'static, Option<App>> {
-    let dir = keep_copy(name);
+    keep_open_with_selected(&keep_copy(name), selected)
+}
+
+/// The keep project at `dir` opened, its map open and entity `selected` selected.
+fn keep_open_with_selected(dir: &Path, selected: usize) -> Harness<'static, Option<App>> {
     let mut harness = accessible();
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell
@@ -6878,6 +6882,72 @@ fn a_target_is_picked_from_the_names_in_the_map() {
     assert_eq!(
         map_value(&harness, 2, "killtarget").as_deref(),
         Some("gate")
+    );
+}
+
+// spec MAP-8.11: a value the class's comment numbers is picked from those values, each with
+// what the comment calls it, the name of the one set shown beside it; a key the code passes to
+// precache_sound offers the project's and the game's sounds, and a name no file has is marked
+#[test]
+fn a_numbered_choice_and_a_sound_are_picked() {
+    let dir = keep_copy("numbered");
+    let mut world = fs::read_to_string(dir.join("world.qc")).unwrap();
+    world.push_str(
+        ".float sounds; .string noise;\nstring(string s) precache_sound = #19;\n\
+         /*QUAKED trap_buzzer (1 0 0) (-8 -8 -8) (8 8 8)\n\"sounds\"\n1) buzz\n2) click\n*/\n\
+         void() trap_buzzer = { if (self.sounds) self.wait = 1; precache_sound (self.noise); };\n",
+    );
+    fs::write(dir.join("world.qc"), world).unwrap();
+    fs::create_dir_all(dir.join("sound/trap")).unwrap();
+    fs::write(dir.join("sound/trap/buzz.wav"), b"").unwrap();
+    let mut harness = keep_open_with_selected(&dir, 1);
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    for (key, value) in [
+        ("classname", "trap_buzzer"),
+        ("sounds", "1"),
+        ("noise", "trap/none.wav"),
+    ] {
+        shell
+            .execute(
+                "map.set_key",
+                json!({ "entity": 3, "key": key, "value": value }),
+            )
+            .unwrap();
+    }
+    shell.execute("map.select", json!({ "entity": 3 })).unwrap();
+    harness.run();
+    harness.run();
+    harness.get_by_label("buzz");
+    harness
+        .get_by_role_and_label(Role::TextInput, "sounds")
+        .click();
+    harness.run();
+    harness.get_by_label("1, buzz");
+    harness.get_by_label("2, click").click();
+    harness.run();
+    harness.run();
+    assert_eq!(map_value(&harness, 3, "sounds").as_deref(), Some("2"));
+    harness.get_by_label("click");
+    harness.get_by_label(Text::MapNoSuchFile.get());
+    harness
+        .get_by_role_and_label(Role::TextInput, "noise")
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    type_text(&mut harness, "buzz");
+    harness
+        .get_by_label("trap/buzz.wav, in the project")
+        .click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        map_value(&harness, 3, "noise").as_deref(),
+        Some("trap/buzz.wav")
+    );
+    assert!(
+        harness.query_by_label(Text::MapNoSuchFile.get()).is_none(),
+        "the sound is in the project"
     );
 }
 

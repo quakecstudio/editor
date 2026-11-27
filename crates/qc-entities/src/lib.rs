@@ -9,5 +9,5 @@
 pub mod entities;
 pub mod map_check;
 
-pub use entities::{EntityClass, Fgd, Found, Key, KeyType, Shape, SpawnFlag};
+pub use entities::{Choice, EntityClass, Fgd, FileUse, Found, Key, KeyType, Shape, SpawnFlag};
 pub use map_check::{EntitySchema, FieldValue, MapDiagnostic, MapDiagnosticKind};

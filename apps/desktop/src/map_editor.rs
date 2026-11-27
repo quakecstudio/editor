@@ -9,7 +9,7 @@
 //! `docs/map-editor.md` maps TrenchBroom's bindings to these.
 
 use qs_render::Degrees;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Role, Sense, Stroke, Ui, WidgetInfo};
 use eframe::egui_wgpu::RenderState;
@@ -27,6 +27,7 @@ use qs_map_edit::{
     EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
     MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
 };
+use qs_map_edit::{FileOrigin, GameFile, GameFileKind};
 use qs_render::Camera;
 use qs_workbench::map_balance::MapBalance;
 use qs_workbench::map_budget::MapBudget;
@@ -325,6 +326,9 @@ pub struct MapEditor {
     names: Vec<String>,
     /// The classnames as `classname` offers them, each a point or a brush entity (UI-24).
     class_offers: Vec<Offer>,
+    /// The project's and the game's files of each kind, which a key naming one offers, each
+    /// with where it is (MAP-8.11).
+    files: BTreeMap<GameFileKind, Vec<Offer>>,
     models: HashMap<String, Vec<Line>>,
     /// The class models' files, which the textured and lit views draw (P7-08).
     model_files: HashMap<String, std::sync::Arc<[u8]>>,
@@ -624,6 +628,24 @@ impl MapEditor {
     /// Takes the map's layers (P5-14).
     pub fn set_layers(&mut self, layers: Vec<LayerInfo>) {
         self.layers = layers;
+    }
+
+    /// Takes the project's and the game's files of `kind`, which a key naming one offers
+    /// (MAP-8.11).
+    pub fn set_files(&mut self, kind: GameFileKind, files: Vec<GameFile>) {
+        let offers = files
+            .into_iter()
+            .map(|file| Offer {
+                name: file.name,
+                detail: match file.origin {
+                    FileOrigin::Project => Text::MapFileInProject,
+                    FileOrigin::Game => Text::MapFileInGame,
+                }
+                .get()
+                .to_owned(),
+            })
+            .collect();
+        self.files.insert(kind, offers);
     }
 
     /// Takes the keys the code fires entities by (MAP-8.8).
@@ -1908,15 +1930,27 @@ impl MapEditor {
                         .typing
                         .entry(key.clone())
                         .or_insert_with(|| value.clone());
-                    let ty = keys
-                        .keys
-                        .iter()
-                        .find(|k| k.name == *key)
-                        .map(|k| k.ty.as_str());
+                    let info = keys.keys.iter().find(|k| k.name == *key);
+                    let ty = info.map(|k| k.ty.as_str());
+                    let numbered: Vec<Offer> = info
+                        .into_iter()
+                        .flat_map(|k| &k.choices)
+                        .map(|choice| Offer {
+                            name: choice.value.clone(),
+                            detail: choice.name.clone(),
+                        })
+                        .collect();
+                    let files = info
+                        .and_then(|k| k.file)
+                        .and_then(|kind| self.files.get(&kind));
                     let field = if self.targeting.contains(key) {
                         Field::Target(&targets)
                     } else if key == CLASSNAME {
                         Field::Class(&self.class_offers)
+                    } else if !numbered.is_empty() {
+                        Field::Numbered(&numbered)
+                    } else if let Some(files) = files {
+                        Field::File(files)
                     } else {
                         Field::Typed(Typed::of(key, ty, self.scene.values.get(key)))
                     };

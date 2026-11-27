@@ -26,6 +26,8 @@ fn thing_project() -> TestProject {
         ty: ty.to_owned(),
         default: default.map(str::to_owned),
         comment: None,
+        choices: Vec::new(),
+        file: None,
     };
     TestProject {
         classes: vec![ClassInfo {
@@ -280,8 +282,10 @@ fn the_selection_follows_and_keys_are_typed() {
     assert_eq!(
         keys["keys"],
         json!([
-            { "name": "speed", "ty": "float", "default": "100", "comment": null },
-            { "name": "target", "ty": "string", "default": null, "comment": null },
+            { "name": "speed", "ty": "float", "default": "100", "comment": null,
+              "choices": [], "file": null },
+            { "name": "target", "ty": "string", "default": null, "comment": null,
+              "choices": [], "file": null },
         ])
     );
     assert_eq!(keys["brush"], false);

@@ -36,7 +36,7 @@ const PROJECT: [&str; 8] = [
     ".git/sound/hidden.wav",
 ];
 
-// spec BUILTIN-10.3: a level is named as `map` takes it, from `maps/<map>.bsp`; an item's box
+// spec MAP-8.11: a level is named as `map` takes it, from `maps/<map>.bsp`; an item's box
 // model and a file in a folder under `maps/` are no level
 #[test]
 fn levels_are_named_as_map_takes_them() {
@@ -49,7 +49,7 @@ fn levels_are_named_as_map_takes_them() {
     );
 }
 
-// spec BUILTIN-10.4: a model is named by its whole path, an alias model, a brush model or a
+// spec MAP-8.11: a model is named by its whole path, an alias model, a brush model or a
 // sprite
 #[test]
 fn models_are_named_by_their_path() {
@@ -67,7 +67,7 @@ fn models_are_named_by_their_path() {
     );
 }
 
-// spec SND-1.4: a sound is named by its path under `sound/`; a folder starting with `.` is not
+// spec MAP-8.11: a sound is named by its path under `sound/`; a folder starting with `.` is not
 // read
 #[test]
 fn sounds_are_named_under_the_sound_folder() {
@@ -76,7 +76,7 @@ fn sounds_are_named_under_the_sound_folder() {
     assert_eq!(names(&files), ["doors/drclos4.wav"]);
 }
 
-// spec SND-1.4: the game's search path is read too, and the project's file takes the game's
+// spec MAP-8.11: the game's search path is read too, and the project's file takes the game's
 // place for a name both have
 #[test]
 fn the_project_takes_the_games_place() {

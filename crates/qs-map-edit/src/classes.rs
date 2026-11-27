@@ -4,6 +4,8 @@
 //! project a map belongs to says what its classes are (`MapProject`).
 
 use schemars::JsonSchema;
+
+use crate::GameFileKind;
 use serde::{Deserialize, Serialize};
 
 /// One entity class.
@@ -41,6 +43,22 @@ pub struct KeyInfo {
     pub default: Option<String>,
     /// What the class's comment says of it, when it says anything.
     pub comment: Option<String>,
+    /// The values the class's comment numbers for it, in its order.
+    #[serde(default)]
+    pub choices: Vec<KeyChoice>,
+    /// The kind of file its value names, when the code passes it to a builtin that loads one
+    /// (MAP-8.11).
+    #[serde(default)]
+    pub file: Option<GameFileKind>,
+}
+
+/// A value a class's comment numbers for a key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct KeyChoice {
+    /// The value, as the map writes it.
+    pub value: String,
+    /// What the comment calls it.
+    pub name: String,
 }
 
 /// A spawnflag.

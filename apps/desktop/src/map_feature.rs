@@ -52,6 +52,7 @@ use qs_map_edit::{
     FlipParams, Lock, MAP_FLIP, MAP_REPLACE_TEXTURE, MAP_TURN, ReplaceTextureParams, Selection,
     TurnParams,
 };
+use qs_map_edit::{GameFile, GameFileKind, GameFilesParams, MAP_GAME_FILES};
 use qs_map_edit::{LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams};
 use qs_map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
 use qs_map_edit::{
@@ -237,6 +238,15 @@ impl MapFeature {
                 self.map_editor.set_targeting(found.targeting);
             }
             Err(error) => tracing::warn!(%error, "no entity classes for the map"),
+        }
+        // MAP-8.11: the files a key naming one offers, read with the classes.
+        for kind in GameFileKind::ALL {
+            let files: Result<Vec<GameFile>, ShellError> =
+                commands.attempt(MAP_GAME_FILES, &GameFilesParams { kind });
+            match files {
+                Ok(files) => self.map_editor.set_files(kind, files),
+                Err(error) => tracing::warn!(%error, "no game files for the key editor"),
+            }
         }
     }
 

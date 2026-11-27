@@ -403,6 +403,16 @@ and MAP-8.10's empty classname.
 - **MAP-8.10** An entity whose `classname` is empty is reported: the engine stops loading the
   map with `PR_ExecuteProgram: NULL function` (EDICT-8.10). The editor refuses to write an empty
   `classname`, whatever command would write it.
+- **MAP-8.11** A key names a file when the code passes its field to `changelevel`,
+  `precache_model` or `precache_sound`, or their `2` forms (BUILTIN-10.6), as `precache_sound
+  (self.noise1)` does, whatever entity it is loaded from; or stores its field in a global that
+  is passed to one, as id's `changelevel_touch` stores `nextmap = self.map` for `changelevel
+  (nextmap)`. The file is a level for `changelevel`, by the name `map` takes
+  (`maps/<map>.bsp`, BUILTIN-10.3); a model for `precache_model`, by its path; a sound for
+  `precache_sound`, by its path under `sound/` (SND-1.4). A key passed to more than one is
+  taken for the first in that order. The key editor offers the project's and the game's files
+  of that kind and marks a name no file has; a name starting with `*` is a brush model the
+  compiler writes and is not marked.
 
 ## MAP-9 Rooms: TrenchBroom's layers and groups
 

@@ -41,7 +41,7 @@ pub use build::{
     BuildPassageParams, BuildRoomParams, BuildTextures, DoorwayBuilt, Lighting, MAP_BUILD_PASSAGE,
     MAP_BUILD_ROOM, PassageBuilt, PassageDoor, RoomBuilt, RoomKind, RoomSide, TopShape,
 };
-pub use classes::{ClassInfo, FlagInfo, KeyInfo};
+pub use classes::{ClassInfo, FlagInfo, KeyChoice, KeyInfo};
 pub use containers::{
     AddLayerParams, ContainerParams, ExtractLinkedParams, GroupParams, MAP_ADD_LAYER,
     MAP_EXTRACT_LINKED, MAP_GROUP, MAP_LINK_DUPLICATE, MAP_MAKE_BRUSH_ENTITY, MAP_MAKE_STRUCTURAL,
