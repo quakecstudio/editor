@@ -239,6 +239,48 @@ fn ctrl_space_completes_the_name_being_typed() {
     assert_eq!(popup(&harness), None);
 }
 
+// No spec statement: UI-24, QA-10: in the settings file Ctrl+Space offers what may be written
+// where the caret is, from the settings' schema: a key's values, each with what it does, and
+// taking one writes it quoted as TOML writes a string
+#[test]
+fn the_settings_file_completes_from_its_schema() {
+    let mut harness = harness("src/weapons.qc");
+    let dir = std::env::temp_dir().join(format!(
+        "quakec-studio-settings-complete-{}",
+        std::process::id()
+    ));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = dir.join("settings.toml");
+    std::fs::write(&settings, "[updates]\ncheck = \n").unwrap();
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+    shell.set_settings_file(settings.clone());
+    shell.execute("settings.open", json!({})).unwrap();
+    harness.run();
+    harness.run();
+    assert_eq!(editor(&harness).path, settings);
+    let id = egui::Id::unique(EDITOR_AREA);
+    harness.ctx.memory_mut(|m| m.request_focus(id));
+    harness.run();
+    caret_at(&mut harness, "check = ", 0, 8);
+    press(&mut harness, Modifiers::CTRL, Key::Space);
+    let Some(Popup::Complete { candidates, .. }) = popup(&harness) else {
+        panic!("{:?}", popup(&harness));
+    };
+    let labels: Vec<&str> = candidates.iter().map(|c| c.label.as_str()).collect();
+    assert_eq!(labels, ["\"off\"", "\"daily\""]);
+    let daily = candidates.get(1).map(|c| c.detail.as_str()).unwrap();
+    assert!(daily.contains("once a day"), "{candidates:?}");
+    press(&mut harness, Modifiers::NONE, Key::ArrowDown);
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    assert!(
+        text(&harness).contains("check = \"daily\""),
+        "{}",
+        text(&harness)
+    );
+    let _gone = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn the_completion_popup_moves_with_the_arrows_and_closes_when_nothing_matches() {
     let mut harness = harness("src/weapons.qc");

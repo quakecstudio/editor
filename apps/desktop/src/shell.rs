@@ -56,6 +56,7 @@ use qs_workbench::{
     RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
     TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, WATCH_NAMES, WatchName, Workbench,
 };
+use qs_workbench::{CandidateKind, FileText, READ_FILE};
 use qs_workbench::{FieldSet, SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
 use crate::about::{self, AboutWindow};
@@ -2747,6 +2748,37 @@ impl Shell {
         }
     }
 
+    /// Whether `path` is the user's settings file or the open project's.
+    fn is_settings_file(&self, path: &Path) -> bool {
+        let project = self
+            .session
+            .context()
+            .workbench
+            .root()
+            .map(qs_settings::project_settings_path);
+        self.settings_file.as_deref() == Some(path) || project.as_deref() == Some(path)
+    }
+
+    /// What may be written at `at`: in the settings file, from its text in the editor and the
+    /// settings' schema (UI-24), as Zed completes `settings.json`; elsewhere the QuakeC's names.
+    fn completions(&mut self, at: AtParams) -> Vec<Candidate> {
+        if !self.is_settings_file(&at.path) {
+            return self.run(COMPLETE, &at).unwrap_or_default();
+        }
+        let offset = at.offset;
+        let file: Option<FileText> = self.run(READ_FILE, &SaveFileParams { path: at.path });
+        file.map_or_default(|file| {
+            SettingsFile::completions(&file.text, offset)
+                .into_iter()
+                .map(|completion| Candidate {
+                    label: completion.label,
+                    kind: CandidateKind::Field,
+                    detail: completion.detail,
+                })
+                .collect()
+        })
+    }
+
     /// Runs what the editor asked for, each through its command, after sending the editor's
     /// unsent text so every answer is about the text on screen.
     fn handle(&mut self, requests: Vec<Request>) {
@@ -2829,8 +2861,7 @@ impl Shell {
                         },
                     }),
                 Request::Complete(offset) => {
-                    let candidates: Vec<Candidate> =
-                        self.run(COMPLETE, &at(offset)).unwrap_or_default();
+                    let candidates = self.completions(at(offset));
                     Some(if candidates.is_empty() {
                         Popup::Note(Text::NoCompletions)
                     } else {

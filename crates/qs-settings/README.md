@@ -23,6 +23,12 @@ Each setting is a `Setting`, with its key, default and summary. `docs/settings.m
 from them by `qs_settings::reference`, and a test fails when it is out of date. A file holds only
 what it sets; an unknown key or a value of the wrong type is an error, so a typo is not ignored.
 
+`SettingsFile::completions` says what may be written at a place in a settings file (UI-24): in
+a `[...]` header the tables, at a key's place the keys of its table with each setting's summary,
+and after `key =` the values of a key whose type is a set of choices, each with its doc comment,
+read from the file's schema. The code editor offers them on Ctrl+Space, as Zed completes
+`settings.json` from its schema.
+
 ## Commands
 
 `qs_settings::register` adds four commands to a registry whose context implements
