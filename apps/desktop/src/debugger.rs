@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, RichText, Ui};
 use qs_sim::ConsoleName;
+use qs_workbench::WatchName;
 use qs_workbench::debug::Location;
 use qs_workbench::ids::WatchIndex;
 use qs_workbench::{
@@ -67,6 +68,9 @@ pub(crate) struct DebugInput {
     names: Vec<Offer>,
     /// The levels `map` and `changelevel` take, read once a game runs; `None` until then.
     levels: Option<Vec<String>>,
+    /// What a watch may read where the game stopped, each with its type, and the place they
+    /// were read for.
+    watch_names: (Option<Location>, Vec<Offer>),
 }
 
 impl Default for DebugInput {
@@ -90,6 +94,7 @@ impl Default for DebugInput {
             filter: String::new(),
             names,
             levels: None,
+            watch_names: (None, Vec::new()),
         }
     }
 }
@@ -104,6 +109,43 @@ impl DebugInput {
     /// game reads them again.
     pub(crate) fn set_levels(&mut self, levels: Option<Vec<String>>) {
         self.levels = levels;
+    }
+
+    /// Whether the names a watch may read are to be read again: the game stopped somewhere
+    /// else, or no longer is.
+    pub(crate) fn watch_names_stale(&self, stopped: Option<&Location>) -> bool {
+        self.watch_names.0.as_ref() != stopped
+    }
+
+    /// Keeps `names`, what a watch may read where the game stopped at `stopped`.
+    pub(crate) fn set_watch_names(&mut self, stopped: Option<Location>, names: Vec<WatchName>) {
+        let offers = names
+            .into_iter()
+            .map(|name| Offer {
+                name: name.expression,
+                detail: name.detail,
+            })
+            .collect();
+        self.watch_names = (stopped, offers);
+    }
+
+    /// The watch box, which offers what a watch may read where the game stopped (UI-24); the
+    /// watch to add once one is taken or Enter is pressed on what is typed.
+    fn watch_box(&mut self, ui: &mut Ui, theme: &Theme) -> Option<DebugAction> {
+        let field = Suggest {
+            name: Text::AddWatch.get(),
+            offers: &self.watch_names.1,
+            width: ui.available_width(),
+        };
+        let (_, taken) = field.take(ui, theme, &mut self.watch);
+        let entered = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let expression = match taken {
+            Some(Taken::Offer(expression)) => expression,
+            Some(Taken::Typed(expression)) if entered && !expression.is_empty() => expression,
+            Some(Taken::Typed(_)) | None => return None,
+        };
+        self.watch.clear();
+        Some(DebugAction::Watch(expression))
     }
 
     /// The console's `]` prompt and its box, which offers the commands and settings as they
@@ -251,18 +293,8 @@ pub(crate) fn debugger_ui(
                     ui.end_row();
                 }
             });
-        let typed = watches.add(
-            egui::TextEdit::singleline(&mut input.watch)
-                .hint_text(Text::AddWatch.get())
-                .code_editor()
-                .desired_width(f32::INFINITY),
-        );
-        let typed = typed.accessible_name(Text::AddWatch.get());
-        if typed.lost_focus()
-            && watches.input(|i| i.key_pressed(egui::Key::Enter))
-            && !input.watch.trim().is_empty()
-        {
-            action = Some(DebugAction::Watch(std::mem::take(&mut input.watch)));
+        if let Some(watch) = input.watch_box(watches, theme) {
+            action = Some(watch);
         }
 
         breakpoints.label(RichText::new(Text::Breakpoints.get()).strong());

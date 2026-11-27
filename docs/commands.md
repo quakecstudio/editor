@@ -193,6 +193,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.stop`](#previewstop) | Stops the game. |
 | [`preview.unwatch`](#previewunwatch) | Takes a watch away. |
 | [`preview.watch`](#previewwatch) | Adds a watch, an expression read each time the game stops in a frame. |
+| [`preview.watch_names`](#previewwatch_names) | Lists what a watch may read where the game stopped: the locals, parameters and globals visible on that line, and the fields of self, each with its type. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.compile`](#projectcompile) | Compiles the open project and says whether it is clean, with its error counts. |
@@ -8962,6 +8963,22 @@ Parameters:
     "expression"
   ],
   "title": "WatchParams",
+  "type": "object"
+}
+```
+
+## `preview.watch_names`
+
+Lists what a watch may read where the game stopped: the locals, parameters and globals visible on that line, and the fields of self, each with its type.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

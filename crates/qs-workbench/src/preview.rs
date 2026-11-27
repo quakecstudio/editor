@@ -31,7 +31,7 @@ use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
 use crate::map_playable::register_map_playable;
 use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
-use crate::{GameFolders, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
+use crate::{DefKind, GameFolders, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
 use qs_map_edit::{LiveChange, register_map_game};
 use qs_map_light::Sidecars;
@@ -1861,6 +1861,8 @@ pub const CONSOLE: &str = "preview.console";
 pub const WATCH: &str = "preview.watch";
 /// The id of the command that takes a watch away.
 pub const UNWATCH: &str = "preview.unwatch";
+/// The id of the command that lists what a watch may read where the game stopped.
+pub const WATCH_NAMES: &str = "preview.watch_names";
 /// The id of the command that docks the game's window beside the IDE's.
 pub const DOCK: &str = "preview.dock";
 /// The id of the command that plays a scenario file (SCN-2.6).
@@ -2290,6 +2292,80 @@ impl Act for WatchAct {
     }
 }
 
+/// A name a watch may read where the game stopped, with its type (UI-24).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WatchName {
+    /// The watch's expression: a local, a parameter or a global by its name, or a field of
+    /// `self` (WORLD-9.5).
+    pub expression: String,
+    /// Its type, as FTEQCC writes it.
+    pub detail: String,
+}
+
+/// `preview.watch_names`: the names visible at the start of the line the game stopped on, as
+/// the editor completes them there, each as a watch reads it; none while it is not stopped in
+/// a frame of the project's code.
+struct WatchNamesCommand;
+
+impl<C: HasPreview + 'static> Command<C> for WatchNamesCommand {
+    const ID: &'static str = WATCH_NAMES;
+    const ACCESS: qs_commands::Access = qs_commands::Access::Read;
+    const SUMMARY: &'static str = "Lists what a watch may read where the game stopped: the \
+        locals, parameters and globals visible on that line, and the fields of self, each with \
+        its type.";
+    type Params = NoParams;
+    type Output = Vec<WatchName>;
+    type Error = !;
+
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Vec<WatchName>, C>, !> {
+        let (workbench, preview) = context.workbench_and_preview();
+        let at = preview
+            .debugger()
+            .stopped()
+            .and_then(|(_, location)| location.file.clone().zip(location.line));
+        let Some((file, line)) = at.filter(|_| workbench.root().is_some()) else {
+            return Ok(Outcome::unchanged(Vec::new()));
+        };
+        let path = workbench.root().map_or_default(|root| root.join(file));
+        let text = workbench.text(&path).or_else(|| std::fs::read(&path).ok());
+        let Some(offset) = text.and_then(|text| line_start(&text, line)) else {
+            return Ok(Outcome::unchanged(Vec::new()));
+        };
+        let names = workbench
+            .completions(&path, offset)
+            .into_iter()
+            .filter_map(|completion| {
+                let expression = match completion.kind {
+                    DefKind::Global | DefKind::Param | DefKind::Local => completion.label,
+                    DefKind::Field => format!("{SELF}.{}", completion.label),
+                    DefKind::Function => return None,
+                };
+                Some(WatchName {
+                    expression,
+                    detail: completion.detail,
+                })
+            })
+            .collect();
+        Ok(Outcome::unchanged(names))
+    }
+}
+
+/// The global a watch reads the entity whose function runs from.
+const SELF: &str = "self";
+
+/// The byte offset at which line `line`, from 1, of `text` starts; `None` past its end.
+fn line_start(text: &[u8], line: u32) -> Option<usize> {
+    let before = usize::try_from(line.checked_sub(1)?).ok()?;
+    if before == 0 {
+        return Some(0);
+    }
+    text.iter()
+        .enumerate()
+        .filter(|(_, byte)| **byte == b'\n')
+        .nth(before.checked_sub(1)?)
+        .map(|(at, _)| at.saturating_add(1))
+}
+
 struct UnwatchAct;
 impl Act for UnwatchAct {
     const ID: &'static str = UNWATCH;
@@ -2604,6 +2680,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     register_map_playable(registry)?;
     registry.register(SetFieldCommand)?;
     registry.register(BreakpointCommand)?;
+    registry.register(WatchNamesCommand)?;
     registry.register(ActCommand::<ConsoleAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<WatchAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<DockAct>(core::marker::PhantomData))?;

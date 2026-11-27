@@ -54,7 +54,7 @@ use qs_workbench::{
     HasWorkbench, HoverInfo, OPEN_FILE, OpenFile, OpenFileParams, PAUSE, PLAY, POLL, Place,
     PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME,
     RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
-    TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, Workbench,
+    TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, WATCH_NAMES, WatchName, Workbench,
 };
 use qs_workbench::{FieldSet, SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
@@ -1456,6 +1456,7 @@ impl Shell {
         let game = preview.state();
         self.features.map.properties.follow(selected, game);
         self.follow_console_levels(game);
+        self.follow_watch_names();
         // P3-35: the background check's results for the latest edit, once it has finished.
         if self.run::<_, bool>(TAKE_CHECKED, &serde_json::json!({})) == Some(true) {
             ui.ctx().request_repaint();
@@ -1983,6 +1984,31 @@ impl Shell {
             ui.ctx().request_repaint();
         }
         true
+    }
+
+    /// Reads what a watch may read each time the game stops somewhere else (UI-24).
+    fn follow_watch_names(&mut self) {
+        let stopped = self
+            .session
+            .context()
+            .preview
+            .debugger()
+            .stopped()
+            .map(|(_, location)| location.clone());
+        if !self
+            .features
+            .debugger
+            .input
+            .watch_names_stale(stopped.as_ref())
+        {
+            return;
+        }
+        let names: Option<Vec<WatchName>> = match stopped {
+            Some(_) => self.run(WATCH_NAMES, &serde_json::json!({})),
+            None => None,
+        };
+        let input = &mut self.features.debugger.input;
+        input.set_watch_names(stopped, names.unwrap_or_default());
     }
 
     /// Reads the levels the console's `map` and `changelevel` offer once a game runs, and

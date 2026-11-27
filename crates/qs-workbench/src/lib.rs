@@ -73,8 +73,8 @@ pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
-    ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
-    dock, engine, game_files, scenario,
+    ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WATCH_NAMES, WatchName,
+    WatchParams, debug, dock, engine, game_files, scenario,
 };
 pub use crate::preview::{
     CHOOSE_GAME, ChooseGameParams, ConsoleLine, FieldSet, GAME, GameStart, HasPreview, HeldEdit,
