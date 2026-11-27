@@ -220,22 +220,19 @@ fn entity_value_names_an_edict_only_on_a_whole_multiple() {
     let store = store(1); // num_edicts is 2
     // Edict 10 names an edict even though it is at or above num_edicts.
     assert_eq!(
-        store.layout().edict_number(EntityRef::from_bits(10 * 516)),
+        store.edict_number(EntityRef::from_bits(10 * 516)),
         Some(EdictNumber::new(10))
     );
     // Edict 599 names one; 600 does not (past the array).
     assert_eq!(
-        store.layout().edict_number(EntityRef::from_bits(599 * 516)),
+        store.edict_number(EntityRef::from_bits(599 * 516)),
         Some(EdictNumber::new(599))
     );
-    assert_eq!(
-        store.layout().edict_number(EntityRef::from_bits(600 * 516)),
-        None
-    );
+    assert_eq!(store.edict_number(EntityRef::from_bits(600 * 516)), None);
     // A value that is not a whole multiple names none.
-    assert_eq!(store.layout().edict_number(EntityRef::from_bits(4)), None);
+    assert_eq!(store.edict_number(EntityRef::from_bits(4)), None);
     // A negative value names none.
-    assert_eq!(store.layout().edict_number(EntityRef::from_bits(-1)), None);
+    assert_eq!(store.edict_number(EntityRef::from_bits(-1)), None);
 }
 
 // ---- EDICT-2: system globals ----
@@ -811,6 +808,7 @@ fn pointer_value_bounds() {
 fn edict_number_rejects_out_of_range() {
     let layout = layout_105();
     let size = layout.edict_size();
+    let layout = EdictStore::new(layout, 1).unwrap();
     // Edict 0 and edict 1 are in range.
     assert_eq!(
         layout.edict_number(EntityRef::from_bits(0)),
@@ -1089,4 +1087,40 @@ fn a_store_with_another_layout_keeps_its_edicts() {
     assert_eq!(new.freetime(b), Some(7.0));
     assert_eq!(new.fields(a).unwrap().len(), FIELDS_105 + 3);
     assert!(new.fields(a).unwrap().iter().all(|s| *s == Slot::ZERO));
+}
+
+// spec EDICT-1.10: a store made with more edicts allocates, names and numbers up to that many,
+// and fails past it; a capacity below id's 600 is taken as 600
+#[test]
+fn a_store_with_more_edicts() {
+    let capacity = crate::EdictCapacity::at_least_ids(700);
+    assert_eq!(capacity.get(), 700);
+    assert_eq!(
+        crate::EdictCapacity::at_least_ids(10),
+        crate::EdictCapacity::ID
+    );
+    assert_eq!(crate::EdictCapacity::default().get(), LIMIT_MAX_EDICTS);
+    let mut store = EdictStore::with_capacity(layout_105(), 1, capacity).unwrap();
+    assert_eq!(store.capacity(), capacity);
+    while store.num_edicts() < 700 {
+        store.alloc(1.0).unwrap();
+    }
+    assert_eq!(store.alloc(1.0).unwrap_err(), EdictError::NoFreeEdicts);
+    let size = layout_105().edict_size();
+    // EDICT-1.9 and EDICT-1.7 name the array's size.
+    assert_eq!(
+        store.edict_number(EntityRef::from_bits(699 * size)),
+        Some(EdictNumber::new(699))
+    );
+    assert_eq!(store.edict_number(EntityRef::from_bits(700 * size)), None);
+    assert!(store.edict_num(699).is_ok());
+    assert!(store.edict_num(700).is_err());
+    assert_eq!(
+        store.num_for_edict(EntityRef::from_bits(650 * size)),
+        Ok(EdictNumber::new(650))
+    );
+    // The default store keeps id's 600.
+    let ids = EdictStore::new(layout_105(), 1).unwrap();
+    assert_eq!(ids.capacity(), crate::EdictCapacity::ID);
+    assert!(ids.edict_num(600).is_err());
 }

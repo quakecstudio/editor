@@ -76,6 +76,11 @@ the progs' field slots, and QuakeC refers to an edict by its byte offset in that
   is not the start of an edict in the array, so what it reaches depends on the header size
   (EDICT-1.3) or lies outside the array. The edict size is the VM's own (TRACE-2.1), so the
   same edict number is a different value in a 32-bit and a 64-bit build.
+- **EDICT-1.10** Not id's: a store may be made with an array of more than `LIMIT_MAX_EDICTS`
+  edicts, an engine's edict limit (ENGT-5.8), so that a map past id's 600 is spawned and its
+  edicts counted (BUDGET-2). Every rule that names the array's size, EDICT-1.4, EDICT-1.7,
+  EDICT-1.9 and EDICT-6.2, then names that size; a size below 600 is taken as 600. id's
+  engine has 600, and every store the game, the preview host and the differential make has.
 
 ### Constants
 

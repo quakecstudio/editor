@@ -163,6 +163,37 @@ pub enum Tracking {
     Off,
 }
 
+/// How many edicts a store's array holds (EDICT-1.4, EDICT-1.10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EdictCapacity(usize);
+
+impl Default for EdictCapacity {
+    fn default() -> Self {
+        Self::ID
+    }
+}
+
+impl EdictCapacity {
+    /// id's [`LIMIT_MAX_EDICTS`], 600 (EDICT-1.4).
+    pub const ID: Self = Self(LIMIT_MAX_EDICTS);
+
+    /// An array of `edicts`, at least id's [`LIMIT_MAX_EDICTS`] (EDICT-1.10).
+    #[must_use]
+    pub const fn at_least_ids(edicts: usize) -> Self {
+        if edicts < LIMIT_MAX_EDICTS {
+            Self::ID
+        } else {
+            Self(edicts)
+        }
+    }
+
+    /// The edicts.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// The server's edict array for one map.
 ///
 /// Implements EDICT-1.4: [`LIMIT_MAX_EDICTS`] edicts, numbered from 0, with `num_edicts`
@@ -259,11 +290,26 @@ impl EdictStore {
     /// [`EdictError::BadMaxclients`] when `maxclients` is more than
     /// `EDICT_MAX_CLIENTS`.
     pub fn new(layout: EdictLayout, maxclients: usize) -> Result<Self, EdictError> {
+        Self::with_capacity(layout, maxclients, EdictCapacity::ID)
+    }
+
+    /// [`EdictStore::new`] with an array of `capacity` edicts in place of id's
+    /// [`LIMIT_MAX_EDICTS`] (EDICT-1.10): every rule that names the array's size names
+    /// `capacity`.
+    ///
+    /// # Errors
+    ///
+    /// As [`EdictStore::new`].
+    pub fn with_capacity(
+        layout: EdictLayout,
+        maxclients: usize,
+        capacity: EdictCapacity,
+    ) -> Result<Self, EdictError> {
         if maxclients > crate::EDICT_MAX_CLIENTS {
             return Err(EdictError::BadMaxclients { maxclients });
         }
         let entityfields = layout.entityfields();
-        let edicts = vec![Edict::zeroed(entityfields); LIMIT_MAX_EDICTS];
+        let edicts = vec![Edict::zeroed(entityfields); capacity.get()];
         let num_edicts = maxclients.saturating_add(1);
         Ok(Self {
             layout,
@@ -435,13 +481,35 @@ impl EdictStore {
     ///
     /// [`EdictError::BadNumber`] for a number outside 0 to [`LIMIT_MAX_EDICTS`] - 1.
     pub fn edict_num(&self, number: i32) -> Result<EntityRef, EdictError> {
-        let max = i32::try_from(LIMIT_MAX_EDICTS).map_err(|_| EdictError::BadNumber { number })?;
+        let max = i32::try_from(self.edicts.len()).map_err(|_| EdictError::BadNumber { number })?;
         if number < 0 || number >= max {
             return Err(EdictError::BadNumber { number });
         }
         EdictNumber::from_i32(number)
             .and_then(|edict| self.layout.entity_value(edict))
             .ok_or(EdictError::BadNumber { number })
+    }
+
+    /// The edict number an entity value names, if it names one, id's `PROG_TO_EDICT` read back
+    /// through `NUM_FOR_EDICT`.
+    ///
+    /// Implements EDICT-1.9: a value names edict `n` when it is `n` times the edict size for a
+    /// whole number `n` below the array's size, [`LIMIT_MAX_EDICTS`] unless the store was made
+    /// with another (EDICT-1.10); any other value names none. It does not check whether edict
+    /// `n` is in use or free: the array holds all the edicts.
+    #[must_use]
+    pub fn edict_number(&self, value: EntityRef) -> Option<EdictNumber> {
+        self.layout
+            .multiple_of_edict(value)
+            .filter(|&n| n < self.edicts.len())
+            .map(EdictNumber::new)
+    }
+
+    /// The edicts the array holds: [`LIMIT_MAX_EDICTS`], or the capacity the store was made
+    /// with (EDICT-1.10).
+    #[must_use]
+    pub fn capacity(&self) -> EdictCapacity {
+        EdictCapacity(self.edicts.len())
     }
 
     /// Turns an entity value into its edict number, id's `NUM_FOR_EDICT`.
@@ -454,10 +522,7 @@ impl EdictStore {
     ///
     /// [`EdictError::BadPointer`] for a value that names no edict below `num_edicts`.
     pub fn num_for_edict(&self, value: EntityRef) -> Result<EdictNumber, EdictError> {
-        let number = self
-            .layout
-            .edict_number(value)
-            .ok_or(EdictError::BadPointer)?;
+        let number = self.edict_number(value).ok_or(EdictError::BadPointer)?;
         if number.index() >= self.num_edicts {
             return Err(EdictError::BadPointer);
         }
@@ -510,7 +575,7 @@ impl EdictStore {
             }
         }
         // EDICT-6.2: if (i == MAX_EDICTS) Sys_Error("ED_Alloc: no free edicts").
-        if self.num_edicts >= LIMIT_MAX_EDICTS {
+        if self.num_edicts >= self.edicts.len() {
             return Err(EdictError::NoFreeEdicts);
         }
         let number = EdictNumber::new(self.num_edicts);

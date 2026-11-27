@@ -58,5 +58,5 @@ mod tests;
 
 pub use dispatch::MockBuiltins;
 pub use error::{BuiltinError, FatalError, RuntimeError};
-pub use mock::{EngineProfile, MockEngine, Unimplemented};
+pub use mock::{EngineProfile, MockEngine, Precache, PrecacheRoom, Unimplemented};
 pub use table::{BUILTIN_MAX_NUMBER, Builtin, BuiltinNumber, Class};

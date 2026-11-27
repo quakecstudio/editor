@@ -594,8 +594,9 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     }
 
     pub(crate) fn edict_of(&self, value: i32) -> usize {
-        let layout = self.context.machine_view().edicts().layout();
-        layout
+        self.context
+            .machine_view()
+            .edicts()
             .edict_number(EntityRef::from_bits(value))
             .map_or(0, EdictNumber::index)
     }
@@ -1078,7 +1079,6 @@ impl Vm<'_, '_, '_> {
         let value = self.parm(n).as_i32();
         self.machine_view()
             .edicts()
-            .layout()
             .edict_number(EntityRef::from_bits(value))
             .map(EdictNumber::index)
             .ok_or_else(|| {

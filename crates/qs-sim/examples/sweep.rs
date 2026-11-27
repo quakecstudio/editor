@@ -136,6 +136,7 @@ fn run(
         settings: Vec::new(),
         protocol: ProtocolVersion::default(),
         startup: Vec::new(),
+        room: qs_sim::Room::default(),
     };
     let mut world =
         World::load(progs, map, &bsp, models()?, options.clone()).map_err(|e| e.to_string())?;

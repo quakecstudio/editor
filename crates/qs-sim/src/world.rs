@@ -213,6 +213,19 @@ pub struct LoadOptions {
     /// Console text a new host runs before the map's settings are read, as QuakeSpasm's
     /// `Host_Init` runs `exec quake.rc` before the first map (INPUT-3.7); empty for none.
     pub startup: Vec<u8>,
+    /// Room past id's limits for counting a map that passes them: more edicts (EDICT-1.10) and
+    /// longer precache lists (LIMIT-6.3); id's by default.
+    pub room: Room,
+}
+
+/// Room past id's limits in a world, for `map.budget` to count a map past them (EDICT-1.10,
+/// LIMIT-6.3). The default is id's: 600 edicts and the profile's precache lists.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Room {
+    /// The edict array's size.
+    pub edicts: qc_edict::EdictCapacity,
+    /// The precache lists' entries; `None` for the profile's.
+    pub precaches: Option<qc_builtins::PrecacheRoom>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -405,8 +418,8 @@ impl World {
         files: ModelFiles,
         options: LoadOptions,
     ) -> Result<Self, WorldError> {
-        let machine =
-            Machine::new(progs, MAXCLIENTS).map_err(|e| WorldError::Progs(e.to_string()))?;
+        let machine = Machine::with_capacity(progs, MAXCLIENTS, options.room.edicts)
+            .map_err(|e| WorldError::Progs(e.to_string()))?;
         let submodels = bsp.models.len().saturating_sub(1);
         // MOVE-6.1: the random source starts at state 1, or at a scenario's seed (SCN-1.3).
         let seed = options.seed.unwrap_or(RANDOM_SEED);
@@ -431,6 +444,7 @@ impl World {
                 }
             }
         }
+        engine.precache_room = options.room.precaches;
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
         engine.clients_active = vec![false; MAXCLIENTS];
