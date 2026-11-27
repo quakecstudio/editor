@@ -113,6 +113,9 @@ cargo xtask notices --out <file>          # the third-party notices a release pa
 cargo xtask oracles                       # build the oracles from id's sources, run the VM vectors and the builtin and grammar differentials (network, C compiler)
 cargo xtask oracles maps                  # build id's qbsp, vis and light and ericw-tools (CMake, TBB, Embree 4) and compile a room with each (network)
 cargo xtask oracles models [--rounds n]   # build id's modelgen and compare the models it and qs-mdl write from the same generated scripts (L-47, MDL-8; network)
+cargo xtask oracles build                 # build the oracles (id's VM and qcc, the pinned FTEQCC) and print where they are, for the jobs that only need their programs
+cargo xtask oracles id101|rerelease <codebase dir>  # id 1.01 through qcc, or the rerelease's codebases through FTEQCC, and each through our compiler
+cargo xtask oracles fuzz all --time 600   # fuzz the VM oracle's own targets (scenario, init, progs) with libFuzzer (clang)
 cargo run --release -p xtask -- map-diff [--map <name>]...  # qs-map-bsp against id's qbsp and ericw-tools' qbsp on every corpus map: leaks, entities, faces, traces (P6-07; release, the brush BSP is slow unoptimized)
 cargo run --release -p xtask -- light-diff [--map <name>]...  # qs-map-light's lightmaps against id's light on every corpus map, both modes, and the extended dialect's against ericw-tools' light (P7-01, L-22, L-23)
 cargo xtask fuzz qc-progs --time 10m      # one fuzz target (nightly, cargo-fuzz); no target runs all
@@ -132,6 +135,18 @@ cargo xtask view-diff [--map <name>]... [-- <engine words>]  # the preview host'
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
 cargo xtask keymap [--check]              # regenerate (or check) docs/keymap.md from the registry and qs-layout's default keys
 cargo xtask compatibility [--out <file>]  # write docs/compatibility.md from the fetched conformance corpus (P4-21; every release)
+cargo xtask corpus verify|fetch|build     # the conformance corpus: check the manifest, fetch codebases into the cache, build them with the oracles
+cargo xtask assets fetch|precache         # the test assets (LibreQuake, the corpus maps) the CI corpus steps read
+cargo xtask lex-corpus <dir>              # every corpus file under dir lexes
+cargo xtask parse-corpus|project-corpus|fteqcc-profile <codebase>...  # every file parses; each file graph matches FTEQCC's; every module resolves under the FTEQCC profile
+cargo xtask sema-corpus <codebase>=<progs.dat>...  # each module's index against its golden file and the oracle's progs
+cargo xtask lsp-corpus <codebase>         # the language server over a codebase, against its golden file
+cargo xtask codegen-corpus <codebase>...  # every module of each codebase compiles with our compiler
+cargo xtask map-corpus <dir>...           # every .map round-trips
+cargo xtask differential [--fast|--full]  # the VM differential suite against the oracle: the CI subset, or every scenario
+cargo xtask evals --check|--run           # the agent's evals: each task's scenario checked (CI), or the tasks run on a model
+cargo xtask bench [--accept]              # the performance budgets (docs/perf-budgets.md) against their history
+cargo xtask contrast                      # the theme's colours meet their contrast ratios
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)
 scripts/refresh-specs.sh                  # refresh specs/ from the origins

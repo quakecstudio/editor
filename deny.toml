@@ -19,6 +19,9 @@ targets = [
 ]
 
 [advisories]
+# An unmaintained crate anywhere in the graph is reported, not only the workspace's own: the
+# default until cargo-deny 0.22, kept so a notice like chrono's below stays a decision.
+unmaintained = "all"
 # Every ignore names the advisory and says in a comment why it does not apply.
 ignore = [
     # zvariant, zvariant_derive and zbus_names are "unmaintained" only because their code
