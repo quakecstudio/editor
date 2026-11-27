@@ -27,10 +27,12 @@
 //! Written from the spec, not ported.
 
 pub mod check;
+pub mod limits;
 mod tables;
 
 pub use check::{BuiltinRef, declared_builtins};
-pub use tables::SOURCES;
+pub use limits::{Applies, Bound, Bsp2, LimitFact, MapFormat, MapLimit, Measure, Past};
+pub use tables::{LIMIT_SOURCES, SOURCES};
 
 use qc_builtins::table::BUILTINS;
 use qc_progs::opcode::Opcode;

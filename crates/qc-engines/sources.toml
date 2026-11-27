@@ -156,3 +156,172 @@ tables = [
   { kind = "ssqc", array = "extensionbuiltins", name = 0, function = 1, number = 3, signature = 4, absent = ["NULL", "PF_NotImplemented"], extension_array = "qcextensions" },
   { kind = "csqc", array = "extensionbuiltins", name = 0, function = 2, number = 3, signature = 4, absent = ["NULL", "PF_NotImplemented"], extension_array = "qcextensions" },
 ]
+
+# The map limits of each engine (ENGT-5): files of the same repositories at the same commits
+# as the builtin sources above, each naming the `source` whose repository, commit and license
+# it shares. Each limit is read from a quote of the file's code, its tokens with comments
+# dropped, which must occur in the file exactly once: the first number of `at` (the whole
+# quote when `at` is not given), taken as `reading` says. `past` is what the engine does with
+# a map past it, `applies` the formats the check reads (`bsp29` for a loader of BSP29 lumps
+# only; every format when not given), and `bsp2` a quote that shows the engine reads BSP2.
+# Pins recorded on 2026-11-26.
+
+[[limit_file]]
+source = "quakespasm"
+engine = "quakespasm"
+path = "Quake/quakedef.h"
+sha256 = "ba07e7c8f5af47452fde846099e764033fd52d7bf2e83a8ac284895a55cbb3b1"
+limits = [
+  { limit = "model_precaches", quote = "#define MAX_MODELS 4096", reading = "entries", past = "refused" },
+  { limit = "sound_precaches", quote = "#define MAX_SOUNDS 2048", reading = "entries", past = "refused" },
+  { limit = "light_styles", quote = "#define MAX_LIGHTSTYLES 64", reading = "number", past = "warned" },
+]
+
+[[limit_file]]
+source = "quakespasm"
+engine = "quakespasm"
+path = "Quake/host.c"
+sha256 = "607cb27beeb25e2d7822af730f3da0aea1851141ebcfcc7b3d05148c0e8ea6e1"
+limits = [
+  { limit = "edicts", quote = 'cvar_t max_edicts = {"max_edicts", "8192"', at = '"8192"', reading = "number", past = "refused" },
+]
+
+[[limit_file]]
+source = "quakespasm"
+engine = "quakespasm"
+path = "Quake/gl_model.c"
+sha256 = "68d164a29fbeaa102a2c77a6d7736fe7c0e302a35d6683c2e5c2fd4e8054d10f"
+bsp2 = "case BSP2VERSION_BSP2: bsp2 = 2;"
+limits = [
+  { limit = "face_extent", quote = "s->extents[i] > 2000)", reading = "number", past = "refused" },
+  { limit = "faces", quote = 'if (count > 32767 && !bsp2) Con_DWarning ("%i faces exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "nodes", quote = 'if (count > 32767) Con_DWarning ("%i nodes exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "leafs", quote = 'if (count > 32767) Host_Error ("Mod_LoadLeafs: %i leafs exceeds limit of 32767.", count);', at = "count > 32767", reading = "number", past = "refused", applies = "bsp29" },
+  { limit = "clipnodes", quote = 'if (count > 32767 && !bsp2) Con_DWarning ("%i clipnodes exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "marksurfaces", quote = 'if (count > 32767) Con_DWarning ("%i marksurfaces exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "visleafs", quote = 'if (out->visleafs > 8192) Con_DWarning ("%i visleafs exceeds standard limit of 8192.\n", out->visleafs);', at = "out->visleafs > 8192", reading = "number", past = "warned" },
+]
+
+[[limit_file]]
+source = "ironwail"
+engine = "ironwail"
+path = "Quake/quakedef.h"
+sha256 = "82fbd2e1337fb4968e9b6cab45be7294da24bcb998a0a1b42c716707d7de239c"
+limits = [
+  { limit = "model_precaches", quote = "#define MAX_MODELS 4096", reading = "entries", past = "refused" },
+  { limit = "sound_precaches", quote = "#define MAX_SOUNDS 2048", reading = "entries", past = "refused" },
+  { limit = "light_styles", quote = "#define MAX_LIGHTSTYLES 64", reading = "number", past = "warned" },
+]
+
+[[limit_file]]
+source = "ironwail"
+engine = "ironwail"
+path = "Quake/host.c"
+sha256 = "3a87428cb0a090dc1bc198e013126a7d6200b1831575b21bdd8db9efc8458738"
+limits = [
+  { limit = "edicts", quote = 'cvar_t max_edicts = {"max_edicts", "16384"', at = '"16384"', reading = "number", past = "refused" },
+]
+
+[[limit_file]]
+source = "ironwail"
+engine = "ironwail"
+path = "Quake/gl_model.c"
+sha256 = "20005b669b1fbf4f983e4913592a09cf40dc04a09c3dbcca62940ffde3bfb6a7"
+bsp2 = "case BSP2VERSION_BSP2: bsp2 = 2;"
+limits = [
+  { limit = "face_extent", quote = "s->extents[i] > 2000)", reading = "number", past = "refused" },
+  { limit = "faces", quote = 'if (count > 32767 && !bsp2) Con_DWarning ("%i faces exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "nodes", quote = 'if (count > 32767) Con_DWarning ("%i nodes exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "leafs", quote = 'if (count > 32767) Host_Error ("Mod_LoadLeafs: %i leafs exceeds limit of 32767.", count);', at = "count > 32767", reading = "number", past = "refused", applies = "bsp29" },
+  { limit = "clipnodes", quote = 'if (count > 32767 && !bsp2) Con_DWarning ("%i clipnodes exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "marksurfaces", quote = 'if (count > 32767) Con_DWarning ("%i marksurfaces exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "visleafs", quote = 'if (out->visleafs > 8192) Con_DWarning ("%i visleafs exceeds standard limit of 8192.\n", out->visleafs);', at = "out->visleafs > 8192", reading = "number", past = "warned" },
+]
+
+[[limit_file]]
+source = "vkquake"
+engine = "vkquake"
+path = "Quake/quakedef.h"
+sha256 = "2ee7cfbe17e32b3ce81cd4a290fda62d35d5fdf38740242a1e856a717013549a"
+limits = [
+  { limit = "model_precaches", quote = "#define MAX_MODELS 8192", reading = "entries", past = "refused" },
+  { limit = "sound_precaches", quote = "#define MAX_SOUNDS 2048", reading = "entries", past = "refused" },
+  { limit = "light_styles", quote = "#define MAX_LIGHTSTYLES 64", reading = "number", past = "warned" },
+]
+
+[[limit_file]]
+source = "vkquake"
+engine = "vkquake"
+path = "Quake/host.c"
+sha256 = "0e4327f08aeba5452ee8e2bf59a45f7a952e4873b2367b4fbb399847f3ed5c48"
+limits = [
+  { limit = "edicts", quote = 'cvar_t max_edicts = {"max_edicts", "32000"', at = '"32000"', reading = "number", past = "refused" },
+]
+
+[[limit_file]]
+source = "vkquake"
+engine = "vkquake"
+path = "Quake/gl_model.c"
+sha256 = "9d2469a131dc50e43ea769ab91484824a858291f4d10ae86ae8b883dc8c4d197"
+bsp2 = "case BSP2VERSION_BSP2: bsp2 = 2;"
+limits = [
+  { limit = "face_extent", quote = "s->extents[i] > 2000)", reading = "number", past = "refused" },
+  { limit = "faces", quote = 'if (count > 32767 && !bsp2) Con_DWarning ("%i faces exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "nodes", quote = 'if (count > 32767) Con_DWarning ("%i nodes exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "leafs", quote = 'if (count > 32767) Host_Error ("Mod_LoadLeafs: %i leafs exceeds limit of 32767.", count);', at = "count > 32767", reading = "number", past = "refused", applies = "bsp29" },
+  { limit = "clipnodes", quote = 'if (count > 32767 && !bsp2) Con_DWarning ("%i clipnodes exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "marksurfaces", quote = 'if (count > 32767) Con_DWarning ("%i marksurfaces exceeds standard limit of 32767.\n", count);', at = "count > 32767", reading = "number", past = "warned", applies = "bsp29" },
+  { limit = "visleafs", quote = 'if (out->visleafs > 8192) Con_DWarning ("%i visleafs exceeds standard limit of 8192.\n", out->visleafs);', at = "out->visleafs > 8192", reading = "number", past = "warned" },
+]
+
+[[limit_file]]
+source = "darkplaces"
+engine = "darkplaces"
+path = "qdefs.h"
+sha256 = "92048b2c48e538ded09a9e5d84ffc690ec1da9e6d6391789af84f84413686b31"
+limits = [
+  { limit = "edicts", quote = "#define MAX_EDICTS 32768", reading = "number", past = "refused" },
+  { limit = "model_precaches", quote = "#define MAX_MODELS 8192", reading = "entries", past = "refused" },
+  { limit = "sound_precaches", quote = "#define MAX_SOUNDS 4096", reading = "entries", past = "refused" },
+  { limit = "light_styles", quote = "#define MAX_LIGHTSTYLES 256", reading = "number", past = "refused" },
+]
+
+[[limit_file]]
+source = "darkplaces"
+engine = "darkplaces"
+path = "model_brush.c"
+sha256 = "ffae2201a9bc6db3c5cf78c94a70fa4cdbef78a2dea5f8c86ee015073a19d900"
+bsp2 = "void Mod_BSP2_Load("
+limits = [
+  { limit = "face_extent", quote = 'loadmodel->brushq1.nmaplightdata + (lightmapoffset * 3); } if (!(surface->lightmapinfo->texinfo->q1flags & TEX_SPECIAL) || surface->lightmapinfo->samples) { if (ssize > 256 || tsize > 256) Host_Error("Bad surface extents");', at = "ssize > 256", reading = "luxels", past = "refused" },
+]
+
+[[limit_file]]
+source = "fteqw"
+engine = "fteqw"
+path = "engine/common/bothdefs.h"
+sha256 = "42286821361025dedbdb537327243c22e5c7bb74eb142fa8e8a83b2d5069556b"
+limits = [
+  { limit = "model_precaches", quote = "#define MAX_PRECACHE_MODELS 16384", reading = "entries", past = "refused" },
+  { limit = "sound_precaches", quote = "#define MAX_PRECACHE_SOUNDS 4096", reading = "entries", past = "refused" },
+  { limit = "light_styles", quote = "#ifdef Q1BSPS\n#define lightstyleindex_t unsigned short", at = "#define lightstyleindex_t unsigned short", reading = "unsigned_short", past = "warned" },
+]
+
+[[limit_file]]
+source = "fteqw"
+engine = "fteqw"
+path = "engine/server/pr_cmds.c"
+sha256 = "2bd90c0efb94e35247cde061d8d1d2f06d9d2fea4370fb0b0aa499dac544ff59"
+limits = [
+  { limit = "edicts", quote = 'cvar_t pr_maxedicts = CVARAFD("pr_maxedicts", "131072"', at = '"131072"', reading = "number", past = "refused" },
+]
+
+[[limit_file]]
+source = "fteqw"
+engine = "fteqw"
+path = "engine/gl/gl_model.c"
+sha256 = "31d1023442fe965f29efb61196ec0d2e423f1e304e37b70e3fa621a3921d67ea"
+bsp2 = '"Quake1 BSP2 Map (bsp)"'
+limits = [
+  { limit = "clipnodes", quote = "if (count > (1u<<16)) {", reading = "shift", past = "refused", applies = "bsp29" },
+]

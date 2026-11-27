@@ -3485,6 +3485,7 @@ dependencies = [
  "qc-sema",
  "qc-syntax",
  "qc-types",
+ "qs-bsp",
 ]
 
 [[package]]

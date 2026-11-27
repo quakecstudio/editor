@@ -16,6 +16,7 @@ qc-progs = { workspace = true }
 qc-project = { workspace = true }
 qc-sema = { workspace = true }
 qc-syntax = { workspace = true }
+qs-bsp = { workspace = true }
 
 [dev-dependencies]
 qc-types = { workspace = true }
