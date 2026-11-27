@@ -179,12 +179,8 @@ impl EdictCapacity {
 
     /// An array of `edicts`, at least id's [`LIMIT_MAX_EDICTS`] (EDICT-1.10).
     #[must_use]
-    pub const fn at_least_ids(edicts: usize) -> Self {
-        if edicts < LIMIT_MAX_EDICTS {
-            Self::ID
-        } else {
-            Self(edicts)
-        }
+    pub fn at_least_ids(edicts: usize) -> Self {
+        Self(edicts.max(LIMIT_MAX_EDICTS))
     }
 
     /// The edicts.
