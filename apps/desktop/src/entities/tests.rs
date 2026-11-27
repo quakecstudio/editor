@@ -6,10 +6,11 @@
 )]
 
 use eframe::egui::accesskit::Role;
-use eframe::egui::{Key, Vec2};
+use eframe::egui::{self, Key, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use qs_workbench::entities::Entities;
+use qs_workbench::{FileRange, Span, Symbol, SymbolKind};
 use serde_json::json;
 
 use super::{Edict, EntityAction, PlayState, Properties, Shown, properties};
@@ -50,6 +51,7 @@ fn a_paused_fields_box_shows_the_games_value() {
 /// What the drawn panel is given and keeps.
 struct Drawn {
     entities: Entities,
+    symbols: Vec<Symbol>,
     game: PlayState,
     panel: Properties,
     asked: Option<EntityAction>,
@@ -74,6 +76,7 @@ fn drawn() -> Harness<'static, Drawn> {
     let theme = Theme::load(Mode::Dark).unwrap();
     let state = Drawn {
         entities: grunt(30.0),
+        symbols: Vec::new(),
         game: PlayState::Paused,
         panel: Properties::default(),
         asked: None,
@@ -87,6 +90,7 @@ fn drawn() -> Harness<'static, Drawn> {
                     entities: &drawn.entities,
                     game: drawn.game,
                     pending: &|_, _| None,
+                    symbols: &drawn.symbols,
                 };
                 if let Some(asked) = properties(ui, &theme, &shown, &mut drawn.panel) {
                     drawn.asked = Some(asked);
@@ -172,4 +176,91 @@ fn the_lock_says_why_fields_are_read_only() {
     harness.state_mut().game = PlayState::Paused;
     harness.run();
     assert!(harness.query_by_label(why).is_none());
+}
+
+/// A definition of the project, `kind`, named `name`, in `file`.
+fn symbol(name: &str, kind: SymbolKind, file: &str) -> Symbol {
+    Symbol {
+        name: name.to_owned(),
+        kind,
+        range: FileRange {
+            path: format!("/mod/src/{file}").into(),
+            span: Span::new(0, 0),
+        },
+    }
+}
+
+// No spec statement: UI-24, BRIDGE-5.1: while paused an entity field offers the edicts in use
+// as the panel writes them and a function field the project's functions with their files; one
+// taken is set at once, and a value typed is still set on Enter
+#[test]
+fn entity_and_function_fields_offer_what_they_may_hold() {
+    let mut harness = drawn();
+    let state = harness.state_mut();
+    state.entities.replace(&json!({ "entities": [
+        { "edict": 0, "classname": "worldspawn" },
+        { "edict": 1, "classname": "player" },
+        { "edict": 7, "classname": "monster_army" },
+    ] }));
+    state.entities.select(&json!({
+        "edict": 7,
+        "classname": "monster_army",
+        "fields": [
+            { "name": "enemy", "value": { "type": "entity", "value": 0 } },
+            { "name": "think", "value": { "type": "function", "value": "army_stand1" } },
+        ],
+    }));
+    state.symbols = vec![
+        symbol("army_stand1", SymbolKind::Function, "soldier.qc"),
+        symbol("army_run1", SymbolKind::Function, "soldier.qc"),
+        symbol("health", SymbolKind::Field, "defs.qc"),
+    ];
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::TextInput, "enemy")
+        .click();
+    harness.run();
+    harness.get_by_label("worldspawn #0");
+    harness.get_by_label("monster_army #7");
+    harness.get_by_label("player #1").click();
+    harness.run();
+    assert_eq!(
+        harness.state().asked,
+        Some(EntityAction::SetField {
+            field: "enemy".to_owned(),
+            value: "player #1".to_owned(),
+        })
+    );
+    harness
+        .get_by_role_and_label(Role::TextInput, "think")
+        .click();
+    harness.run();
+    assert!(harness.query_by_label("health, defs.qc").is_none());
+    harness.get_by_label("army_run1, soldier.qc").click();
+    harness.run();
+    assert_eq!(
+        harness.state().asked,
+        Some(EntityAction::SetField {
+            field: "think".to_owned(),
+            value: "army_run1".to_owned(),
+        })
+    );
+    // Typed, a value outside the list is still set on Enter.
+    harness
+        .get_by_role_and_label(Role::TextInput, "think")
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.event(egui::Event::Text("SUB_Null".to_owned()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(
+        harness.state().asked,
+        Some(EntityAction::SetField {
+            field: "think".to_owned(),
+            value: "SUB_Null".to_owned(),
+        })
+    );
 }

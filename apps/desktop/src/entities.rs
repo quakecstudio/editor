@@ -9,11 +9,16 @@ use std::collections::BTreeMap;
 use eframe::egui::{self, RichText, Ui};
 use qs_workbench::entities::Entities;
 use qs_workbench::{PlayState, Preview};
+use qs_workbench::{Symbol, SymbolKind};
 
 use crate::icons::{self, Icon, Toggled};
 use crate::strings::Text;
+use crate::suggest::{Offer, Suggest, Taken};
 use crate::theme::{Theme, Token};
 use qs_workbench::ids::Edict;
+
+/// The width of an entity or function field's box, in points.
+const OFFER_WIDTH: f32 = 180.0;
 
 /// What a click in the outliner or the Properties panel asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -184,21 +189,66 @@ pub(crate) struct Shown<'a> {
     pub(crate) entities: &'a Entities,
     pub(crate) game: PlayState,
     pub(crate) pending: &'a dyn Fn(Edict, &str) -> Option<String>,
+    /// The project's definitions, whose functions a function field offers.
+    pub(crate) symbols: &'a [Symbol],
 }
 
 impl<'a> Shown<'a> {
-    /// What the panel shows of `preview`'s game, `pending` its lookup of a typed value.
+    /// What the panel shows of `preview`'s game, `pending` its lookup of a typed value, with
+    /// the project's definitions `symbols`.
     pub(crate) fn of(
         preview: &'a Preview,
         pending: &'a dyn Fn(Edict, &str) -> Option<String>,
+        symbols: &'a [Symbol],
     ) -> Self {
         Self {
             entities: preview.entities(),
             game: preview.state(),
             pending,
+            symbols,
+        }
+    }
+
+    /// What a field of `kind` offers while paused (UI-24): an entity field the edicts in use
+    /// as the panel writes them, `monster_army #7`; a function field the project's functions,
+    /// each with its file; nothing for a field of another kind, whose values are typed.
+    fn offers(&self, kind: &str) -> Option<Vec<Offer>> {
+        match kind {
+            ENTITY_KIND => Some(
+                self.entities
+                    .groups("")
+                    .into_iter()
+                    .flat_map(|group| {
+                        group.edicts.into_iter().map(move |edict| Offer {
+                            name: format!("{} #{edict}", group.classname),
+                            detail: String::new(),
+                        })
+                    })
+                    .collect(),
+            ),
+            FUNCTION_KIND => Some(
+                self.symbols
+                    .iter()
+                    .filter(|symbol| symbol.kind == SymbolKind::Function)
+                    .map(|symbol| Offer {
+                        name: symbol.name.clone(),
+                        detail: symbol
+                            .range
+                            .path
+                            .file_name()
+                            .map_or_default(|name| name.to_string_lossy().into_owned()),
+                    })
+                    .collect(),
+            ),
+            _ => None,
         }
     }
 }
+
+/// The kind of a field that holds an entity (BRIDGE-5.1).
+const ENTITY_KIND: &str = "entity";
+/// The kind of a field that holds a function (BRIDGE-5.1).
+const FUNCTION_KIND: &str = "function";
 
 /// The selected edict's fields: read only while the game runs, editable while it is paused,
 /// a function's name opening its definition.
@@ -212,6 +262,7 @@ pub(crate) fn properties(
         entities,
         game,
         pending,
+        symbols: _,
     } = *shown;
     let Some(selected) = entities.selected() else {
         state.follow(None, game);
@@ -241,6 +292,17 @@ pub(crate) fn properties(
             Icon::Lock.sign(ui, muted, Text::ReadOnlyWhilePlaying);
         }
     });
+    // The offers of each kind of field the edict has, made once a frame while paused.
+    let mut offers: BTreeMap<&str, Vec<Offer>> = BTreeMap::new();
+    if paused {
+        for field in &selected.fields {
+            if !offers.contains_key(field.kind())
+                && let Some(made) = shown.offers(field.kind())
+            {
+                offers.insert(field.kind(), made);
+            }
+        }
+    }
     egui::ScrollArea::vertical()
         .id_salt(Text::Properties.get())
         .show(ui, |ui| {
@@ -254,18 +316,36 @@ pub(crate) fn properties(
                             .unwrap_or_else(|| entities.show(&field.value));
                         if paused {
                             let text = state.text(&field.name, &shown);
-                            let response = ui.add(
-                                egui::TextEdit::singleline(text)
-                                    .code_editor()
-                                    .desired_width(f32::INFINITY),
-                            );
-                            let response = response.accessible_name(&field.name);
-                            let entered = response.lost_focus()
-                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                            if entered && *text != shown {
+                            let set = match offers.get(field.kind()) {
+                                Some(offers) => {
+                                    let field = Suggest {
+                                        name: &field.name,
+                                        offers,
+                                        width: OFFER_WIDTH,
+                                    };
+                                    let entered = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                    match field.take(ui, theme, text).1 {
+                                        Some(Taken::Offer(value)) => Some(value),
+                                        Some(Taken::Typed(value)) if entered => Some(value),
+                                        Some(Taken::Typed(_)) | None => None,
+                                    }
+                                }
+                                None => {
+                                    let response = ui.add(
+                                        egui::TextEdit::singleline(text)
+                                            .code_editor()
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                    let response = response.accessible_name(&field.name);
+                                    let entered = response.lost_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                    entered.then(|| text.clone())
+                                }
+                            };
+                            if let Some(value) = set.filter(|value| *value != shown) {
                                 action = Some(EntityAction::SetField {
                                     field: field.name.clone(),
-                                    value: text.clone(),
+                                    value,
                                 });
                             }
                         } else if field.is_function() && !shown.is_empty() {
