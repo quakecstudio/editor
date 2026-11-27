@@ -675,8 +675,8 @@ fn a_typedef_named_as_another_type_is_refused() {
 
 // spec FTEF-19.85: an enum's base is read before the enum's type is made, so a base naming the
 // enum is no type, alone, in a field, as a function's return or as a strict enum's; and a base
-// leading back to the enum through another enum's, or an accessor's through an enum's, makes no
-// type the model follows forever (L-81)
+// leading back to the enum through another enum's, or an accessor's or a typedef's through an
+// enum's, makes no type the model follows forever (L-81)
 #[test]
 fn an_enum_base_naming_the_enum_is_no_type() {
     for source in [
@@ -686,8 +686,17 @@ fn an_enum_base_naming_the_enum_is_no_type() {
         "enum E : F { A }; enum F : E { B };",
         "enum E : E() { A };",
         "enum E : A { x }; accessor A : E; void() g = { local A a; a = a; };",
+        "enum E : T { A }; typedef E T; void() g = { local T a; a = a; };",
     ] {
         assert_eq!(errors(source, &[]), [Code::E0203], "{source}");
+    }
+    // A name already a type is read as the legacy base, and fails at the `:` (FTEF-19.10).
+    for source in [
+        "enum E { A }; enum E : E { B };",
+        "enum E { A }; enum E : float { B };",
+        "typedef float E; enum E : float { B };",
+    ] {
+        assert_eq!(errors(source, &[]), [Code::E0204], "{source}");
     }
     assert_eq!(errors("enum F { B }; enum E : F { A };", &[]), []);
 }

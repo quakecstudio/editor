@@ -185,8 +185,7 @@ proptest! {
 
 // spec FTEF-19.85: the token soup that overflowed the stack on Linux (L-81, found from proptest
 // seed 2136 of a run of `every_location_is_inside_its_file`): an enum named `enum`'s base reads
-// back to itself through the includes; every location stays inside its file, on a stack the
-// size the property test's cases fit in
+// back to itself through the includes; every location stays inside its file, on a small stack
 #[test]
 fn an_enum_based_on_itself_keeps_locations_inside() {
     let files = vec![
@@ -209,6 +208,6 @@ fn an_enum_based_on_itself_keeps_locations_inside() {
     checked.unwrap();
 }
 
-/// A stack the property test's ordinary cases fit in, so a recursion with no bound fails at
-/// once rather than after the default stack (L-81).
-const SMALL_STACK: usize = 96 * 1024;
+/// A stack with room for any build's frames, instrumented or not, that a recursion with no
+/// bound still overflows at once rather than after the default stack (L-81).
+const SMALL_STACK: usize = 1024 * 1024;

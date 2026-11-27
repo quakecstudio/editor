@@ -112,6 +112,10 @@ impl Resolver<'_> {
                         self.report(Code::E0219, location, message);
                     }
                     Some(_) => {}
+                    // FTEF-19.85: a typedef whose type leads back to it through an enum's or
+                    // accessor's base makes no type of it; the name that was no type yet was
+                    // reported where that base is written.
+                    None if self.base_reaches(&ty, &decl.name) => {}
                     None => {
                         self.typedefs.insert(decl.name.clone(), ty);
                     }
@@ -445,8 +449,8 @@ impl Resolver<'_> {
         }
     }
 
-    /// Whether `base`, or a base it leads to through the enums', strict enums' and accessors'
-    /// bases and the typedefs, names the type `name` (FTEF-19.85): a base that would make
+    /// Whether `base`, or a base it leads to through the typedefs and the enums', strict enums'
+    /// and accessors' bases, names the type `name` (FTEF-19.85): a base that would make
     /// `name` its own base, which FTEQCC cannot write, since a type's base is a type made
     /// before it. Each named type is followed once, so the walk ends whatever the tables hold.
     pub(in crate::resolve) fn base_reaches(&self, base: &Type, name: &str) -> bool {

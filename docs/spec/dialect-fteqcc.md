@@ -4212,11 +4212,14 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   is not a type` (`QCC_PR_ParseError (ERR_NOTATYPE, "\"%s\" is not a type", name)`), as
   `accessor A : A;` is (FTEF-10.6); and the new type copies its base's kind, so no chain of
   enums', strict enums' and accessors' bases leads back to the type it starts from. The model
-  records no base that would lead back to the type being declared, directly or through other
-  types' bases (`enum a : c { b }; enum c : a { d };`), so following a type to its basic type
-  always ends (L-81). Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseEnum`; `engine/qclib/qcc_pr_lex.c`,
-  `QCC_PR_ParseType`.
+  records no base, nor typedef, that would lead back to the type being declared, directly or
+  through other types' bases (`enum a : c { b }; enum c : a { d };`, `enum E : T { A }; typedef
+  E T;`), so following a type to its basic type always ends (L-81). An enum whose name is
+  already a type is read with that type as its legacy base (`QCC_PR_ParseType(false, true,
+  false)`, FTEF-19.10), so a `:` after the name is where `QCC_PR_Expect("{")` fails: `enum E { A
+  }; enum E : float { B };` is "expected {, found :". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`; `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseType`.
 
 ## FTEF-20 Keywords
 
