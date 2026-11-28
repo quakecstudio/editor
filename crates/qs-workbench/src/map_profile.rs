@@ -21,6 +21,7 @@ use qs_map_vis::{Mode, Tool, Vis, VisError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::preview::game_options::GameOptions;
 use crate::preview::{GameStart, HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map_edit::MapReport;
@@ -766,7 +767,12 @@ fn run_task<C: HasPreview>(
             // An `.ent` of an earlier compile would people this one with its entities.
             remove_stale(&maps.join(format!("{name}.ent")))?;
             preview
-                .play_built(built, Some(name), GameStart::Running)
+                .play_built(
+                    built,
+                    Some(name),
+                    GameStart::Running,
+                    GameOptions::default(),
+                )
                 .map_err(TaskError::Preview)?;
             Ok(None)
         }

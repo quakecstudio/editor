@@ -533,6 +533,7 @@ fn with_no_eye_a_map_plays_from_its_own_start() {
         angles,
         region: None,
         start: GameStart::default(),
+        game: crate::GameOptions::default(),
     };
     let world = "{\n\"classname\" \"worldspawn\"\n}\n";
     let starts = format!(

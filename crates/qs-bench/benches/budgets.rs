@@ -456,7 +456,11 @@ fn save_to_game(group: &mut BenchmarkGroup<'_, WallTime>) {
         extra: vec!["--nosound".to_owned()],
     });
     preview
-        .play(&mut workbench, Some(MAP.to_owned()))
+        .play(
+            &mut workbench,
+            Some(MAP.to_owned()),
+            qs_workbench::GameOptions::default(),
+        )
         .expect("the game plays in the windowed host");
     let mut turns = variants.iter().cycle();
     group.bench_function("save_to_game", |bencher| {

@@ -71,6 +71,9 @@ use qs_map_edit::{
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
+pub use crate::preview::game_options::{
+    GameMode, GameOptions, GameOptionsError, MAX_CLIENTS, MAX_LOCAL_PLAYERS,
+};
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
     ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WATCH_NAMES, WatchName,

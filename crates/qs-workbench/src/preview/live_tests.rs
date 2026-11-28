@@ -521,13 +521,19 @@ fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
         })
     };
     let mut hidden = Preview::with_embedded(config(), window(false));
-    let error = hidden.play(&mut workbench, None).unwrap_err();
+    let error = hidden
+        .play(&mut workbench, None, crate::GameOptions::default())
+        .unwrap_err();
     assert!(matches!(error, PreviewError::Launch(_)), "{error}");
     assert!(counts.borrow().0.is_empty(), "the window was not asked");
 
     let mut shown = Preview::with_embedded(config(), window(true));
     shown
-        .play(&mut workbench, Some("start".to_owned()))
+        .play(
+            &mut workbench,
+            Some("start".to_owned()),
+            crate::GameOptions::default(),
+        )
         .unwrap();
     assert_eq!(shown.state(), PlayState::Playing);
     assert!(shown.is_embedded());
@@ -546,7 +552,12 @@ fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
     // from the start
     let built = workbench.built_program().unwrap();
     shown
-        .play_built(built, Some("start".to_owned()), GameStart::Paused)
+        .play_built(
+            built,
+            Some("start".to_owned()),
+            GameStart::Paused,
+            crate::GameOptions::default(),
+        )
         .unwrap();
     assert_eq!(shown.state(), PlayState::Paused);
     assert_eq!(counts.borrow().0[1].extra, ["--nosound", "--paused"]);

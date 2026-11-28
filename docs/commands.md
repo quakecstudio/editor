@@ -6771,6 +6771,31 @@ Parameters:
 ```json
 {
   "$defs": {
+    "BotSkillParam": {
+      "description": "How well a bot plays (BOT-1.4).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "Skill 0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "Skill 1.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "Skill 2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "Skill 3.",
+          "type": "string"
+        }
+      ]
+    },
     "CompileRegion": {
       "description": "The part of the open map a compile takes (MAP-16), when it is not the whole map.",
       "oneOf": [
@@ -6837,6 +6862,66 @@ Parameters:
       "minimum": 0,
       "type": "integer"
     },
+    "GameMode": {
+      "description": "Which game a Play starts.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "One player and no bots, as the game has always played.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Coop: `coop` 1, the players on the same side against the map's monsters.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch` 1, every player against every other.",
+          "type": "string"
+        }
+      ]
+    },
+    "GameOptions": {
+      "additionalProperties": false,
+      "description": "What a Play plays: the game, the players on this machine, the bots and how well they play.\nThe default is single player with no bots.",
+      "properties": {
+        "bot_skill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BotSkillParam"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How well the bots play; the game's `skill` setting when absent."
+        },
+        "bots": {
+          "default": 0,
+          "description": "The bots brought in as the game starts, which play any mod through its own QuakeC\n(ADR-0031); none when absent. Players and bots are 16 at most.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/GameMode",
+          "default": "single",
+          "description": "Single player, coop or deathmatch; single player when absent."
+        },
+        "players": {
+          "default": 1,
+          "description": "The players on this machine, 1 to 4; each after the first plays in a window of its own.\nOne when absent.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "GameStart": {
       "description": "How a game starts once its map has loaded.",
       "oneOf": [
@@ -6884,6 +6969,16 @@ Parameters:
         "array",
         "null"
       ]
+    },
+    "game": {
+      "$ref": "#/$defs/GameOptions",
+      "default": {
+        "bot_skill": null,
+        "bots": 0,
+        "mode": "single",
+        "players": 1
+      },
+      "description": "The game: single player, coop or deathmatch, the players on this machine and the bots;\nsingle player with no bots when absent. The player put at the eye is the first."
     },
     "region": {
       "anyOf": [
@@ -8755,10 +8850,107 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "BotSkillParam": {
+      "description": "How well a bot plays (BOT-1.4).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "Skill 0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "Skill 1.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "Skill 2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "Skill 3.",
+          "type": "string"
+        }
+      ]
+    },
+    "GameMode": {
+      "description": "Which game a Play starts.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "One player and no bots, as the game has always played.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Coop: `coop` 1, the players on the same side against the map's monsters.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch` 1, every player against every other.",
+          "type": "string"
+        }
+      ]
+    },
+    "GameOptions": {
+      "additionalProperties": false,
+      "description": "What a Play plays: the game, the players on this machine, the bots and how well they play.\nThe default is single player with no bots.",
+      "properties": {
+        "bot_skill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BotSkillParam"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How well the bots play; the game's `skill` setting when absent."
+        },
+        "bots": {
+          "default": 0,
+          "description": "The bots brought in as the game starts, which play any mod through its own QuakeC\n(ADR-0031); none when absent. Players and bots are 16 at most.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/GameMode",
+          "default": "single",
+          "description": "Single player, coop or deathmatch; single player when absent."
+        },
+        "players": {
+          "default": 1,
+          "description": "The players on this machine, 1 to 4; each after the first plays in a window of its own.\nOne when absent.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `preview.play`.",
   "properties": {
+    "game": {
+      "$ref": "#/$defs/GameOptions",
+      "default": {
+        "bot_skill": null,
+        "bots": 0,
+        "mode": "single",
+        "players": 1
+      },
+      "description": "The game: single player, coop or deathmatch, the players on this machine and the bots;\nsingle player with no bots when absent."
+    },
     "map": {
       "default": null,
       "description": "The map to start on; the host's own first map when absent.",
