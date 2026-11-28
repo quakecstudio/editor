@@ -16,7 +16,7 @@ const FRAME: f64 = 1.0 / 72.0;
 /// Whether the client's messages since the last call hold `text`.
 fn printed(run: &mut Running, text: &[u8]) -> bool {
     run.world
-        .take_messages()
+        .take_messages(crate::ClientId::FIRST)
         .packets
         .iter()
         .any(|packet| packet.windows(text.len()).any(|w| w == text))
@@ -62,7 +62,8 @@ fn gravity_rounds_once() {
 fn the_punch_fades_in_double() {
     let put = "setorigin(self, '0 0 200'); self.punchangle = '1.4444445 0 0';";
     let mut run = player(&ledge(), put, "", "");
-    run.world.set_command(UserCmd::default());
+    run.world
+        .set_command(crate::ClientId::FIRST, UserCmd::default());
     run.frames(1, FRAME).unwrap();
     let punch = run.world.vector(P, "punchangle")[0];
     // 1.4444445 - 10/72 in double rounds to 1.3055557; in float it would be 1.3055556.
@@ -77,24 +78,24 @@ fn the_cheats_toggle_and_say_so() {
     let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
     let flags = |run: &Running| float_to_int(run.world.float(P, "flags"));
     let before = flags(&run);
-    run.world.client_command("GOD");
+    run.world.client_command(crate::ClientId::FIRST, "GOD");
     assert_eq!(flags(&run), before, "not until the frame");
     run.frames(1, FRAME).unwrap();
     assert_eq!(flags(&run), before | 64);
     assert!(printed(&mut run, b"godmode ON\n"));
-    run.world.client_command("god");
-    run.world.client_command("notarget");
+    run.world.client_command(crate::ClientId::FIRST, "god");
+    run.world.client_command(crate::ClientId::FIRST, "notarget");
     run.frames(1, FRAME).unwrap();
     assert_eq!(flags(&run), (before & !64) | 128);
     assert!(printed(&mut run, b"godmode OFF\n"));
-    run.world.client_command("noclip");
+    run.world.client_command(crate::ClientId::FIRST, "noclip");
     run.frames(1, FRAME).unwrap();
     assert_eq!(run.world.float(P, "movetype"), 8.0);
     assert!(printed(&mut run, b"noclip ON\n"));
-    run.world.client_command("fly");
+    run.world.client_command(crate::ClientId::FIRST, "fly");
     run.frames(1, FRAME).unwrap();
     assert_eq!(run.world.float(P, "movetype"), 5.0);
-    run.world.client_command("fly");
+    run.world.client_command(crate::ClientId::FIRST, "fly");
     run.frames(1, FRAME).unwrap();
     assert_eq!(run.world.float(P, "movetype"), 3.0);
     assert!(printed(&mut run, b"flymode OFF\n"));
@@ -113,7 +114,7 @@ fn deathmatch_and_unknown_commands_change_nothing() {
     );
     let flags = run.world.float(P, "flags");
     for command in ["god", "noclip", "give h 5", "godx", ""] {
-        run.world.client_command(command);
+        run.world.client_command(crate::ClientId::FIRST, command);
     }
     run.frames(1, FRAME).unwrap();
     assert_eq!(run.world.float(P, "flags"), flags);
@@ -121,7 +122,7 @@ fn deathmatch_and_unknown_commands_change_nothing() {
     assert_eq!(run.world.float(P, "health"), 100.0);
     let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
     for command in [" god", "noclip;god", "sv_gravity 5"] {
-        run.world.client_command(command);
+        run.world.client_command(crate::ClientId::FIRST, command);
     }
     run.frames(1, FRAME).unwrap();
     assert_eq!(
@@ -153,7 +154,7 @@ fn give_gives() {
         "give c 9",
         "give 3",
     ] {
-        run.world.client_command(command);
+        run.world.client_command(crate::ClientId::FIRST, command);
     }
     run.frames(1, FRAME).unwrap();
     let w = &run.world;
@@ -174,8 +175,10 @@ fn give_gives() {
 #[test]
 fn name_and_color_change_the_player() {
     let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
-    run.world.client_command("name abcdefghijklmnopqrst");
-    run.world.client_command("color 3 20");
+    run.world
+        .client_command(crate::ClientId::FIRST, "name abcdefghijklmnopqrst");
+    run.world
+        .client_command(crate::ClientId::FIRST, "color 3 20");
     run.frames(1, FRAME).unwrap();
     let progs = qc_progs::Progs::read(&run.progs).unwrap();
     let fields = run.world.edict_fields(&progs, P).unwrap();
@@ -192,13 +195,13 @@ fn name_and_color_change_the_player() {
 #[test]
 fn pause_stops_the_game() {
     let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
-    run.world.client_command("pause");
+    run.world.client_command(crate::ClientId::FIRST, "pause");
     run.frames(1, FRAME).unwrap();
     let time = run.world.time();
     assert!(printed(&mut run, b"player paused the game\n"));
     run.frames(3, FRAME).unwrap();
     assert_eq!(run.world.time(), time, "the clock stands");
-    run.world.client_command("pause");
+    run.world.client_command(crate::ClientId::FIRST, "pause");
     run.frames(1, FRAME).unwrap();
     assert!(run.world.time() > time);
 }
@@ -233,20 +236,20 @@ fn commands_before_the_spawn_are_kept() {
         Vec::new(),
         crate::LoadOptions::default(),
     );
-    run.world.client_command("god");
+    run.world.client_command(crate::ClientId::FIRST, "god");
     run.frames(1, FRAME).unwrap();
     assert!(
         !printed(&mut run, b"godmode"),
         "not read before the client connects"
     );
-    run.world.connect_next_frame();
-    run.world.client_command("prespawn");
+    run.world.connect_next_frame(crate::ClientId::FIRST);
+    run.world.client_command(crate::ClientId::FIRST, "prespawn");
     run.frames(1, FRAME).unwrap();
     assert!(
         printed(&mut run, b"godmode ON\n"),
         "god, sent before the client connected, was read once it was"
     );
-    run.world.client_command("spawn ");
+    run.world.client_command(crate::ClientId::FIRST, "spawn ");
     run.frames(1, FRAME).unwrap();
     assert_eq!(run.world.float(P, "frags"), 7.0, "spawned");
     // Host_Spawn_f clears the edict, so the godmode set before is gone.
@@ -258,7 +261,7 @@ fn commands_before_the_spawn_are_kept() {
 fn kill_runs_client_kill() {
     let more = "void() ClientKill = { self.frags = self.frags + 1; };\n";
     let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", more);
-    run.world.client_command("kill");
+    run.world.client_command(crate::ClientId::FIRST, "kill");
     run.frames(1, FRAME).unwrap();
     assert_eq!(run.world.float(P, "frags"), 1.0);
     let mut dead = player(
@@ -267,7 +270,7 @@ fn kill_runs_client_kill() {
         "",
         more,
     );
-    dead.world.client_command("kill");
+    dead.world.client_command(crate::ClientId::FIRST, "kill");
     dead.frames(1, FRAME).unwrap();
     assert_eq!(dead.world.float(P, "frags"), 0.0);
     assert!(printed(&mut dead, b"Can't suicide -- allready dead!\n"));
@@ -280,7 +283,7 @@ fn a_spawned_client_cannot_spawn_again() {
     let mut run = player(&ledge(), put, "", "");
     let frags = run.world.float(P, "frags");
     for command in ["prespawn", "spawn ", "say hello"] {
-        run.world.client_command(command);
+        run.world.client_command(crate::ClientId::FIRST, command);
     }
     run.frames(1, FRAME).unwrap();
     assert_eq!(

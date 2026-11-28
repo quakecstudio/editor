@@ -250,7 +250,7 @@ impl Game {
             Err(WorldError::Spawn(LoadError::Run(error)))
                 if error.kind == ErrorKind::Interrupted =>
             {
-                drop(self.world.take_messages());
+                drop(self.world.take_messages(qs_sim::ClientId::FIRST));
                 self.stopped_at(progs, error.trace);
                 FrameEnd::Stopped
             }
@@ -277,7 +277,7 @@ impl Game {
         {
             // The half frame's messages never reach the client: the frame replays from its
             // snapshot, which writes them again (WORLD-9.2).
-            drop(self.world.take_messages());
+            drop(self.world.take_messages(qs_sim::ClientId::FIRST));
             self.stopped_at(progs, error.trace.clone());
             return FrameEnd::Stopped;
         }
@@ -446,7 +446,7 @@ impl HeldSpawn {
             Err(WorldError::Spawn(LoadError::Run(error)))
                 if error.kind == ErrorKind::Interrupted =>
             {
-                drop(world.take_messages());
+                drop(world.take_messages(qs_sim::ClientId::FIRST));
                 Ok(Some(Self {
                     prepared,
                     stack: Some(error.trace),

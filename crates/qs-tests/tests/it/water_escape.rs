@@ -216,17 +216,20 @@ fn climbs_out(liquid: &str, rim: f64) -> bool {
     .unwrap();
     world.settle(&progs).unwrap();
     world.connect(&progs).unwrap();
-    world.set_command(UserCmd {
-        angles: [0.0, 180.0, 0.0],
-        forward: 320.0,
-        buttons: 2,
-        ..UserCmd::default()
-    });
+    world.set_command(
+        qs_sim::ClientId::FIRST,
+        UserCmd {
+            angles: [0.0, 180.0, 0.0],
+            forward: 320.0,
+            buttons: 2,
+            ..UserCmd::default()
+        },
+    );
     // On the ground the origin is 24 above it and the eye 22 above that.
     let standing = 24.0 + EYE - 1.0;
     for _ in 0..FRAMES {
         world.frame(&progs, FRAME).unwrap();
-        let (eye, _) = world.player_view().unwrap();
+        let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
         if eye[0] < -16.0 && eye[2] > standing {
             return true;
         }

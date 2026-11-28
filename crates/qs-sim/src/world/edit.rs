@@ -11,6 +11,7 @@ use qc_vm::ServerState;
 
 use super::{CLIENT, SpawnWatch, Spawner, World};
 use crate::builtins::SimCall;
+use crate::clients::ClientId;
 use crate::collision::{MoveKind, test_entity_position};
 use crate::spawn::{EdictPlace, SpawnHost, apply_key};
 use crate::world::QcValue;
@@ -298,7 +299,7 @@ impl World {
         origin: [f32; 3],
         angles: [f32; 3],
     ) -> Result<(), EditError> {
-        if self.player.is_none() || !self.in_use(CLIENT) {
+        if !self.is_spawned(ClientId::FIRST) || !self.in_use(CLIENT) {
             return Err(EditError::NoSuchEdict(CLIENT));
         }
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
@@ -327,7 +328,7 @@ impl World {
         origin: [f32; 3],
         angles: [f32; 3],
     ) -> Result<[f32; 3], EditError> {
-        if self.player.is_none() || !self.in_use(CLIENT) {
+        if !self.is_spawned(ClientId::FIRST) || !self.in_use(CLIENT) {
             return Err(EditError::NoSuchEdict(CLIENT));
         }
         let [x, y, z] = origin;

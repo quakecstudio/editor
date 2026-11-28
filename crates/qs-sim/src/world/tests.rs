@@ -1565,7 +1565,7 @@ pub(crate) fn player_from(spec: &MapSpec, progs: Vec<u8>, options: LoadOptions) 
 
 /// The player with the command `cmd` after `count` frames of `frametime`.
 pub(crate) fn moved(run: &mut Running, cmd: UserCmd, count: usize, frametime: f64) -> &World {
-    run.world.set_command(cmd);
+    run.world.set_command(crate::ClientId::FIRST, cmd);
     run.frames(count, frametime).unwrap();
     &run.world
 }
@@ -1594,7 +1594,7 @@ fn connecting_runs_the_entry_points() {
             Slot::from_f32(9.0),
         )
         .unwrap();
-    assert!(run.world.player_view().is_none());
+    assert!(run.world.player_view(crate::ClientId::FIRST).is_none());
     run.connect();
     let w = &run.world;
     assert_eq!(w.float(P, "armorvalue"), 0.0);
@@ -1603,7 +1603,7 @@ fn connecting_runs_the_entry_points() {
     assert_eq!(w.float(P, "frags"), 12.0);
     assert_eq!(f64::from(w.float(P, "ammo_shells")), w.time());
     assert_eq!(w.float(P, "ammo_nails"), 12.0);
-    assert!(w.player_view().is_some());
+    assert!(w.player_view(crate::ClientId::FIRST).is_some());
 }
 
 // spec PHYS-10.2: while fixangle is set the client's angles go to the client through
@@ -1620,7 +1620,10 @@ fn fixangle_turns_the_view_once() {
     // The spawn message carries the setangle (NET-2.4) and clears fixangle.
     assert_eq!(run.world.vector(P, "angles")[1], 100.0);
     assert_eq!(run.world.float(P, "fixangle"), 0.0);
-    assert_eq!(run.world.take_set_angle(), Some([0.0, 99.843_75, 0.0]));
+    assert_eq!(
+        run.world.take_set_angle(crate::ClientId::FIRST),
+        Some([0.0, 99.843_75, 0.0])
+    );
     let turned = UserCmd {
         angles: [0.0, 100.0, 0.0],
         ..UserCmd::default()
@@ -1631,7 +1634,7 @@ fn fixangle_turns_the_view_once() {
         99.843_75,
         "the view's yaw through the wire"
     );
-    assert_eq!(run.world.take_set_angle(), None);
+    assert_eq!(run.world.take_set_angle(crate::ClientId::FIRST), None);
     // Unfixed, the yaw follows the view.
     moved(&mut run, UserCmd::default(), 1, 0.1);
     assert_eq!(run.world.vector(P, "angles")[1], 0.0);
@@ -1677,16 +1680,22 @@ fn a_move_is_read_once() {
     let mut run = standing(&ledge(), "0 0 24", "0 0 0", "");
     let progs_bytes = run.progs.clone();
     let progs = Progs::read(&progs_bytes).unwrap();
-    run.world.set_command(UserCmd {
-        buttons: 1,
-        impulse: 5,
-        ..UserCmd::default()
-    });
-    run.world.set_command(UserCmd {
-        buttons: 2,
-        forward: 200.0,
-        ..UserCmd::default()
-    });
+    run.world.set_command(
+        crate::ClientId::FIRST,
+        UserCmd {
+            buttons: 1,
+            impulse: 5,
+            ..UserCmd::default()
+        },
+    );
+    run.world.set_command(
+        crate::ClientId::FIRST,
+        UserCmd {
+            buttons: 2,
+            forward: 200.0,
+            ..UserCmd::default()
+        },
+    );
     run.frames(1, 0.1).unwrap();
     let w = &run.world;
     assert_eq!(w.float(P, "impulse"), 5.0, "the earlier move's impulse");
@@ -2021,7 +2030,8 @@ fn client_movetypes() {
     assert!(close(w.vector(P, "origin")[2], 200.0));
     assert!(w.vector(P, "origin")[0] > 0.9);
     let mut run = player(&ledge(), &put("7"), "", more);
-    run.world.set_command(UserCmd::default());
+    run.world
+        .set_command(crate::ClientId::FIRST, UserCmd::default());
     let error = run.frames(1, 0.1).unwrap_err();
     assert!(
         error
@@ -2770,6 +2780,7 @@ fn restart_asks_for_this_level_again() {
     assert_eq!(run.world.carried(), None, "a new game");
 }
 
+mod clients;
 mod debug;
 mod engine;
 mod host;

@@ -1106,6 +1106,16 @@ profile (DIFF-12.19); everything else runs under id's.
   other edict nothing happens.
 - **BUILTIN-18.44** `uri_get(...)` (#513) is `PF_uri_get`, "G_VECTORSET (OFS_RETURN, 0, 0, 0);":
   it reads no parameter, starts no request and returns 0 0 0.
+- **BUILTIN-18.45** `spawnclient()` (#454) is `PF_spawnclient`: from the last slot down
+  ("`for (i = svs.maxclients; i-- > 0;)`"), the first not active gets no connection ("botclients
+  have no net connection, obviously."), is connected with `SV_ConnectClient` (NET-7.4) and
+  marked spawned, and its edict cleared, `colormap` its number, `team` its bottom colour + 1 and
+  `netname` its name; the edict is returned. With every slot active it returns the world. Such a
+  client is a bot (NET-7.3), and `clienttype` of it is 2, `CLIENTTYPE_BOT`. The server
+  simulation implements it under vkQuake's profile; the mock has no slots to fill.
+- **BUILTIN-18.46** `dropclient(e)` (#453) is `PF_dropclient`: for an active client slot's edict
+  `SV_DropClient (false)` (NET-7.9) with `host_client` the slot, put back after; anything else
+  is passed over. The server simulation drops the slot so under vkQuake's profile.
 
 ## Test vectors
 

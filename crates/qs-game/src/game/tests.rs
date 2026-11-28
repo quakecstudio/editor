@@ -1214,7 +1214,10 @@ fn a_scripted_debug_session() {
                 "the stopped frame has not run, so the client's clock stands"
             );
             assert!(
-                game.world_mut().take_messages().packets.is_empty(),
+                game.world_mut()
+                    .take_messages(qs_sim::ClientId::FIRST)
+                    .packets
+                    .is_empty(),
                 "nor are its first messages sent"
             );
             break;

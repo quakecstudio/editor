@@ -137,6 +137,8 @@ fn run(
         protocol: ProtocolVersion::default(),
         startup: Vec::new(),
         room: qs_sim::Room::default(),
+        maxplayers: qs_sim::MaxPlayers::SINGLE,
+        profile: qs_sim::EngineProfile::Id,
     };
     let mut world =
         World::load(progs, map, &bsp, models()?, options.clone()).map_err(|e| e.to_string())?;
@@ -165,11 +167,11 @@ fn run(
 fn play(world: &mut World, progs: &Progs<'_>, seconds: f64) -> Result<(), String> {
     let mut time = 0.0;
     while time < seconds {
-        world.set_command(UserCmd::default());
+        world.set_command(qs_sim::ClientId::FIRST, UserCmd::default());
         world
             .frame(progs, FRAME)
             .map_err(|e| format!("at {time:.1} s: {e}"))?;
-        world.take_messages();
+        world.take_messages(qs_sim::ClientId::FIRST);
         time += FRAME;
     }
     Ok(())

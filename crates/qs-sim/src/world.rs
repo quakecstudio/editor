@@ -21,20 +21,21 @@
 //! frames that drop monsters to the floor and run their thinks are the rest of P3-24.
 
 use qc_builtins::MockEngine;
-use qc_builtins::mock::{Cvars, Rng};
+use qc_builtins::mock::{Cvars, EngineProfile, Rng};
 use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
-use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
+use qc_vm::convert::{double_to_float, float_to_int};
 use qc_vm::{Machine, NoObserver, Observer, RunError, ServerState};
 use qs_bsp::Bsp;
 use qs_vfs::Registration;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
+use crate::clients::{ClientId, ConnectParms, MaxPlayers, NUM_SPAWN_PARMS, SlotKind};
 use crate::debug::Debugger;
-use crate::host_commands::{COLOR_MASK, COLOR_SHIFT, ClientStage, SignonCommand};
+use crate::host_commands::{COLOR_MASK, COLOR_SHIFT, ClientStage, KickBy, SignonCommand, Words};
 use crate::input::Button;
 #[cfg(test)]
 use crate::messages::ServerMessages;
@@ -46,7 +47,6 @@ use crate::protocol::{EntAlpha, Protocol, ProtocolVersion};
 use crate::rerelease::BuiltinTable;
 use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
-use save::NUM_SPAWN_PARMS;
 
 use crate::spawn::{
     self, Deathmatch, EdictPlace, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError,
@@ -57,13 +57,10 @@ use crate::spawn::{
 const MAP_START_TIME: f64 = 1.0;
 /// `SOLID_BSP` (EDICT-10.3): the world is solid.
 const SOLID_BSP: f32 = 4.0;
-/// The client slots a single-player world has.
-const MAXCLIENTS: usize = 1;
-/// The single player's edict.
+/// The first client's edict, the host's own player (EDICT-5.1).
+pub const CLIENT_EDICT: usize = ClientId::FIRST.edict();
+/// The first client's edict, as the world's own code names it.
 const CLIENT: usize = CLIENT_EDICT;
-
-/// The player's edict, the one client's slot (EDICT-5.1).
-pub const CLIENT_EDICT: usize = 1;
 /// The random source's first state (MOVE-6.1).
 const RANDOM_SEED: u32 = 1;
 /// `EDICT_SETTLE_FRAMETIME`: the two frames the server runs before play (EDICT-8.9).
@@ -124,6 +121,15 @@ pub enum KeyFocus {
     Elsewhere,
 }
 
+/// Whether the console or a menu holds a single-player game still this frame (PHYS-11.9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConsoleHold {
+    /// The game runs.
+    Free,
+    /// The keys go elsewhere in single player: no client thinks and no physics runs.
+    Held,
+}
+
 /// The map's entities a prepared world spawns, with the deathmatch and skill they are chosen
 /// at (EDICT-8.4, DIFF-3.5).
 #[derive(Clone)]
@@ -142,18 +148,9 @@ struct PendingSpawn {
 pub struct World {
     machine: Machine,
     pub(crate) builtins: SimBuiltins,
-    /// The client's command, once it has entered the game (PHYS-9.6, PHYS-10).
-    player: Option<UserCmd>,
-    /// The string commands the client sent since the last frame, which it reads first
-    /// (PHYS-11.1).
-    pub(crate) commands: Vec<Vec<u8>>,
-    /// Whether the client connects in the next frame (PHYS-10.7).
-    connecting: bool,
     /// Where the client's keys go, which in single player pauses the game when not to it
     /// (PHYS-11.9).
     focus: KeyFocus,
-    /// The lines the console printed since they were taken (PHYS-13).
-    pub(crate) console_out: Vec<u8>,
     /// A host command the console asked for, waiting for the host (PHYS-13.6).
     pub(crate) pending_host: Option<HostCommand>,
     /// The client's commands the console met, in order, waiting for the host (CON-6.1).
@@ -162,12 +159,9 @@ pub struct World {
     pub(crate) aliases: Vec<(String, String)>,
     /// The search path the host gave, for `path` (PHYS-13.7).
     pub(crate) search_path: Vec<String>,
-    /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
+    /// The spawn parms the level the clients left kept, each used in place of
+    /// `SetNewParms`' (PHYS-10.4).
     carried: Option<SpawnParms>,
-    /// The client's spawn parms, `host_client->spawn_parms`, which a saved game keeps.
-    spawn_parms: [Slot; NUM_SPAWN_PARMS],
-    /// Whether a saved game was read into this world, `sv.loadgame` (PHYS-10.5).
-    loaded: bool,
     /// The map's name, `sv.name`.
     map: String,
     /// The edict each of the map's entities became, for the editor's live edits (MAP-12).
@@ -216,6 +210,11 @@ pub struct LoadOptions {
     /// Room past id's limits for counting a map that passes them: more edicts (EDICT-1.10) and
     /// longer precache lists (LIMIT-6.3); id's by default.
     pub room: Room,
+    /// The client slots, `svs.maxclients` (NET-7.1); one by default, single player.
+    pub maxplayers: MaxPlayers,
+    /// The engine whose builtins and limits the progs runs under: id's by default, or
+    /// vkQuake's, whose table reaches `spawnclient` (BUILTIN-18.1, BUILTIN-18.45).
+    pub profile: EngineProfile,
 }
 
 /// Room past id's limits in a world, for `map.budget` to count a map past them (EDICT-1.10,
@@ -360,19 +359,33 @@ impl ClientCommand {
 }
 
 /// What `SV_SaveSpawnparms` keeps across a level change: `serverflags`, "for cross level
-/// information (sigils)", and the client's `parm1` to `parm16` after `SetChangeParms`
-/// (PHYS-10.4).
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// information (sigils)", and each active client's `parm1` to `parm16` after
+/// `SetChangeParms` (PHYS-10.4, NET-7.8).
+#[derive(Clone, Debug, PartialEq)]
 pub struct SpawnParms {
     serverflags: Slot,
-    parms: [Slot; 16],
+    /// Each slot's parms, `None` for a slot that was not active.
+    clients: Vec<Option<[Slot; NUM_SPAWN_PARMS]>>,
 }
 
 impl SpawnParms {
-    /// `parm1` to `parm16` as floats, as the progs reads them.
+    /// The first client's `parm1` to `parm16` as floats, as the progs reads them; zeros when
+    /// it was not active.
     #[must_use]
-    pub fn parms(&self) -> [f32; 16] {
-        self.parms.map(Slot::as_f32)
+    pub fn parms(&self) -> [f32; NUM_SPAWN_PARMS] {
+        self.client_parms(ClientId::FIRST)
+            .unwrap_or([0.0; NUM_SPAWN_PARMS])
+    }
+
+    /// Client `id`'s `parm1` to `parm16` as floats, `None` when it was not active.
+    #[must_use]
+    pub fn client_parms(&self, id: ClientId) -> Option<[f32; NUM_SPAWN_PARMS]> {
+        self.slots(id).map(|parms| parms.map(Slot::as_f32))
+    }
+
+    /// Client `id`'s parms as the progs keeps them.
+    fn slots(&self, id: ClientId) -> Option<[Slot; NUM_SPAWN_PARMS]> {
+        self.clients.get(id.slot()).copied().flatten()
     }
 
     /// `serverflags` as a float.
@@ -420,7 +433,8 @@ impl World {
         files: ModelFiles,
         options: LoadOptions,
     ) -> Result<Self, WorldError> {
-        let machine = Machine::with_capacity(progs, MAXCLIENTS, options.room.edicts)
+        let maxplayers = options.maxplayers;
+        let machine = Machine::with_capacity(progs, maxplayers.get(), options.room.edicts)
             .map_err(|e| WorldError::Progs(e.to_string()))?;
         let submodels = bsp.models.len().saturating_sub(1);
         // MOVE-6.1: the random source starts at state 1, or at a scenario's seed (SCN-1.3).
@@ -452,7 +466,8 @@ impl World {
         }
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
-        engine.clients_active = vec![false; MAXCLIENTS];
+        engine.clients_active = vec![false; maxplayers.get()];
+        engine.profile = options.profile;
         // RRE-1.6: QuakeSpasm loads the file when the host starts, before any map spawns.
         engine.localization = options.localization;
         // FS-4.5: `registered`, 0 until `COM_CheckRegistered` finds the full game.
@@ -468,19 +483,14 @@ impl World {
                 files,
                 progs.header().crc,
                 options.builtins,
+                maxplayers,
             ),
-            player: None,
-            commands: Vec::new(),
-            connecting: false,
             focus: KeyFocus::Game,
-            console_out: Vec::new(),
             pending_host: None,
             client_commands: Vec::new(),
             aliases,
             search_path: options.search_path,
-            carried: options.carried,
-            spawn_parms: [Slot::ZERO; NUM_SPAWN_PARMS],
-            loaded: false,
+            carried: options.carried.clone(),
             map: map.to_owned(),
             map_entities: map_entities::MapEntities::default(),
             pending_spawn: None,
@@ -540,8 +550,9 @@ impl World {
         let mapname = world.make_string(map.as_bytes().to_vec());
         world.set_global("mapname", Slot::from_i32(mapname));
         // PHYS-10.4: `pr_global_struct->serverflags = svs.serverflags`, 0 for a new game.
-        let serverflags = options
+        let serverflags = world
             .carried
+            .as_ref()
             .map_or(Slot::from_f32(0.0), |c| c.serverflags);
         world.set_global("serverflags", serverflags);
         world.set_global("time", Slot::from_f32(1.0));
@@ -598,7 +609,7 @@ impl World {
     ///
     /// [`WorldError::Frame`] when a settle frame fails, or a model is not precached.
     pub fn settle(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
-        let clients = self.builtins.mock.engine().clients_active.clone();
+        let clients = self.builtins.messages.clients.active();
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         for _ in 0..2 {
             call.physics(SETTLE_FRAMETIME, &clients)
@@ -607,10 +618,14 @@ impl World {
         call.create_baselines().map_err(WorldError::Frame)
     }
 
-    /// The view angles the server told the client to take since the last call,
+    /// The view angles the server told client `id` to take since the last call,
     /// `svc_setangle` as the client reads it (PHYS-10.2, NET-4.3).
-    pub fn take_set_angle(&mut self) -> Option<[f32; 3]> {
-        self.builtins.messages.set_angle.take()
+    pub fn take_set_angle(&mut self, id: ClientId) -> Option<[f32; 3]> {
+        self.builtins
+            .messages
+            .clients
+            .get_mut(id)
+            .and_then(|slot| slot.set_angle.take())
     }
 
     /// Which game the server runs, standard Quake or `-rogue` or `-hipnotic`, which changes how
@@ -619,12 +634,33 @@ impl World {
         self.builtins.messages.game = game;
     }
 
-    /// The messages sent to the client since the last call (NET-1.3): each packet a reliable
-    /// message or a datagram, in sending order.
-    pub fn take_messages(&mut self) -> ClientMessages {
-        ClientMessages {
-            packets: core::mem::take(&mut self.builtins.messages.outbox),
-        }
+    /// The messages sent to client `id` since the last call (NET-1.6): each packet a
+    /// reliable message or a datagram, in sending order; none for a bot or a slot past the
+    /// last (NET-7.3).
+    pub fn take_messages(&mut self, id: ClientId) -> ClientMessages {
+        let packets = self
+            .builtins
+            .messages
+            .clients
+            .get_mut(id)
+            .map_or_default(|slot| core::mem::take(&mut slot.outbox));
+        ClientMessages { packets }
+    }
+
+    /// The world's client slots, `svs.maxclients` (NET-7.1).
+    #[must_use]
+    pub fn maxplayers(&self) -> MaxPlayers {
+        self.builtins.messages.clients.max()
+    }
+
+    /// Whether client `id` is in the game, `host_client->spawned`.
+    #[must_use]
+    pub fn is_spawned(&self, id: ClientId) -> bool {
+        self.builtins
+            .messages
+            .clients
+            .get(id)
+            .is_some_and(|slot| slot.active && slot.spawned)
     }
 
     /// Sets where the client's keys go (PHYS-11.9): a frame while they go elsewhere than the
@@ -666,46 +702,37 @@ impl World {
             // empties with it.
             call.sim.mock.engine_mut().buffers.unreliable = 0;
         }
-        // PHYS-10.7: `SV_CheckForNewClients`, then `SV_RunClients` reading the client's string
-        // commands, before its move (PHYS-11.1), whether or not it has spawned yet.
-        if core::mem::take(&mut self.connecting) {
-            self.signon(progs, Signon::Connect)?;
-        }
-        if self.builtins.messages.client.active {
-            for text in core::mem::take(&mut self.commands) {
-                let stage = if self.player.is_some() {
-                    ClientStage::Spawned
-                } else {
-                    ClientStage::Connecting
-                };
-                let stage = SimCall::frame(&mut self.machine, progs, &mut self.builtins)
-                    .client_command(CLIENT, &text, stage)
-                    .map_err(WorldError::Frame)?;
-                match stage {
-                    Some(SignonCommand::Prespawn) => self.signon(progs, Signon::Prespawn)?,
-                    Some(SignonCommand::Spawn) => self.signon(progs, Signon::Spawn)?,
-                    Some(SignonCommand::Begin) => self.signon(progs, Signon::Begin)?,
-                    None => {}
-                }
+        // PHYS-10.7: `SV_CheckForNewClients`, each client asking to connect in slot order.
+        for id in self.maxplayers().ids() {
+            let connecting = self
+                .builtins
+                .messages
+                .clients
+                .get_mut(id)
+                .is_some_and(|slot| core::mem::take(&mut slot.connecting));
+            if connecting {
+                self.signon(progs, id, Signon::Connect)?;
             }
         }
-        let clients = self.builtins.mock.engine().clients_active.clone();
-        let player = self.player;
-        // PHYS-9.8: the move is read once; a frame no move arrives before sets no impulse.
-        if let Some(read) = &mut self.player {
-            read.impulse = 0;
+        // PHYS-11.8: paused, a move is read but not thought, and no physics runs; PHYS-11.9:
+        // so too while the keys go to the console or a menu, but only in single player,
+        // `svs.maxclients > 1 || key_dest == key_game` (NET-7.7).
+        // `sv.paused` is read as each client thinks and again before the physics, so a client's
+        // `pause` takes hold in the frame it is read.
+        let held = if self.focus == KeyFocus::Elsewhere && !self.maxplayers().is_multiplayer() {
+            ConsoleHold::Held
+        } else {
+            ConsoleHold::Free
+        };
+        // NET-7.7: `SV_RunClients`, each active client in slot order.
+        for id in self.maxplayers().ids() {
+            if self.builtins.messages.clients.is_active(id) {
+                self.run_client(progs, id, frametime, held)?;
+            }
         }
-        // PHYS-11.8: paused, the client's move is read but not thought, and no physics runs;
-        // PHYS-11.9: so too in single player while the keys go to the console or a menu.
-        let paused = self.builtins.paused || self.focus == KeyFocus::Elsewhere;
+        let clients = self.builtins.messages.clients.active();
+        let paused = self.builtins.paused || held == ConsoleHold::Held;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
-        if let Some(cmd) = player {
-            let cmd = call.read_move(CLIENT, &cmd);
-            if !paused {
-                call.client_think(CLIENT, &cmd, frametime)
-                    .map_err(WorldError::Frame)?;
-            }
-        }
         if !paused {
             call.physics(frametime, &clients)
                 .map_err(WorldError::Frame)?;
@@ -713,6 +740,84 @@ impl World {
         call.send_client_messages().map_err(WorldError::Frame)?;
         // The reliable datagram went out with the messages (NET-1.4).
         call.sim.mock.engine_mut().buffers.reliable = 0;
+        Ok(())
+    }
+
+    /// One client of `SV_RunClients` (NET-7.7): the string commands it sent, read before its
+    /// move whether or not it has spawned yet (PHYS-11.1); then, once spawned, its move and
+    /// `SV_ClientThink` unless the game is paused or `held` for the console. A bot reads no
+    /// move: its view angles are its `v_angle` (NET-7.3).
+    fn run_client(
+        &mut self,
+        progs: &Progs<'_>,
+        id: ClientId,
+        frametime: f64,
+        held: ConsoleHold,
+    ) -> Result<(), WorldError> {
+        let commands = self
+            .builtins
+            .messages
+            .clients
+            .get_mut(id)
+            .map_or_default(|slot| core::mem::take(&mut slot.commands));
+        for text in commands {
+            // `SV_ReadClientMessage`'s "`if (!host_client->active) return false;`": a client a
+            // command dropped reads nothing more (NET-7.7).
+            if !self.builtins.messages.clients.is_active(id) {
+                return Ok(());
+            }
+            let stage = if self.is_spawned(id) {
+                ClientStage::Spawned
+            } else {
+                ClientStage::Connecting
+            };
+            let stage = SimCall::frame(&mut self.machine, progs, &mut self.builtins)
+                .client_command(id.edict(), &text, stage)
+                .map_err(WorldError::Frame)?;
+            match stage {
+                Some(SignonCommand::Prespawn) => self.signon(progs, id, Signon::Prespawn)?,
+                Some(SignonCommand::Spawn) => self.signon(progs, id, Signon::Spawn)?,
+                Some(SignonCommand::Begin) => self.signon(progs, id, Signon::Begin)?,
+                None => {}
+            }
+        }
+        let Some(slot) = self
+            .builtins
+            .messages
+            .clients
+            .get_mut(id)
+            .filter(|slot| slot.active)
+        else {
+            return Ok(());
+        };
+        if !slot.spawned {
+            // "clear client movement until a new packet is received".
+            slot.cmd = UserCmd::default();
+            return Ok(());
+        }
+        let cmd = slot.cmd;
+        let kind = slot.kind;
+        // PHYS-9.8: the move is read once; a frame no move arrives before sets no impulse.
+        slot.cmd.impulse = 0;
+        let ent = id.edict();
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        let cmd = match kind {
+            SlotKind::Local => {
+                let now = call.clock();
+                if let Some(slot) = call.sim.messages.clients.get_mut(id) {
+                    slot.record_ping(now);
+                }
+                call.read_move(ent, &cmd)
+            }
+            SlotKind::Bot => UserCmd {
+                angles: call.vector(ent, "v_angle"),
+                ..UserCmd::default()
+            },
+        };
+        if !call.sim.paused && held == ConsoleHold::Free {
+            call.client_think(ent, &cmd, frametime)
+                .map_err(WorldError::Frame)?;
+        }
         Ok(())
     }
 
@@ -759,20 +864,28 @@ impl World {
         &self.machine
     }
 
-    /// The client connects in the next frame, at its `SV_CheckForNewClients` (PHYS-10.7);
+    /// Client `id` connects in the next frame, at its `SV_CheckForNewClients` (PHYS-10.7);
     /// it then sends `prespawn`, `spawn` and `begin` as string commands.
-    pub fn connect_next_frame(&mut self) {
-        self.connecting = true;
+    pub fn connect_next_frame(&mut self, id: ClientId) {
+        if let Some(slot) = self.builtins.messages.clients.get_mut(id) {
+            slot.connecting = true;
+        }
     }
 
-    /// The player enters the game, as `SV_ConnectClient` and `Host_Spawn_f` bring a client in
-    /// (PHYS-10): every stage of [`Signon`] at once, as a host that does not count the frames
-    /// between them does.
+    /// A local client enters the game in the first free slot, as `SV_CheckForNewClients` gives
+    /// a new connection the first slot not active and `SV_ConnectClient` and `Host_Spawn_f`
+    /// bring it in (NET-7.4, PHYS-10): every stage of [`Signon`] at once, as a host that does
+    /// not count the frames between them does. Returns its slot, `None` when every slot is
+    /// active, where id's server stops with "Host_CheckForNewClients: no free clients" and the
+    /// world refuses the client instead (NET-7.4).
     ///
     /// # Errors
     ///
     /// [`WorldError::Frame`] when a function fails.
-    pub fn connect(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+    pub fn connect(&mut self, progs: &Progs<'_>) -> Result<Option<ClientId>, WorldError> {
+        let Some(id) = self.builtins.messages.clients.free() else {
+            return Ok(None);
+        };
         for stage in [
             Signon::Connect,
             Signon::Prespawn,
@@ -780,9 +893,9 @@ impl World {
             Signon::Begin,
         ] {
             if stage == Signon::Spawn {
-                self.signon_reply_identity(progs)?;
+                self.signon_reply_identity(progs, id)?;
             }
-            self.signon(progs, stage)?;
+            self.signon(progs, id, stage)?;
             // PHYS-10.8: the spawn stage's frame ends with `SV_UpdateToReliableMessages`, so
             // the name and colours the client sent follow the spawn message.
             if stage == Signon::Spawn {
@@ -790,13 +903,17 @@ impl World {
                     .update_to_reliable_messages();
             }
         }
-        Ok(())
+        Ok(Some(id))
     }
 
-    /// `CL_SignonReply`'s answer before `spawn` (PHYS-10.8): the client's `name` and `color`
-    /// string commands from `_cl_name` and `_cl_color`, which the server runs as PHYS-11.7 says,
-    /// so a name or colour the console set before the client connected is the spawned player's.
-    fn signon_reply_identity(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+    /// `CL_SignonReply`'s answer before `spawn` (PHYS-10.8): the first client's `name` and
+    /// `color` string commands from `_cl_name` and `_cl_color`, which the server runs as
+    /// PHYS-11.7 says, so a name or colour the console set before the client connected is the
+    /// spawned player's. Another local client keeps the slot's (NET-7.4).
+    fn signon_reply_identity(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
+        if id != ClientId::FIRST {
+            return Ok(());
+        }
         let cvars = &self.builtins.mock.engine().cvars;
         let name = cvars.text("_cl_name").unwrap_or_default().to_owned();
         let color = float_to_int(cvars.value("_cl_color").unwrap_or(0.0));
@@ -807,105 +924,119 @@ impl World {
             format!("color {top} {bottom}\n"),
         ] {
             SimCall::frame(&mut self.machine, progs, &mut self.builtins)
-                .client_command(CLIENT, text.as_bytes(), ClientStage::Connecting)
+                .client_command(id.edict(), text.as_bytes(), ClientStage::Connecting)
                 .map_err(WorldError::Frame)?;
         }
         Ok(())
     }
 
-    /// One stage of the player's entry (PHYS-10.7): a local client's take a frame each, the
+    /// One stage of client `id`'s entry (PHYS-10.7): a local client's take a frame each, the
     /// server running each before that frame's moves and physics.
     ///
     /// # Errors
     ///
     /// [`WorldError::Frame`] when a function fails.
-    pub fn signon(&mut self, progs: &Progs<'_>, stage: Signon) -> Result<(), WorldError> {
+    pub fn signon(
+        &mut self,
+        progs: &Progs<'_>,
+        id: ClientId,
+        stage: Signon,
+    ) -> Result<(), WorldError> {
         match stage {
-            Signon::Connect => self.signon_connect(progs),
+            Signon::Connect => self.signon_connect(progs, id),
             Signon::Prespawn => {
                 let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
-                call.prespawn();
-                call.flush_signon();
+                call.prespawn(id);
+                call.flush_signon(id);
                 Ok(())
             }
-            Signon::Spawn => self.signon_spawn(progs),
+            Signon::Spawn => self.signon_spawn(progs, id),
             Signon::Begin => {
-                let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
-                call.begin();
-                self.player = Some(UserCmd::default());
+                SimCall::frame(&mut self.machine, progs, &mut self.builtins).begin(id);
                 Ok(())
             }
         }
     }
 
-    /// `SV_ConnectClient` (PHYS-10.7): the client is active, the serverinfo is sent, and its
-    /// spawn parms are `SetNewParms`', or what it carries from the last level (PHYS-10.4).
-    fn signon_connect(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
-        if let Some(active) = self.builtins.mock.engine_mut().clients_active.first_mut() {
-            *active = true;
-        }
-        self.builtins.messages.client.active = true;
-        let carried = self.carried;
-        let loaded = self.loaded;
+    /// `SV_ConnectClient` for a local client (PHYS-10.7, NET-7.4), its parms what it
+    /// carries from the last level, the saved ones in a loaded game, else `SetNewParms`'.
+    fn signon_connect(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
+        // PHYS-10.5: a saved game's world keeps the parms it saved.
+        let parms = if self.builtins.loaded {
+            ConnectParms::Saved
+        } else {
+            match self.carried.as_ref().and_then(|c| c.slots(id)) {
+                Some(carried) => ConnectParms::Carried(carried),
+                None => ConnectParms::New,
+            }
+        };
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        // NET-2.1: a host that did not settle the world has its baselines made now.
         if call.sim.messages.baselines.is_empty() {
             call.create_baselines().map_err(WorldError::Frame)?;
         }
-        // NET-2.2: the serverinfo, sent at the end of the frame the stage ran in.
-        call.send_serverinfo(CLIENT);
-        call.flush_signon();
-        // PHYS-10.5: a saved game's world keeps the parms it saved.
-        if loaded {
-            return Ok(());
-        }
-        let parms: [Slot; 16] = match carried {
-            Some(carried) => carried.parms,
-            None => {
-                let new_parms = call.global("SetNewParms").as_i32();
-                call.run(new_parms).map_err(WorldError::Frame)?;
-                core::array::from_fn(|n| call.global(&format!("parm{}", n.saturating_add(1))))
-            }
-        };
-        self.spawn_parms = parms;
-        Ok(())
+        call.connect_client(id, SlotKind::Local, parms)
+            .map_err(WorldError::Frame)
     }
 
-    /// `Host_Spawn_f` (PHYS-10.1): the client's edict cleared and named, its parms set, then
+    /// `Host_Spawn_f` (PHYS-10.1): client `id`'s edict cleared and named, its parms set, then
     /// `ClientConnect` and `PutClientInServer`, and the spawn message (NET-2.4).
-    fn signon_spawn(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
-        let name = self.make_string(self.builtins.messages.client.name.clone());
-        let parms = self.spawn_parms;
-        let loaded = self.loaded;
+    fn signon_spawn(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
+        let Some(slot) = self.builtins.messages.clients.get(id) else {
+            return Ok(());
+        };
+        let (name, colors, parms) = (slot.name.clone(), slot.colors, slot.spawn_parms);
+        let name = self.make_string(name);
+        let loaded = self.builtins.loaded;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         // PHYS-10.5: a saved game's world is "fully inited allready": no spawn functions.
         if loaded {
-            return call.spawn_message(CLIENT).map_err(WorldError::Frame);
+            return call.spawn_message(id).map_err(WorldError::Frame);
         }
-        let fields = call.context.machine_view().edicts().layout().entityfields();
-        for slot in 0..fields {
-            // A slot past the edict's fields is not written.
-            let _written = call.context.machine().edicts_mut().set_field(
-                EdictNumber::new(CLIENT),
-                slot,
-                Slot::from_i32(0),
-            );
-        }
-        call.set_float(CLIENT, "colormap", 1.0);
-        // PHYS-10.1: "`ent->v.team = (host_client->colors & 15) + 1;`".
-        let team = (call.sim.messages.client.colors & COLOR_MASK).wrapping_add(1);
-        call.set_float(CLIENT, "team", int_to_float(team));
-        call.set_entity_raw(CLIENT, "netname", name);
+        let ent = id.edict();
+        call.clear_client_edict(id, name, colors);
         for (n, parm) in (1..=16).zip(parms) {
             call.set_global(&format!("parm{n}"), parm);
         }
         call.set_time(call.clock());
-        let value = call.value_of(CLIENT);
+        let value = call.value_of(ent);
         call.set_global("self", Slot::from_i32(value));
         for entry in ["ClientConnect", "PutClientInServer"] {
             let function = call.global(entry).as_i32();
             call.run(function).map_err(WorldError::Frame)?;
         }
-        call.spawn_message(CLIENT).map_err(WorldError::Frame)
+        call.spawn_message(id).map_err(WorldError::Frame)
+    }
+
+    /// `Host_Status_f`'s lines (PHYS-13.10, NET-7.6), for the console.
+    pub(crate) fn status_lines(&mut self, progs: &Progs<'_>) -> Vec<Vec<u8>> {
+        SimCall::frame(&mut self.machine, progs, &mut self.builtins).status_lines()
+    }
+
+    /// `kick` from the host's console (NET-7.6).
+    ///
+    /// # Errors
+    ///
+    /// The run error of the kicked client's `ClientDisconnect`.
+    pub(crate) fn console_kick(
+        &mut self,
+        progs: &Progs<'_>,
+        words: &Words,
+    ) -> Result<(), RunError> {
+        SimCall::frame(&mut self.machine, progs, &mut self.builtins).kick(KickBy::Console, words)
+    }
+
+    /// `SV_DropClient (false)` (NET-7.9): client `id`'s `ClientDisconnect` when it has spawned,
+    /// then the slot freed, its body left in the world, and every other active client told
+    /// its name, frags and colours are gone. Nothing happens to a slot that is not active.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when `ClientDisconnect` fails.
+    pub fn disconnect(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
+        SimCall::frame(&mut self.machine, progs, &mut self.builtins)
+            .drop_client(id)
+            .map_err(WorldError::Frame)
     }
 
     /// The command for the host the console met in the last frame's `Cbuf_Execute`, from the
@@ -951,75 +1082,98 @@ impl World {
         &self.map
     }
 
-    /// The parms the player entered this level with, `None` in a new game, which `restart`
+    /// The parms the clients entered this level with, `None` in a new game, which `restart`
     /// keeps (PHYS-10.6).
     #[must_use]
-    pub const fn carried(&self) -> Option<SpawnParms> {
-        self.carried
+    pub fn carried(&self) -> Option<SpawnParms> {
+        self.carried.clone()
     }
 
-    /// `SV_SaveSpawnparms`: `serverflags`, then, with `self` the client, `SetChangeParms`
-    /// and the client's `parm1` to `parm16`, for the next level's [`LoadOptions::carried`];
-    /// a client not yet active keeps the parms it has (PHYS-10.4).
+    /// `SV_SaveSpawnparms`: `serverflags`, then for each active client, with `self` its edict,
+    /// `SetChangeParms` and its `parm1` to `parm16`, for the next level's
+    /// [`LoadOptions::carried`]; a slot not active carries nothing (PHYS-10.4, NET-7.8).
     ///
     /// # Errors
     ///
     /// [`WorldError::Frame`] when `SetChangeParms` fails.
     pub fn save_spawn_parms(&mut self, progs: &Progs<'_>) -> Result<SpawnParms, WorldError> {
+        let active = self.builtins.messages.clients.active();
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let serverflags = call.global("serverflags");
-        // `if (!host_client->active) continue;`
-        if self.player.is_none() {
-            return Ok(SpawnParms {
-                serverflags,
-                parms: self.spawn_parms,
-            });
+        let mut clients = Vec::with_capacity(active.len());
+        for (id, active) in call.sim.messages.clients.max().ids().zip(active) {
+            // `if (!host_client->active) continue;`
+            if !active {
+                clients.push(None);
+                continue;
+            }
+            let value = call.value_of(id.edict());
+            call.set_global("self", Slot::from_i32(value));
+            let change = call.global("SetChangeParms").as_i32();
+            call.run(change).map_err(WorldError::Frame)?;
+            let parms: [Slot; NUM_SPAWN_PARMS] =
+                core::array::from_fn(|n| call.global(&format!("parm{}", n.saturating_add(1))));
+            if let Some(slot) = call.sim.messages.clients.get_mut(id) {
+                slot.spawn_parms = parms;
+            }
+            clients.push(Some(parms));
         }
-        let value = call.value_of(CLIENT);
-        call.set_global("self", Slot::from_i32(value));
-        let change = call.global("SetChangeParms").as_i32();
-        call.run(change).map_err(WorldError::Frame)?;
-        let parms = core::array::from_fn(|n| call.global(&format!("parm{}", n.saturating_add(1))));
-        Ok(SpawnParms { serverflags, parms })
+        Ok(SpawnParms {
+            serverflags,
+            clients,
+        })
     }
 
-    /// The string commands the client has sent that no frame has read, taken from the
+    /// The string commands the first client has sent that no frame has read, taken from the
     /// server: what a host does with them when its client is not the server's, as while a
     /// demo plays (CLIENT-10.10).
     pub fn take_client_commands_sent(&mut self) -> Vec<Vec<u8>> {
-        core::mem::take(&mut self.commands)
+        self.builtins
+            .messages
+            .clients
+            .get_mut(ClientId::FIRST)
+            .map_or_default(|slot| core::mem::take(&mut slot.commands))
     }
 
-    /// A string command from the client, such as `god`, read at the start of the next frame
+    /// A string command from client `id`, such as `god`, read at the start of the next frame
     /// (PHYS-11).
-    pub fn client_command(&mut self, text: &str) {
-        self.commands.push(text.as_bytes().to_vec());
-    }
-
-    /// What the player asks for from the next frame on (PHYS-9.6): a move arriving
-    /// (PHYS-9.8), so an impulse no frame has read yet stands when `cmd` carries none.
-    pub fn set_command(&mut self, cmd: UserCmd) {
-        if let Some(waiting) = self.player {
-            let impulse = if cmd.impulse == 0 {
-                waiting.impulse
-            } else {
-                cmd.impulse
-            };
-            self.player = Some(UserCmd { impulse, ..cmd });
+    pub fn client_command(&mut self, id: ClientId, text: &str) {
+        if let Some(slot) = self.builtins.messages.clients.get_mut(id) {
+            slot.commands.push(text.as_bytes().to_vec());
         }
     }
 
-    /// The player's eye: its `origin + view_ofs`, and its `v_angle`; `None` before it has
-    /// entered the game.
+    /// What client `id` asks for from the next frame on (PHYS-9.6), once it has spawned: a
+    /// move arriving (PHYS-9.8), so an impulse no frame has read yet stands when `cmd` carries
+    /// none.
+    pub fn set_command(&mut self, id: ClientId, cmd: UserCmd) {
+        let Some(slot) = self.builtins.messages.clients.get_mut(id) else {
+            return;
+        };
+        if !slot.active || !slot.spawned {
+            return;
+        }
+        let impulse = if cmd.impulse == 0 {
+            slot.cmd.impulse
+        } else {
+            cmd.impulse
+        };
+        slot.cmd = UserCmd { impulse, ..cmd };
+    }
+
+    /// Client `id`'s eye: its edict's `origin + view_ofs`, and its `v_angle`; `None` before it
+    /// has entered the game.
     #[must_use]
-    pub fn player_view(&self) -> Option<([f32; 3], [f32; 3])> {
-        self.player?;
+    pub fn player_view(&self, id: ClientId) -> Option<([f32; 3], [f32; 3])> {
+        if !self.is_spawned(id) {
+            return None;
+        }
         let edicts = self.machine.edicts();
         let vector = |name: &str| {
             let first = field_slot(name);
             [0, 1, 2].map(|i| {
                 edicts
-                    .field(EdictNumber::new(CLIENT), first.saturating_add(i))
+                    .field(EdictNumber::new(id.edict()), first.saturating_add(i))
                     .map_or(0.0, Slot::as_f32)
             })
         };

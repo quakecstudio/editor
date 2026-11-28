@@ -29,7 +29,8 @@ fn printed(run: &mut Running) -> Vec<String> {
 
 /// The string commands the console sent the server, as text.
 fn sent(run: &mut Running) -> Vec<String> {
-    core::mem::take(&mut run.world.commands)
+    run.world
+        .take_client_commands_sent()
         .iter()
         .map(|text| String::from_utf8_lossy(text).into_owned())
         .collect()
@@ -236,7 +237,7 @@ fn color_sets_both_colours() {
     );
 }
 
-// spec PHYS-13.5: status, version and the signon commands print what id's host prints from
+// spec PHYS-13.10: status, version and the signon commands print what id's host prints from
 // the server's console
 #[test]
 fn status_and_version_print_the_host() {
@@ -264,7 +265,7 @@ fn status_and_version_print_the_host() {
             "begin is not valid from the console"
         ]
     );
-    assert!(console(&mut run, "kick player; stuffcmds\n").is_empty());
+    assert!(console(&mut run, "stuffcmds\n").is_empty());
     assert_eq!(
         console(&mut run, "stuffcmds now\n"),
         ["stuffcmds : execute command line parameters"]
@@ -415,8 +416,8 @@ fn path_prints_the_search_path() {
     );
 }
 
-// spec PHYS-13.9: where the preview host's console differs from id's on purpose: the Exe line,
-// a negative edict, map with no name, kick, and the remote-server commands
+// spec PHYS-13.11: where the preview host's console differs from id's on purpose: the Exe line,
+// a negative edict, map with no name, and the remote-server commands
 #[test]
 fn the_deliberate_differences_from_ids_host() {
     let mut run = connected();
@@ -425,7 +426,7 @@ fn the_deliberate_differences_from_ids_host() {
         format!("Exe: QuakeC Studio {}", env!("CARGO_PKG_VERSION"))
     );
     assert_eq!(console(&mut run, "edict -1\n"), ["Bad edict number"]);
-    assert!(console(&mut run, "map; kick player\n").is_empty());
+    assert!(console(&mut run, "map\n").is_empty());
     assert_eq!(run.world.take_host_command(), None);
     for name in [
         "connect",
@@ -579,7 +580,7 @@ fn the_clients_commands_go_to_the_client() {
     }
     // CLIENT-10.10: what the console forwarded to the server can be taken from it unread.
     assert!(console(&mut run, "god\n").is_empty());
-    run.world.client_command("fly");
+    run.world.client_command(crate::ClientId::FIRST, "fly");
     let sent = run.world.take_client_commands_sent();
     assert_eq!(sent.len(), 2, "{sent:?}");
     assert!(sent[0].starts_with(b"god") && sent[1] == b"fly");

@@ -91,22 +91,25 @@ fn a_new_map_plays_from_the_camera() {
     let camera = [-96.0, 40.0, 24.0];
     world.move_player(&progs, camera, [0.0; 3]).unwrap();
     world.frame(&progs, FRAME).unwrap();
-    let (eye, _) = world.player_view().unwrap();
+    let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
     assert!(
         (eye[0] - camera[0]).abs() < 1.0 && (eye[1] - camera[1]).abs() < 1.0,
         "the player stands at the camera: {eye:?}"
     );
     assert!(eye[2] > EYE, "on the floor or above: {eye:?}");
     // East and a little south, through the doorway at y from -32 to 32.
-    world.set_command(UserCmd {
-        angles: [0.0, -15.0, 0.0],
-        forward: 320.0,
-        ..UserCmd::default()
-    });
+    world.set_command(
+        qs_sim::ClientId::FIRST,
+        UserCmd {
+            angles: [0.0, -15.0, 0.0],
+            forward: 320.0,
+            ..UserCmd::default()
+        },
+    );
     let mut through = None;
     for _ in 0..216 {
         world.frame(&progs, FRAME).unwrap();
-        let (eye, _) = world.player_view().unwrap();
+        let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
         if eye[0] > 64.0 {
             through = Some(eye);
             break;

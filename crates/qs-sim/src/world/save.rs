@@ -17,8 +17,9 @@ use qc_types::{DefType, EntityRef, Etype, Slot};
 
 use qc_vm::ServerState;
 
-use super::{CLIENT, SpawnWatch, Spawner, World, field_slot};
+use super::{SpawnWatch, Spawner, World, field_slot};
 use crate::builtins::SimCall;
+use crate::clients::{ClientId, NUM_SPAWN_PARMS};
 use crate::protocol::EntAlpha;
 use crate::spawn::{FieldDef, Parser, SpawnError, Token, c_atof, parse_saved_edict, parse_value};
 
@@ -28,8 +29,6 @@ pub const SAVEGAME_VERSION: i32 = 5;
 const SAVEGAME_COMMENT_LENGTH: usize = 39;
 /// Where the comment's `kills:` count starts, `text+22`.
 const SAVEGAME_KILLS_AT: usize = 22;
-/// `NUM_SPAWN_PARMS` (`server.h`).
-pub(crate) const NUM_SPAWN_PARMS: usize = 16;
 /// "this silliness is so we can load 1.06 save files, which have float skill values": what
 /// is added before the skill is truncated (`Host_Loadgame_f`).
 const SAVED_SKILL_NUDGE: f32 = 0.1;
@@ -62,6 +61,8 @@ pub struct SaveGame {
 pub enum SaveError {
     /// "Not playing a local game.": no player has entered the game.
     NotPlaying,
+    /// "Can't save multiplayer games.": the world has more than one client slot.
+    Multiplayer,
     /// "Can't savegame with a dead player".
     DeadPlayer,
     /// "Savegame is version <n>, not 5".
@@ -90,6 +91,7 @@ impl core::fmt::Display for SaveError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NotPlaying => f.write_str("Not playing a local game."),
+            Self::Multiplayer => f.write_str("Can't save multiplayer games."),
             Self::DeadPlayer => f.write_str("Can't savegame with a dead player"),
             Self::Version(version) => {
                 write!(f, "Savegame is version {version}, not {SAVEGAME_VERSION}")
@@ -159,14 +161,22 @@ impl World {
     ///
     /// # Errors
     ///
-    /// [`SaveError::DeadPlayer`] while the player's health is 0 or less, and
+    /// [`SaveError::Multiplayer`] with more than one client slot, [`SaveError::DeadPlayer`]
+    /// while an active client's health is 0 or less, and
     /// [`SaveError::BadValue`] for a value that names nothing.
     pub fn save_game(&self, progs: &Progs<'_>) -> Result<Vec<u8>, SaveError> {
-        if self.player.is_none() {
+        if !self.is_spawned(ClientId::FIRST) {
             return Err(SaveError::NotPlaying);
         }
-        if self.float_field(CLIENT, "health") <= 0.0 {
-            return Err(SaveError::DeadPlayer);
+        // PHYS-10.5: `if (svs.maxclients != 1)`.
+        if self.maxplayers().is_multiplayer() {
+            return Err(SaveError::Multiplayer);
+        }
+        let clients = &self.builtins.messages.clients;
+        for (id, slot) in clients.iter() {
+            if slot.active && self.float_field(id.edict(), "health") <= 0.0 {
+                return Err(SaveError::DeadPlayer);
+            }
         }
         let mut bytes = Vec::new();
         let line = |out: &mut Vec<u8>, text: &[u8]| {
@@ -175,7 +185,13 @@ impl World {
         };
         line(&mut bytes, SAVEGAME_VERSION.to_string().as_bytes());
         line(&mut bytes, &self.savegame_comment(progs));
-        for parm in self.spawn_parms {
+        let parms = self
+            .builtins
+            .messages
+            .clients
+            .get(ClientId::FIRST)
+            .map_or([Slot::ZERO; NUM_SPAWN_PARMS], |slot| slot.spawn_parms);
+        for parm in parms {
             line(&mut bytes, c_float(parm.as_f32()).as_bytes());
         }
         // `current_skill`: the world plays at skill 1.
@@ -257,8 +273,10 @@ impl World {
             call.link(n, false)
                 .map_err(|e| SaveError::Link(e.to_string()))?;
         }
-        self.spawn_parms = save.parms.map(Slot::from_f32);
-        self.loaded = true;
+        if let Some(slot) = self.builtins.messages.clients.get_mut(ClientId::FIRST) {
+            slot.spawn_parms = save.parms.map(Slot::from_f32);
+        }
+        self.builtins.loaded = true;
         Ok(())
     }
 

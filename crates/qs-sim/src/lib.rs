@@ -7,6 +7,7 @@
 
 mod builtins;
 mod client;
+mod clients;
 pub mod collision;
 mod console;
 pub mod debug;
@@ -35,6 +36,7 @@ const HALF: f32 = 0.5;
 
 pub use builtins::{ModelFiles, SimBuiltins};
 pub use client::UserCmd;
+pub use clients::{ClientId, MAX_SCOREBOARD, MaxPlayers, SlotKind};
 pub use console::ConsoleName;
 pub use host_commands::atoi;
 pub use messages::{
@@ -46,6 +48,7 @@ pub use offsets::{FieldOffset, GlobalOffset};
 pub use physics::Sound;
 pub use protocol::NET_PROTOCOL_VERSION;
 pub use qc_builtins::localization;
+pub use qc_builtins::mock::EngineProfile;
 pub use qc_edict::EdictNumber;
 pub use world::{
     CLIENT_EDICT, Callback, Change, ChangeKind, ClientCommand, EdictChange, EditError, Entity,

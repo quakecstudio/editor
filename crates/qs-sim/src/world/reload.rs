@@ -12,7 +12,7 @@ use qc_types::{EntityRef, Etype, Slot};
 use qc_vm::Machine;
 
 use super::save::known;
-use super::{MAXCLIENTS, World, WorldError};
+use super::{World, WorldError};
 use crate::rerelease::BuiltinTable;
 
 /// What a reload carried over and what it could not (WORLD-10.5).
@@ -120,7 +120,7 @@ impl World {
         table: BuiltinTable,
     ) -> Result<Migration, WorldError> {
         let capacity = self.machine.edicts().capacity();
-        let mut machine = Machine::with_capacity(new, MAXCLIENTS, capacity)
+        let mut machine = Machine::with_capacity(new, self.maxplayers().get(), capacity)
             .map_err(|e| WorldError::Progs(e.to_string()))?;
         let store = self
             .machine

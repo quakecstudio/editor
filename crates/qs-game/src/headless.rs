@@ -465,7 +465,9 @@ impl Headless {
         if drift.start {
             self.client.start_pitch_drift();
         }
-        self.game.world_mut().set_command(cmd);
+        self.game
+            .world_mut()
+            .set_command(qs_sim::ClientId::FIRST, cmd);
     }
 
     /// The client's commands the console met, run in order (CON-6.1): the buttons and the
@@ -633,7 +635,11 @@ impl Headless {
     fn read_messages(&mut self, frametime: f64, realtime: f64) {
         // The console on the screen is the window's; with none, what it would show goes.
         self.game.take_printed();
-        let packets = self.game.world_mut().take_messages().packets;
+        let packets = self
+            .game
+            .world_mut()
+            .take_messages(qs_sim::ClientId::FIRST)
+            .packets;
         let seconds = frametime_f32(frametime);
         // CLIENT-10.2, CLIENT-10.6: a demo being recorded takes each packet, and one being
         // played is read in their place.

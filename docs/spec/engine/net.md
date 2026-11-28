@@ -37,16 +37,9 @@ compares with ours. `sv.time` is a `double`; every edict field is a `float`.
   `NET_MAX_MSGLEN` bytes, which may overflow (BUILTIN-13.3, BUILTIN-13.4). A server frame
   (`Host_ServerFrame`) sets the `frametime` global, clears `sv.datagram`, admits new
   clients, runs each client's move (PHYS-9), runs the physics (PHYS-1) unless the server is
-  paused, and then sends the clients' messages (NET-1.3).
-- **NET-1.3** `SV_SendClientMessages` first updates the reliable messages (NET-1.4), then for
-  each active client: a spawned one is sent a datagram (NET-1.5); one not yet spawned is sent
-  its message only when a signon stage asked for it (`sendsignon`), and otherwise a datagram
-  of one `svc_nop` once `NET_NOP_SECONDS` have passed since its last message; an overflowed
-  message drops the client and clears `overflowed` (the preview host keeps its one client:
-  the message is cleared and the flag reset); a message with any bytes is then sent and
-  cleared, and
-  `sendsignon` cleared. Last, `SV_CleanupEnts` clears `EF_MUZZLEFLASH` (2) from every edict's
-  `effects`, so a muzzle flash is sent in one datagram only.
+  paused, and then sends the clients' messages (NET-1.6).
+- **NET-1.3** **Withdrawn** 2026-11-27: it kept "the preview host['s] one client" when a
+  message overflowed; the server has several client slots now (NET-7). Replaced by NET-1.6.
 - **NET-1.4** `SV_UpdateToReliableMessages`: for each client slot `i` whose edict's `frags`
   differs from the slot's `old_frags`, every active client's message gets `svc_updatefrags`
   (14), the byte `i` and the frags as a short, and `old_frags` takes the value. Then
@@ -56,6 +49,16 @@ compares with ours. `sv.time` is a `double`; every edict field is a `float`.
   then `sv.datagram` only when `cursize + sv.datagram.cursize < maxsize` (otherwise none of
   it: the frame's sounds, particles and broadcast writes are lost). It is sent unreliably; a
   send that fails drops the client.
+- **NET-1.6** `SV_SendClientMessages` first updates the reliable messages (NET-1.4), then for
+  each active client in slot order: a spawned one is sent a datagram (NET-1.5); one not yet
+  spawned is sent its message only when a signon stage asked for it (`sendsignon`), and
+  otherwise a datagram of one `svc_nop` once `NET_NOP_SECONDS` have passed since its last
+  message; an overflowed message drops the client and clears `overflowed` (the preview host
+  keeps a local client, as dropping the player it is showing would end its game: the message
+  is cleared and the flag reset); a message with any bytes is then sent and cleared, and
+  `sendsignon` cleared. A bot is sent nothing (NET-7.3). Last, `SV_CleanupEnts` clears
+  `EF_MUZZLEFLASH` (2) from every edict's `effects`, so a muzzle flash is sent in one datagram
+  only.
 
 ### Constants
 
@@ -362,3 +365,109 @@ three (DIFF-16).
   `sv_protocol`, run before the first map (INPUT-3.7), takes the first map, and a change at the
   console the next. It is not a setting: `cvarlist` and the progs' `cvar` do not see it, as
   they do not in QuakeSpasm.
+
+## NET-7 Several clients
+
+**Source:** id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: `WinQuake/host.c`,
+`Host_FindMaxClients`, `SV_ClientPrintf`, `SV_BroadcastPrintf`, `SV_DropClient`,
+`Host_ServerFrame`; `WinQuake/net_main.c`, `MaxPlayers_f`; `WinQuake/sv_main.c`,
+`SV_ConnectClient`, `SV_CheckForNewClients`, `SV_SaveSpawnparms`; `WinQuake/sv_user.c`,
+`SV_RunClients`, `SV_ReadClientMove`; `WinQuake/host_cmd.c`, `Host_Name_f`, `Host_Say`,
+`Host_Tell_f`, `Host_Status_f`, `Host_Ping_f`, `Host_Kick_f`, `Host_Savegame_f`;
+`WinQuake/server.h`, `client_t`. Novum/vkQuake@27789d7333a46674474d871137bb71e056719628:
+`Quake/pr_ext.c`, `PF_spawnclient`, `PF_dropclient`, `PF_clienttype`; `Quake/sv_user.c`,
+`SV_RunClients`; `Quake/sv_main.c`, `SV_SendClientDatagram`.
+
+The server has a slot for each client, `svs.clients`, and the preview host plays coop and
+deathmatch with its players on one machine and with bots (ADR-0031).
+
+### Behaviour
+
+- **NET-7.1** The server has `svs.maxclients` slots, 1 to `MAX_SCOREBOARD` (16). The host
+  chooses them before the map loads, as `Host_FindMaxClients` starts at 1 and clamps a
+  `-listen` count to 16. The console's `maxplayers`, `MaxPlayers_f`, prints "`\"maxplayers\" is
+  \"%u\"`" with no argument; with one it prints "`maxplayers can not be changed while a server is
+  running.`" while a map runs (`if (sv.active)`), which a world always is. `MaxPlayers_f` and
+  `Host_FindMaxClients` also set `deathmatch` to 1 for more than one slot and to 0 for one;
+  the host sets the settings it loads the map with.
+- **NET-7.2** Slot `i`, from 0, is client edict `i + 1`, and `sv.num_edicts` starts at
+  `svs.maxclients + 1` ("leave slots at start for clients only"). The messages name a client by
+  its slot, the byte `host_client - svs.clients`.
+- **NET-7.3** A local client is joined to its slot through the in-process loopback connection,
+  whose address is `LOCAL`. A bot `spawnclient` made has no connection (vkQuake's
+  `netconnection` is `NULL`): it is sent no datagram ("botclient, shouldn't be sent anything."),
+  it reads no move, and as it thinks its view angles are its edict's `v_angle` ("`if
+  (!host_client->netconnection)`" in `SV_RunClients`), the rest of its move 0. vkQuake keeps a
+  bot's reliable message, which nothing sends, until it overflows and drops the bot; the
+  preview host drops the message as it would be sent instead, so a bot stays in a long game.
+- **NET-7.4** `SV_CheckForNewClients` gives a new connection the first slot not active; with
+  every slot active id stops the server ("Host_CheckForNewClients: no free clients"), and the
+  world refuses the client instead, as stopping would end the host's game. `SV_ConnectClient`
+  clears the slot (`memset`), marks it active and not spawned, writes the serverinfo (NET-2.2)
+  and sets its spawn parms: a saved game's (`sv.loadgame`), what it carries from the last level
+  (NET-7.8), else `SetNewParms`'. What the slot's connection already brought, its string
+  commands not yet read, stays to be read. Before `spawn` the first local client sends the
+  host's `_cl_name` and `_cl_color` (PHYS-10.8); another keeps `SV_ConnectClient`'s name,
+  `unconnected`, until it sends its own. A slot never connected has an empty name, as
+  `svs.clients` starts zeroed.
+- **NET-7.5** The `spawn` message (NET-2.4) gives every slot's name, `old_frags` and colours,
+  in slot order, each slot's own, and `colormap` is the client's edict number
+  ("`ent->v.colormap = NUM_FOR_EDICT(ent);`").
+- **NET-7.6** `SV_ClientPrintf` writes `svc_print` (8) and the text to one client's message;
+  `SV_BroadcastPrintf`, which `bprint` and `pause` use, to every active, spawned one. A
+  client's `say` and `say_team` (`Host_Say`) print "`\x01<name>: `" and `Cmd_Args`, with a
+  leading `"` and the last byte dropped when it starts with one, cut so the whole fits
+  `text[64]` with its line feed and terminator, then a line feed, to every active, spawned
+  client, `say_team` with `teamplay` set only to those whose `team` is the sender's. `tell
+  <name> <text>` (`Host_Tell_f`) prints "`<name>: `" and the text, cut the same way, to the
+  first active, spawned client whose name `Q_strcasecmp` matches. `Host_Name_f` reports
+  "`<old> renamed to <new>`" on the host's console when the client had a name, not
+  `unconnected`, and it changes. `status` (`Host_Status_f`), from a client to it and from the
+  console to the console, prints `host:    <hostname>`, `version: 1.09`, `map:     <map>`,
+  `players: <n> active (<max> max)` and an empty line, then for each active slot "`#%-2u
+  %-16.16s  %3i  %2i:%02i:%02i`" of its number from 1, name, frags and time connected, then
+  `   <address>`: `LOCAL` for a local client and `BOT` for a bot. The time is always
+  `0:00:00`, as the preview host keeps no wall clock. `ping` (`Host_Ping_f`) prints "`Client ping
+  times:`", then for each active client "`%4i %s`" of the mean of its 16 ping times in
+  milliseconds, truncated, and its name; `SV_ReadClientMove` keeps each move's
+  "`sv.time - MSG_ReadFloat ()`", the time the loopback client read in the last datagram
+  sent to it, and a bot's ping times stay 0. `kick` (`Host_Kick_f`) from a client is refused in
+  deathmatch (`pr_global_struct->deathmatch && !host_client->privileged`, and no client is
+  privileged); it finds the client by "`# <n>`", `Q_atof (n) - 1` truncated, or by a name
+  `Q_strcasecmp` matches, an active one; a client cannot kick itself ("can't kick yourself!"),
+  but the console, which names `_cl_name` and no slot of its own, can kick any; the kicked
+  client is told "`Kicked by <who>`", or with more than two words "`Kicked by <who>: <reason>`",
+  the reason what follows the name, or the number past the `#` and its spaces, with its leading
+  spaces dropped; then it is dropped (NET-7.9).
+- **NET-7.7** `SV_RunClients` runs each active client in slot order: its string commands, then,
+  once spawned, its move and `SV_ClientThink` "`if (!sv.paused && (svs.maxclients > 1 ||
+  key_dest == key_game) )`", `sv.paused` read as each client thinks, so a `pause` a client sends
+  stops the clients after it. A client not yet spawned has its move cleared ("clear client
+  movement until a new packet is received"). With more than one slot the game never pauses for
+  the console or a menu. The physics then runs unless `sv.paused`, under the same rule.
+- **NET-7.8** `SV_SaveSpawnparms` runs `SetChangeParms` with `self` each active client's edict
+  and keeps its `parm1` to `parm16`; a slot not active keeps nothing, and connects anew on the
+  next level with `SetNewParms`. A client of the next level takes its slot's parms. A bot
+  `spawnclient` made is carried to the next map by vkQuake, but there, with no connection to
+  send its signon, it never spawns again; the preview host carries no bot, and the host makes
+  its bots again on each level.
+- **NET-7.9** `SV_DropClient (false)`: `svc_disconnect` (2) sent with what the client's
+  message holds; with the client spawned, `ClientDisconnect` with `self` its edict, `self` put
+  back after; the slot not active, its name empty and `old_frags` -999999, its edict left in
+  the world ("the body stays around"); then every active client's message gets
+  `svc_updatename` with the slot and an empty name, `svc_updatefrags` with 0 and
+  `svc_updatecolors` with 0. A local client leaving and `kick` drop a client so.
+- **NET-7.10** `Host_Savegame_f` refuses a server with more than one slot, "`Can't save
+  multiplayer games.`" (`if (svs.maxclients != 1)`), after "Not playing a local game.", and
+  with any active client's health 0 or less, "Can't savegame with a dead player".
+- **NET-7.11** `setspawnparms(e)` (BUILTIN-8.7) copies client `e`'s 16 spawn parms, those its
+  slot connected with or `SetChangeParms` last kept, to `parm1` to `parm16`.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `MAX_SCOREBOARD` | 16 | `quakedef.h` |
+| `NUM_PING_TIMES` | 16 | `server.h` |
+| `svc_disconnect` | 2 | `protocol.h` |
+

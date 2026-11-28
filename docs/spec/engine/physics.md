@@ -508,13 +508,9 @@ host: a client and a server in one process (`cmd_source == src_command`).
   `_cl_color` to `top * 16 + bottom` printed with `%f` (`Cvar_SetValue`), and when connected
   forwards the command. `_cl_name` starts as "player", `_cl_color` as "0" and `hostname` as
   "UNNAMED".
-- **PHYS-13.5** `status` prints `host:    <hostname>`, `version: 1.09` (`%4.2f` of
-  `VERSION`), `map:     <map>`, `players: <n> active (1 max)` and an empty line, then for the
-  connected player `#1  <name, padded and cut to 16>  <frags, %3i>  <h>:<mm>:<ss>` and
-  `   LOCAL`, the loopback server address (`net_loop.c`). `version` prints `Version 1.09`
-  and an `Exe:` line. `prespawn`, `spawn` and `begin` print "`<name>` is not valid from the
-  console". `kick` from the console of a single-player game changes nothing the console tests
-  read.
+- **PHYS-13.5** **Withdrawn** 2026-11-27: it gave `status` one slot, `(1 max)`, and said
+  `kick` from the console changed nothing; both now follow the server's slots. Replaced by
+  PHYS-13.10 and NET-7.6.
 - **PHYS-13.6** `map <name>`, `changelevel <name>` (exactly one argument, else its usage
   "changelevel <levelname> : continue game on a new level"), `restart`, `save <name>` and
   `load <name>` (exactly one argument, else "save <savename> : save a game" and "load
@@ -540,14 +536,18 @@ host: a client and a server in one process (`cmd_source == src_command`).
 - **PHYS-13.8** **Withdrawn** 2026-11-21: it listed `demos`, `startdemos` and `stopdemo` among
   the commands the preview host lacks because it played no demos; it plays them now
   (CLIENT-10.11 to CLIENT-10.13). Replaced by PHYS-13.9.
-- **PHYS-13.9** Where the preview host differs from id's host, deliberately: `version`'s
+- **PHYS-13.9** **Withdrawn** 2026-11-27: it said `kick` does nothing, and the console's `kick`
+  now drops the client it names (NET-7.6). Replaced by PHYS-13.11.
+- **PHYS-13.10** `status` prints what NET-7.6 says, for every slot. `version` prints
+  `Version 1.09` and an `Exe:` line. `prespawn`, `spawn` and `begin` print "`<name>` is not
+  valid from the console". `kick` from the console drops the client it names, as NET-7.6 says.
+- **PHYS-13.11** Where the preview host differs from id's host, deliberately: `version`'s
   `Exe:` line names QuakeC Studio and its version instead of the build's `__TIME__` and
   `__DATE__`; `status` prints the connected time as `0:00:00`, since id's is
   `Sys_FloatTime`'s wall clock; `edict` with an `n` below 0 prints "Bad edict number", where
   id's `ED_PrintNum` reads outside the edicts; a field name of one byte is printed, where id's
   `name[strlen(name)-2]` reads before it; `map` with no name does nothing, where id's spawns
-  `maps/.bsp` and fails; `kick` does nothing, where id's could drop the only client; and the
-  profile counts do not wrap at `2^31`. `connect`, `reconnect`, `changelevel2`, `please`,
+  `maps/.bsp` and fails; and the profile counts do not wrap at `2^31`. `connect`, `reconnect`, `changelevel2`, `please`,
   `viewmodel`, `viewframe`, `viewnext`, `viewprev` and `mcache` are not part of the preview
   host, which has no remote server, and print `Unknown command`. The demo commands are
   CLIENT-10's.
