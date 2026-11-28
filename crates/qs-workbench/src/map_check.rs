@@ -105,10 +105,13 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
         let inputs = self.budget_inputs();
         let budget_problems =
             move |text: &[u8]| budget.problems(&BudgetKey::of(text.to_vec(), inputs));
+        // L-88: the player starts, for the game chosen.
+        let game = self.game();
         let Ok(schema) = self.entity_schema() else {
             return Some(Box::new(move |map| {
                 let text = map.to_bytes();
-                let mut problems = playable.problems(&text);
+                let mut problems = game.start_problems(map);
+                problems.extend(playable.problems(&text));
                 problems.extend(budget_problems(&text));
                 problems
             }));
@@ -119,6 +122,7 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
         Some(Box::new(move |map| {
             let text = map.to_bytes();
             let mut problems = entity_problems(&schema, map);
+            problems.extend(game.start_problems(map));
             problems.extend(logic.problems(&text, sources));
             problems.extend(playable.problems(&text));
             problems.extend(budget_problems(&text));

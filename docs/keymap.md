@@ -308,6 +308,7 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `preview.poll` | run by the window | Reads the running game's events: its state changes and console lines. |
 | `preview.select` | needs a value | Selects an edict of the running game and reads its fields for the Properties panel. |
 | `preview.set_field` | needs a value | Sets a field of the selected edict while the game is paused, the value read as the field's type. The game is given the value when it resumes, and reads the old one until then (`applied`: `on_resume`); each poll lists the fields waiting (`held`). |
+| `preview.set_game` | needs a value | Chooses the game Play and Play from here play when given         none: single player, coop or deathmatch, the players on this machine and the bots. The         map's issues check its player starts for it. |
 | `preview.step_by` | needs a value | Steps the game stopped in a frame by a statement, into a call, over one or out to the caller. |
 | `preview.unwatch` | needs a value | Takes a watch away. |
 | `preview.watch` | needs a value | Adds a watch, an expression read each time the game stops in a frame. |

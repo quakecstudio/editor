@@ -2018,9 +2018,9 @@ pub struct PlayParams {
     #[serde(default)]
     pub map: Option<String>,
     /// The game: single player, coop or deathmatch, the players on this machine and the bots;
-    /// single player with no bots when absent.
+    /// the one `preview.set_game` chose when absent, single player with no bots until then.
     #[serde(default)]
-    pub game: GameOptions,
+    pub game: Option<GameOptions>,
 }
 
 /// The parameters of `preview.select`.
@@ -2531,6 +2531,7 @@ impl<C: HasPreview + 'static> Command<C> for PlayCommand {
         PlayParams { map, game }: PlayParams,
     ) -> Result<Outcome<PreviewStatus, C>, PreviewError> {
         let (workbench, preview) = context.workbench_and_preview();
+        let game = game.unwrap_or_else(|| workbench.game());
         preview.play(workbench, map, game)?;
         Ok(Outcome::outside_history(PreviewStatus::of(preview)))
     }
@@ -2682,6 +2683,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ScenarioRunCommand)?;
     registry.register(GameCommand)?;
     registry.register(ChooseGameCommand)?;
+    registry.register(game_options::SetGameCommand)?;
     registry.register(SelectCommand)?;
     registry.register(PickCommand)?;
     register_map_game(registry)?;
