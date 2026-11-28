@@ -90,6 +90,7 @@ use crate::map_tools::BrushAction;
 use crate::map_view::MapView;
 use crate::shell::{CentreTab, MAP_BACKUP_INTERVAL, ShellError, Workspace};
 use crate::strings::{group_name, layer_name};
+use qs_workbench::GameOptions;
 
 use qs_map_edit::uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
 
@@ -100,6 +101,8 @@ use crate::disk_watch::DiskWatch;
 pub(crate) struct MapFeature {
     /// The map view, once a map is shown.
     pub(crate) map: Option<MapView>,
+    /// The game Play from here plays, the toolbar's play options' (L-86).
+    pub(crate) play: GameOptions,
     /// The map editor's view and key editor (P5-06).
     pub(crate) map_editor: MapEditor,
     /// The map the map editor last showed, to notice one newly opened.
@@ -870,6 +873,7 @@ impl MapFeature {
                 ]),
                 region: None,
                 start: qs_workbench::GameStart::Running,
+                game: self.play,
             },
         );
         // As Play from the toolbar: the error on the toolbar, and the guide when no game was

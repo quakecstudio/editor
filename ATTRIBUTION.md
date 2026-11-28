@@ -23,6 +23,7 @@ Format: one row per file, the path in backticks relative to the repository root.
 | `docs/design/mockups/04-command-palette.png` | QuakeC Studio contributors | Mockup drawn for this project; source in `docs/design/mockups/source/` | GPL-3.0-or-later |
 | `docs/design/mockups/05-map-editor.png` | QuakeC Studio contributors | Mockup drawn for this project; source in `docs/design/mockups/source/` | GPL-3.0-or-later |
 | `docs/design/mockups/06-theme-and-chrome.png` | QuakeC Studio contributors | Mockup drawn for this project; source in `docs/design/mockups/source/` | GPL-3.0-or-later |
+| `docs/design/mockups/07-play-options.png` | QuakeC Studio contributors | Mockup drawn for this project; source in `docs/design/mockups/source/` | GPL-3.0-or-later |
 | `docs/design/mockups/source/assets/engine-scene.svg` | QuakeC Studio contributors | Drawing made for the mockups | GPL-3.0-or-later |
 | `docs/design/mockups/source/assets/map-3d.svg` | QuakeC Studio contributors | Drawing made for the mockups | GPL-3.0-or-later |
 | `docs/design/mockups/source/assets/map-top.svg` | QuakeC Studio contributors | Drawing made for the mockups | GPL-3.0-or-later |
@@ -65,6 +66,7 @@ Format: one row per file, the path in backticks relative to the repository root.
 | `apps/desktop/snapshots/palette-prompt.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/project.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/search.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
+| `apps/desktop/snapshots/play-options.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-editor-only.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-left-hidden.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |

@@ -35,6 +35,18 @@ random sources starting at the engine's fixed state so a run is the same each ti
 With no device it leaves `screenshot` out of its capabilities (BRIDGE-2.6). It is what
 `cargo xtask bridge-client` runs in CI on Linux, macOS and Windows.
 
+**Coop, deathmatch, local players and bots (ADR-0031, L-86).** `-listen [n]` gives the server
+`n` slots and `deathmatch` 1 (NET-7.1); `--coop` sets `coop` 1 and `deathmatch` 0 instead.
+`--players <n>`, 1 to 4, joins that many local players, each to its own slot through a
+loopback connection in the host's process: the first plays in the window (or the IDE's Game
+tab), each other one in a window of its own titled `QuakeC Studio preview: player <n>`, with
+its own keys and mouse, the same bindings, and its own view, status bar and notify lines. A
+key in a player's window runs its binding as that player's console line, so a command it
+forwards goes to that player's slot (NET-7.12); the console and the menus are the first
+player's. Closing a player's window drops that player from the game (NET-7.9). `--bots <n>`
+types `addbot` that many times as the first map starts, with `--bot-skill <0-3>` when given
+(BOT-9.3). The IDE's toolbar chooses all of these with its play options.
+
 **Docking (P3-11, ENG-9).** The IDE opens the window beside its own with `--position` and
 `--size`, then keeps it there with `window/place` (BRIDGE-4.10). It sends a new frame when the
 IDE's window moves, is resized or changes focus, and asks for the window to stay above others

@@ -15,6 +15,10 @@ view.
   scripts; the console's demo commands of CLIENT-10 (`record`, `stop`, `playdemo`,
   `timedemo`, `startdemos`, `demos`, `stopdemo`), ported from QuakeSpasm's `cl_demo.c` and
   `host_cmd.c`. Its tests cite the statements they pin.
+- **Local players (L-86, ADR-0031):** `seats.rs` joins each local player after the first to its
+  own server slot through a loopback connection (NET-7.3) and gives it a client of its own;
+  `window/seat.rs` draws each in a window of its own, its keys run as its console lines
+  (NET-7.12).
 - **Entry points:** `Args`, the host's command line, whose `run` does what it says (the
   window, `--headless`, `--timerefresh` or a view script); `GameView`, the same game drawn in a
   panel of another app's window, which the app draws each frame and lets answer its bridge

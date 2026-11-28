@@ -41,6 +41,7 @@ pub mod dock;
 pub mod engine;
 pub mod entities;
 pub mod game_files;
+pub(crate) mod game_options;
 pub mod scenario;
 
 use debug::{Debugger, Location, StopReason, Watch};
@@ -48,6 +49,7 @@ use dock::DockFrame;
 use qs_sim::debug::resolve;
 
 use entities::Entities;
+use game_options::{GameOptions, GameOptionsError};
 
 /// The most console lines the preview keeps; older ones are dropped.
 const CONSOLE_LINES: usize = 1000;
@@ -174,6 +176,8 @@ pub enum PreviewError {
     NoRoom([f64; 3]),
     /// The player's box fits nowhere near the map's own player start, whose origin this is.
     NoRoomAtStart([f64; 3]),
+    /// The game, the players and the bots asked for do not make a game (L-86).
+    GameOptions(GameOptionsError),
     /// The project's program has no statement on the line, so a breakpoint there would never
     /// stop the game (BRIDGE-4.9).
     NoStatement {
@@ -221,6 +225,7 @@ impl core::fmt::Display for PreviewError {
                  above or below it: move the info_player_start out of the wall, the floor or \
                  the door or other entity it is in"
             ),
+            Self::GameOptions(error) => write!(f, "{error}"),
             Self::NoStatement { file, line } => write!(
                 f,
                 "no statement is on line {line} of {}, so a breakpoint there would never stop \
@@ -698,7 +703,8 @@ impl Preview {
     }
 
     /// Builds the open project and starts the host on its first program, on `map` or the
-    /// host's own first map; a host already running is stopped first.
+    /// host's own first map, playing the game `game` names; a host already running is stopped
+    /// first.
     ///
     /// # Errors
     ///
@@ -708,6 +714,7 @@ impl Preview {
         &mut self,
         workbench: &mut Workbench<L>,
         map: Option<String>,
+        game: GameOptions,
     ) -> Result<(), PreviewError> {
         let built = workbench.built_program()?;
         // P6-44: a map the project compiled is read from where the game reads maps.
@@ -715,18 +722,21 @@ impl Preview {
             let beside = workbench.beside_open_map(name);
             place_project_map(&built.project, &built.mod_name, name, beside.as_deref())?;
         }
-        self.play_built(built, map, GameStart::Running)
+        self.play_built(built, map, GameStart::Running, game)
     }
 
     /// Starts the host on the program `built` gives, the project, its program and its mod
-    /// folder, on `map` or the host's own first map, running or paused as `start` says; a host
-    /// already running is stopped first.
+    /// folder, on `map` or the host's own first map, running or paused as `start` says and
+    /// playing the game `game` names; a host already running is stopped first. Options that do
+    /// not make a game are refused before anything is built or stopped.
     pub(crate) fn play_built(
         &mut self,
         built: BuiltProgram,
         map: Option<String>,
         start: GameStart,
+        game: GameOptions,
     ) -> Result<(), PreviewError> {
+        let words = game.host_words().map_err(PreviewError::GameOptions)?;
         let BuiltProgram {
             project,
             progs,
@@ -749,6 +759,7 @@ impl Preview {
                 .map_err(PreviewError::Launch)?
         };
         let mut extra = self.config.extra.clone();
+        extra.extend(words);
         if start == GameStart::Paused {
             extra.push(LaunchSpec::PAUSED.to_owned());
         }
@@ -2006,6 +2017,10 @@ pub struct PlayParams {
     /// The map to start on; the host's own first map when absent.
     #[serde(default)]
     pub map: Option<String>,
+    /// The game: single player, coop or deathmatch, the players on this machine and the bots;
+    /// single player with no bots when absent.
+    #[serde(default)]
+    pub game: GameOptions,
 }
 
 /// The parameters of `preview.select`.
@@ -2513,10 +2528,10 @@ impl<C: HasPreview + 'static> Command<C> for PlayCommand {
     fn run(
         &self,
         context: &mut C,
-        PlayParams { map }: PlayParams,
+        PlayParams { map, game }: PlayParams,
     ) -> Result<Outcome<PreviewStatus, C>, PreviewError> {
         let (workbench, preview) = context.workbench_and_preview();
-        preview.play(workbench, map)?;
+        preview.play(workbench, map, game)?;
         Ok(Outcome::outside_history(PreviewStatus::of(preview)))
     }
 }

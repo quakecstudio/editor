@@ -25,6 +25,7 @@ These are design targets for the UI layer (L7), not screenshots. The app is buil
 | [`04-command-palette.png`](mockups/04-command-palette.png) | The command palette over the registry, with command ids and shortcuts | UI-10, PRIN-3 |
 | [`05-map-editor.png`](mockups/05-map-editor.png) | Map editor: 3D and top views, map tools, play from here, background full compile, typed entity keys from QuakeC, an unknown-key diagnostic, the texture browser | MAP-1 to MAP-5, MAP-7, MAP-13, MAP-14 |
 | [`06-theme-and-chrome.png`](mockups/06-theme-and-chrome.png) | Theme tokens for dark and light with contrast ratios, code colours, type, spacing, and window chrome on macOS, Windows and Linux | UI-14, UI-15, QA-9 |
+| [`07-play-options.png`](mockups/07-play-options.png) | The run toolbar's play options (L-86): single player, coop or deathmatch, the players on this computer and the bots, and the second player's own window; the app's `play-options` snapshot matches it | ENG-18 |
 
 The docks and the icon toolbar (P7-15) have no board: Justin approved the app's own snapshots in [`apps/desktop/snapshots/`](../../apps/desktop/snapshots/) as their reference on 2026-11-15, so `shell.png`, `map-editor.png` and the others there supersede the boards' panel tabs and text toolbar.
 
@@ -40,4 +41,4 @@ Warm graphite surfaces with one ember accent, IBM Plex Sans and JetBrains Mono, 
 
 `mockups/source/` holds each board as a `.dc.html` file and the SVG drawings they use. They open in a browser as plain HTML (the `support.js` they reference is the design canvas's runtime and is not needed to view them). The editable originals are in the "QuakeC Studio mockups" design canvas on claude.ai, which is private to Justin until shared.
 
-To regenerate the PNGs after editing a source file, open it in a browser at the board's size (1920x1080 for the play loop, 1440x660 for the theme board, 1440x900 for the rest) and take a screenshot.
+To regenerate the PNGs after editing a source file, open it in a browser at the board's size (1920x1080 for the play loop, 1440x660 for the theme board and the play options, 1440x900 for the rest) and take a screenshot.

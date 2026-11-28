@@ -87,6 +87,12 @@ fn scripts() -> Vec<Script> {
             name: "shell",
             steps: Vec::new(),
         },
+        // L-86: the toolbar's play options open, deathmatch chosen, as the mockup
+        // `docs/design/mockups/07-play-options.png` shows them.
+        Script {
+            name: "play-options",
+            steps: vec![Step::Click("Play options"), Step::Click("Deathmatch")],
+        },
         // L-28: the New Project dialog, from the Welcome page with the Project panel hidden,
         // so one button has the name.
         Script {

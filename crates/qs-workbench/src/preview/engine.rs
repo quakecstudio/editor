@@ -90,7 +90,7 @@ pub enum BotSkillParam {
 
 impl BotSkillParam {
     /// The skill's number, as `addbot` takes it.
-    const fn level(self) -> u8 {
+    pub(crate) const fn level(self) -> u8 {
         let skill = match self {
             Self::Easy => BotSkill::Easy,
             Self::Normal => BotSkill::Normal,

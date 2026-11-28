@@ -32,6 +32,7 @@ use crate::keys::focus;
 use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::{Drawer, Frame};
+use crate::seats::{Loopback, Seat};
 use crate::settings::{DrawingSettings, HostSettings};
 use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
@@ -59,6 +60,7 @@ impl Args {
             }
         };
         let mut world = Headless::new(loaded, offscreen.as_ref());
+        world.seat_players();
         let frame = Duration::from_secs_f64(FRAME);
         let started = Instant::now();
         let mut next = started;
@@ -92,6 +94,7 @@ impl Args {
                         let next = Headless::new(*loaded, offscreen.as_ref());
                         let old = core::mem::replace(&mut world, next);
                         world.game.carry_from(old.game);
+                        world.seat_players();
                         // A button held stays held into the next level, as the window's,
                         // and so does a demo being recorded or played.
                         world.input = old.input;
@@ -398,6 +401,9 @@ struct Headless {
     input: Input,
     /// The demo being recorded and the one being played (CLIENT-10).
     demos: Demos,
+    /// The local players after the first (L-86), whose clients read their slots' messages
+    /// each frame, with no window to draw them in.
+    seats: Vec<Seat>,
 }
 
 impl Headless {
@@ -446,7 +452,20 @@ impl Headless {
             printed,
             input: Input::new(),
             demos,
+            seats: Vec::new(),
         }
+    }
+
+    /// A seat for each local player after the first the game has (NET-7.13), each a new client
+    /// for the level's signon.
+    fn seat_players(&mut self) {
+        self.seats = self
+            .game
+            .local_players()
+            .iter()
+            .copied()
+            .map(Seat::new)
+            .collect();
     }
 
     /// The player for a frame of `seconds` (INPUT-2), as the window steers it with no key
@@ -465,9 +484,7 @@ impl Headless {
         if drift.start {
             self.client.start_pitch_drift();
         }
-        self.game
-            .world_mut()
-            .set_command(qs_sim::ClientId::FIRST, cmd);
+        Loopback::FIRST.send(self.game.world_mut(), cmd);
     }
 
     /// The client's commands the console met, run in order (CON-6.1): the buttons and the
@@ -635,11 +652,7 @@ impl Headless {
     fn read_messages(&mut self, frametime: f64, realtime: f64) {
         // The console on the screen is the window's; with none, what it would show goes.
         self.game.take_printed();
-        let packets = self
-            .game
-            .world_mut()
-            .take_messages(qs_sim::ClientId::FIRST)
-            .packets;
+        let packets = Loopback::FIRST.receive(self.game.world_mut());
         let seconds = frametime_f32(frametime);
         // CLIENT-10.2, CLIENT-10.6: a demo being recorded takes each packet, and one being
         // played is read in their place.
@@ -653,6 +666,15 @@ impl Headless {
             Ok(events) if self.audio.captures() => self.audio.handle(&events, &mut self.rand),
             Ok(_) => {}
             Err(error) => tracing::warn!(%error, "client"),
+        }
+        for seat in &mut self.seats {
+            if let Err(error) = seat.read(
+                self.game.world_mut(),
+                seconds,
+                (&mut self.describer, &mut self.rand),
+            ) {
+                tracing::warn!(%error, player = seat.player().number, "client");
+            }
         }
         let view = self.client.scene().view;
         // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.

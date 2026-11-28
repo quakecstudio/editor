@@ -462,6 +462,21 @@ deathmatch with its players on one machine and with bots (ADR-0031).
   with any active client's health 0 or less, "Can't savegame with a dead player".
 - **NET-7.11** `setspawnparms(e)` (BUILTIN-8.7) copies client `e`'s 16 spawn parms, those its
   slot connected with or `SetChangeParms` last kept, to `parm1` to `parm16`.
+- **NET-7.12** In id's engine each local client is its own host with its own console, whose
+  `Cbuf` and `Cmd_ForwardToServer` are that client's. The preview host's other local players
+  each have a console of their own in the same way (ADR-0031): the lines a player's keys run go
+  to its buffer and run there, what a `wait` leaves runs on it in the next frame, a command it
+  forwards goes to that player's slot ("`Can't \"<name>\", not connected`" when the slot is not
+  active), and the client's commands it meets, its buttons and impulses among them, are that
+  player's. Its `name` and `color` go to its slot as typed, and leave the host's `_cl_name` and
+  `_cl_color`, the first player's, as they are. A player leaving takes its console with it.
+  Every other line, typed or from the progs, the bridge or the menus, is the first client's.
+  This is the preview host's own rule; id's source has no second local client.
+- **NET-7.13** The preview host has 1 to 4 local players. The first enters as a map loads;
+  each other one joins after it, in the first free slot on the first map, and on each later
+  level in the slot it had, before the bots come back to theirs, so each takes the parms its
+  own slot carried (NET-7.8). Each sends its name, `player<n>`, as it joins. A level whose load
+  a spawn function holds (WORLD-9.7) brings them in once it is loaded to its end.
 
 ### Constants
 
@@ -470,4 +485,3 @@ deathmatch with its players on one machine and with bots (ADR-0031).
 | `MAX_SCOREBOARD` | 16 | `quakedef.h` |
 | `NUM_PING_TIMES` | 16 | `server.h` |
 | `svc_disconnect` | 2 | `protocol.h` |
-

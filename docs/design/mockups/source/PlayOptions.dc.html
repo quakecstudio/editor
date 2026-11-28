@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QuakeC Studio: play options in the run toolbar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border:1px solid #423F3B;border-radius:5px;background:#2A2826}
+.muted{color:#ABA49A}
+.row{display:grid;grid-template-columns:170px 1fr;align-items:center;gap:12px;min-height:30px}
+.seg{display:inline-flex;border:1px solid #423F3B;border-radius:6px;overflow:hidden}
+.seg span{padding:4px 12px;border-right:1px solid #423F3B}
+.seg span:last-child{border-right:0}
+.seg .on{background:#3A2A1E;color:#F2E9DE;box-shadow:inset 0 -2px 0 #EE8B45}
+.combo{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-width:130px;height:26px;padding:0 8px;border:1px solid #423F3B;border-radius:5px;background:#1A1918}
+.note{font-size:12px;color:#ABA49A;margin:2px 0 0 182px}
+.callout{position:absolute;font-size:12.5px;color:#ABA49A;max-width:260px;line-height:1.45}
+.callout b{color:#E8E3DC;font-weight:500}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 660px; position: relative; overflow: hidden; background: #0F0E0D; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; color: #E8E3DC">
+
+  <!-- IDE window, top strip -->
+  <div style="position: absolute; left: 16px; top: 16px; width: 1408px; height: 628px; background: #1A1918; border: 1px solid #3A3734; border-radius: 10px; overflow: hidden">
+
+    <!-- run toolbar, as apps/desktop/snapshots/shell.png with the play options after the run controls -->
+    <div style="height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 10px; background: #1D1B1A; border-bottom: 1px solid #33302D">
+      <span style="display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 5px; background: #EE8B45; color: #1A1918">&#9655; Play</span>
+      <span class="muted">&#8214; Pause</span>
+      <span class="muted">&#9655;| Step</span>
+      <span class="muted">&#8635; Restart map</span>
+      <span class="chip" aria-label="Play options: deathmatch, 2 players, 3 bots" style="border-color: #EE8B45; font-size: 12px">Deathmatch &middot; 2 players, 3 bots</span>
+      <span class="muted" style="display:inline-grid;place-items:center;width:18px;height:18px;border:1px solid #423F3B;border-radius:9px;font-size:11px">?</span>
+      <span style="width:1px;height:22px;background:#33302D"></span>
+      <span>Preview host</span><span class="muted" style="font-size:12px">in the Game tab</span>
+      <span class="chip" style="font-size:12px;background:none">Pop Out</span>
+      <span class="chip" style="font-size:12px;background:none">Full Screen</span>
+      <span style="flex:1"></span>
+      <span class="chip muted" style="background:none">&#9906; Search commands</span>
+    </div>
+
+    <!-- the open play options -->
+    <div style="position: absolute; left: 300px; top: 46px; width: 520px; padding: 14px 16px 16px; background: #2A2826; border: 1px solid #423F3B; border-radius: 8px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 8px">
+      <div style="font-weight: 600">Play options</div>
+      <div class="row"><span>Game</span>
+        <span class="seg"><span>Single player</span><span>Coop</span><span class="on">Deathmatch</span></span></div>
+      <div class="row"><span>Players on this computer</span>
+        <span class="combo">2 <span class="muted">&#9662;</span></span></div>
+      <div class="note">Each player after the first plays in a window of its own.</div>
+      <div class="row"><span>Bots</span>
+        <span class="combo">3 <span class="muted">&#9662;</span></span></div>
+      <div class="note">Bots play any mod through its own QuakeC.</div>
+      <div class="row"><span>Bot skill</span>
+        <span class="combo">Normal <span class="muted">&#9662;</span></span></div>
+      <div style="margin-top: 6px; padding-top: 10px; border-top: 1px solid #33302D; color: #ABA49A; font-size: 12.5px">Play starts a deathmatch with 2 players on this computer and 3 bots.</div>
+    </div>
+
+    <!-- the choices each list holds -->
+    <div class="callout" style="left: 896px; top: 120px"><b>Players on this computer:</b> 1, 2, 3 or 4. Single player keeps it at 1.</div>
+    <div class="callout" style="left: 896px; top: 196px"><b>Bots:</b> None, then 1 up to what fits in 16 with the players. Single player keeps it at None.</div>
+    <div class="callout" style="left: 896px; top: 272px"><b>Bot skill:</b> The game's skill, Easy, Normal, Hard or Nightmare. Shown only with bots.</div>
+    <div class="callout" style="left: 896px; top: 348px"><b>The button</b> names the game: "Single player", or "Coop &middot; 1 player, 2 bots". Play from here in the map editor plays the same game.</div>
+
+    <!-- the second player's window -->
+    <div style="position: absolute; left: 860px; top: 440px; width: 300px; border: 1px solid #3A3734; border-radius: 8px; overflow: hidden; background: #000">
+      <div style="height: 26px; display: flex; align-items: center; justify-content: center; background: #1E1D1B; border-bottom: 1px solid #2A2826; color: #ABA49A; font-size: 12px">QuakeC Studio preview: player 2</div>
+      <div style="height: 150px; background: linear-gradient(#2b2219, #120e0b); display: grid; place-items: end center; color: #8E877D; font-size: 12px; padding-bottom: 10px">Player 2's own view, keys and mouse</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -20,10 +20,13 @@ use qs_bots::{BotError, Bots, Graph};
 use qs_sim::spawn::Deathmatch;
 use qs_sim::{BotSkill, ClientId};
 
+use qs_sim::ClientCommand;
+
 use crate::AXES;
 use crate::Error;
 use crate::demos::Connection;
 use crate::screenshot::Frame;
+use crate::seats::{LocalPlayer, Loopback, SeatError};
 use crate::values::{from_json, named_json, to_json};
 
 mod debug;
@@ -304,6 +307,10 @@ pub(crate) struct Game {
     bot_graph: Option<Receiver<Result<Graph, BotError>>>,
     /// The last level's bots, waiting for this level's held load to end (WORLD-9.7).
     bots_waiting: Vec<(ClientId, Vec<u8>, BotSkill)>,
+    /// The local players after the first, each in its slot (NET-7.13), and the last level's,
+    /// waiting for this level's held load to end.
+    local_players: Vec<LocalPlayer>,
+    local_players_waiting: Vec<LocalPlayer>,
 }
 
 impl Game {
@@ -341,6 +348,8 @@ impl Game {
             bots: Bots::default(),
             bot_graph: None,
             bots_waiting: Vec::new(),
+            local_players: Vec::new(),
+            local_players_waiting: Vec::new(),
         }
     }
 
@@ -409,11 +418,17 @@ impl Game {
                 .set_breakpoint(breakpoint.statement, BreakpointEdit::Set);
             self.breakpoints.push(breakpoint);
         }
-        // BOT-9.1: the bots play on, each in its slot, so it carries what it carried. A load a
-        // spawn function stopped brings them in only once it is loaded again to its end.
+        // NET-7.13: the local players play on, each in its own slot, before the bots come back
+        // to theirs; BOT-9.1: the bots play on, each in its slot, so it carries what it
+        // carried. A load a spawn function stopped brings them in only once it is loaded again
+        // to its end.
+        let mut locals = core::mem::take(&mut old.local_players);
+        locals.extend(core::mem::take(&mut old.local_players_waiting));
         if self.loading.holds() {
+            self.local_players_waiting = locals;
             self.bots_waiting = playing;
         } else {
+            self.rejoin_local_players(locals);
             self.rejoin_bots(playing);
         }
         // WORLD-9.7: a load a spawn function stopped says so now that it has the breakpoints.
@@ -1028,6 +1043,95 @@ impl Game {
             tracing::warn!("the progs did not read for the console");
         }
         self.report_console()
+    }
+
+    /// `line` run on local player `loopback`'s own console (NET-7.12), what it prints kept for
+    /// the console on the screen; the client's commands it meets wait for
+    /// [`Game::take_client_commands_of`].
+    pub(crate) fn type_console_as(&mut self, loopback: Loopback, line: &[u8]) {
+        let text = String::from_utf8_lossy(line).into_owned();
+        let ran = self.with_progs(|game, progs| {
+            game.world.execute_console_as(progs, loopback.id(), &text);
+        });
+        if ran.is_err() {
+            tracing::warn!("the progs did not read for the console");
+        }
+        self.report_console();
+    }
+
+    /// The client's commands local player `loopback`'s console met since the last call, the
+    /// buttons and impulses its keys hold among them (NET-7.12).
+    pub(crate) fn take_client_commands_of(&mut self, loopback: Loopback) -> Vec<ClientCommand> {
+        self.world.take_client_commands_of(loopback.id())
+    }
+
+    /// Whether a stop in a spawn function holds the level's load (WORLD-9.7): no client has
+    /// entered yet.
+    pub(crate) const fn holds_load(&self) -> bool {
+        self.loading.holds()
+    }
+
+    /// The local players after the first, in the order they joined (NET-7.13).
+    pub(crate) fn local_players(&self) -> &[LocalPlayer] {
+        &self.local_players
+    }
+
+    /// Local player `number` joined in the first free slot (L-86, NET-7.13), its name sent;
+    /// `None` when every slot is active.
+    ///
+    /// # Errors
+    ///
+    /// Why it did not join.
+    pub(crate) fn join_local_player(
+        &mut self,
+        number: u8,
+    ) -> Result<Option<LocalPlayer>, SeatError> {
+        let joined = self
+            .with_progs(|game, progs| Loopback::join(&mut game.world, progs))
+            .map_err(|error| SeatError::Progs(error.message))?
+            .map_err(SeatError::Spawn)?;
+        Ok(joined.map(|loopback| self.welcome(LocalPlayer { number, loopback })))
+    }
+
+    /// `player` in the game: it sends its name, and the game keeps it for the next level.
+    fn welcome(&mut self, player: LocalPlayer) -> LocalPlayer {
+        self.world
+            .client_command(player.loopback.id(), &player.name_line());
+        self.local_players.push(player);
+        player
+    }
+
+    /// Brings each of `players` back into this level in the slot it had (NET-7.13).
+    fn rejoin_local_players(&mut self, players: Vec<LocalPlayer>) {
+        for player in players {
+            let rejoined =
+                self.with_progs(|game, progs| player.loopback.rejoin(&mut game.world, progs));
+            match rejoined {
+                Ok(Ok(Some(_))) => {
+                    self.welcome(player);
+                }
+                Ok(Ok(None)) => {
+                    tracing::warn!(player = player.number, "a player's slot was taken");
+                }
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, player = player.number, "a player did not join");
+                }
+                Err(error) => tracing::warn!(error = %error.message, "the players did not join"),
+            }
+        }
+    }
+
+    /// Local player `loopback` leaves, as its window closes: dropped from its slot (NET-7.9),
+    /// and not brought into the next level.
+    pub(crate) fn leave(&mut self, loopback: Loopback) {
+        self.local_players
+            .retain(|player| player.loopback != loopback);
+        let left = self.with_progs(|game, progs| game.world.disconnect(progs, loopback.id()));
+        match left {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => self.fail(None, &error),
+            Err(error) => tracing::warn!(error = %error.message, "a player did not leave"),
+        }
     }
 
     /// The command or setting `partial` completes to (CON-4.3).

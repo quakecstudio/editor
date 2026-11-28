@@ -36,7 +36,9 @@ const HALF: f32 = 0.5;
 
 pub use builtins::{ModelFiles, SimBuiltins};
 pub use client::UserCmd;
-pub use clients::{ClientId, MAX_SCOREBOARD, MaxPlayers, SlotKind};
+pub use clients::{
+    ClientId, LISTEN_SLOTS, MAX_LOCAL_PLAYERS, MAX_SCOREBOARD, MaxPlayers, SlotKind,
+};
 pub use console::ConsoleName;
 pub use host_commands::atoi;
 pub use messages::{

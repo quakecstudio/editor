@@ -65,6 +65,7 @@ pub mod open_documents;
 pub mod palette;
 mod pick;
 mod picker;
+mod play_options;
 pub mod project;
 pub mod shell;
 pub mod strings;

@@ -25,6 +25,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::map_playable::LastCompile;
+use crate::preview::game_options::GameOptions;
 use crate::preview::{GameStart, HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map::{Region, Surface, TexDef};
@@ -414,6 +415,10 @@ pub struct PlayFromHereParams {
     /// on. Running when not given.
     #[serde(default)]
     pub start: GameStart,
+    /// The game: single player, coop or deathmatch, the players on this machine and the bots;
+    /// single player with no bots when absent. The player put at the eye is the first.
+    #[serde(default)]
+    pub game: GameOptions,
 }
 
 /// How far, in whole units up or down, [`PlayFromHereParams::origin_in`] looks for room for
@@ -786,7 +791,7 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         // The player's own light is read again where the game puts it.
         let (_, dark) =
             PlaceLight::around(&bsp, origin, &|name| drawn.contains(name)).map_err(entity_lump)?;
-        preview.play_built(built, Some(name.clone()), params.start)?;
+        preview.play_built(built, Some(name.clone()), params.start, params.game)?;
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
         let angles = angles.unwrap_or_default().map(single);
         // BRIDGE-4.19: the game puts the player where its box is free of the map's entities

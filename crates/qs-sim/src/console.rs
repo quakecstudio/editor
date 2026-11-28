@@ -29,6 +29,7 @@ use crate::offsets::FieldOffset;
 use crate::physics::MoveType;
 use crate::protocol::ProtocolVersion;
 use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
+use crate::world::LocalConsole;
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
 /// `VERSION` (`WinQuake/quakedef.h`), which `version` and `status` print.
@@ -306,6 +307,69 @@ impl World {
             .collect()
     }
 
+    /// `line` run at once on local client `id`'s own console (NET-7.12), after what its
+    /// buffer held: a command it forwards goes to `id`'s slot, the client's commands it meets
+    /// wait for [`World::take_client_commands_of`], and what a `wait` leaves runs on the same
+    /// console in the next frame. The first client's console is the host's, as
+    /// [`World::console`] and [`World::execute_console`] run it.
+    pub fn execute_console_as(&mut self, progs: &Progs<'_>, id: ClientId, line: &str) {
+        if id == ClientId::FIRST {
+            self.console(line);
+            self.console("\n");
+            self.execute_console(progs);
+            return;
+        }
+        let console = self.local_consoles.entry(id).or_default();
+        console.buffer.extend_from_slice(line.as_bytes());
+        console.buffer.push(b'\n');
+        self.execute_local_console(progs, id);
+    }
+
+    /// `Cbuf_Execute` on each other local player's console with text waiting (NET-7.12).
+    pub(crate) fn execute_local_consoles(&mut self, progs: &Progs<'_>) {
+        let waiting: Vec<ClientId> = self
+            .local_consoles
+            .iter()
+            .filter(|(_, console)| !console.buffer.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in waiting {
+            self.execute_local_console(progs, id);
+        }
+    }
+
+    /// `Cbuf_Execute` on local client `id`'s console: its buffer and its client's commands
+    /// stand in for the host's while it runs, then go back to it.
+    fn execute_local_console(&mut self, progs: &Progs<'_>, id: ClientId) {
+        let console = self.local_consoles.remove(&id).unwrap_or_default();
+        let host_buffer = core::mem::replace(
+            &mut self.builtins.mock.engine_mut().command_buffer,
+            console.buffer,
+        );
+        let host_commands = core::mem::replace(&mut self.client_commands, console.commands);
+        self.console_client = id;
+        self.execute_console(progs);
+        self.console_client = ClientId::FIRST;
+        let buffer = core::mem::replace(
+            &mut self.builtins.mock.engine_mut().command_buffer,
+            host_buffer,
+        );
+        let commands = core::mem::replace(&mut self.client_commands, host_commands);
+        self.local_consoles
+            .insert(id, LocalConsole { buffer, commands });
+    }
+
+    /// The client's commands local client `id`'s console met since the last call, in order
+    /// (CON-6.1, NET-7.12): the host's, [`World::take_client_commands`], for the first.
+    pub fn take_client_commands_of(&mut self, id: ClientId) -> Vec<ClientCommand> {
+        if id == ClientId::FIRST {
+            return self.take_client_commands();
+        }
+        self.local_consoles
+            .get_mut(&id)
+            .map_or_default(|console| core::mem::take(&mut console.commands))
+    }
+
     /// `Cbuf_Execute` (PHYS-13.1): runs the buffer's lines in order until it is empty, a `wait`
     /// leaves the rest for the next frame, or a host command waits for the host (PHYS-13.6).
     pub fn execute_console(&mut self, progs: &Progs<'_>) {
@@ -578,7 +642,8 @@ impl World {
     /// [`World::forward`] with `args` as `Cmd_Args`, `None` for a command alone.
     fn forward_args(&mut self, words: &Words, form: Forward, args: Option<&[u8]>) {
         let name = words.argv.first().cloned().unwrap_or_default();
-        if !self.builtins.messages.clients.is_active(ClientId::FIRST) {
+        let client = self.console_client;
+        if !self.builtins.messages.clients.is_active(client) {
             self.print(format!(
                 "Can't \"{}\", not connected\n",
                 String::from_utf8_lossy(&name)
@@ -594,7 +659,7 @@ impl World {
             Some(args) => text.extend_from_slice(args),
             None => text.push(b'\n'),
         }
-        if let Some(slot) = self.builtins.messages.clients.get_mut(ClientId::FIRST) {
+        if let Some(slot) = self.builtins.messages.clients.get_mut(client) {
             slot.commands.push(text);
         }
     }
@@ -603,6 +668,14 @@ impl World {
     /// the one argument, or the whole rest of the line, cut to 15 bytes, becomes `_cl_name`
     /// unless it already is, and goes on to the server when connected.
     fn name(&mut self, words: &Words) {
+        // NET-7.12: another local player's name is its own, sent on as it is typed; the
+        // host's `_cl_name` is the first player's.
+        if self.console_client != ClientId::FIRST {
+            if words.argv.len() > 1 {
+                self.forward(words, Forward::Named);
+            }
+            return;
+        }
         let cvars = &self.builtins.mock.engine().cvars;
         let current = cvars.text("_cl_name").unwrap_or_default().to_owned();
         let new = match words.argv.as_slice() {
@@ -640,6 +713,13 @@ impl World {
     /// its two colours; else each colour is `atoi`, its low four bits, at most 13, and
     /// `top * 16 + bottom` becomes `_cl_color`, which goes on to the server when connected.
     fn color(&mut self, words: &Words) {
+        // NET-7.12: another local player's colours are its own, as for `name`.
+        if self.console_client != ClientId::FIRST {
+            if words.argv.len() > 1 {
+                self.forward(words, Forward::Named);
+            }
+            return;
+        }
         let colour = |word: Option<&Vec<u8>>| {
             let value = word.map_or(0, |w| atoi(w)) & COLOR_MASK;
             value.min(MAX_COLOR)

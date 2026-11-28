@@ -31,9 +31,8 @@ use crate::demos::{Connection, Demos, Level};
 use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
 use crate::keys::{STARTUP, config_path, host_files};
 use crate::map_bsp::MapBsp;
+use crate::seats::Loopback;
 
-/// `Host_FindMaxClients`' slots for a `-listen` with no number, or one below 1 (NET-7.1).
-const LISTEN_DEFAULT: i32 = 8;
 /// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
 const RAND_MULTIPLIER: u32 = 1_103_515_245;
 /// The step's increment.
@@ -168,6 +167,11 @@ impl Models for Describer {
 pub(crate) struct Rand(u32);
 
 impl Rand {
+    /// The engine's first state, as `srand` never runs.
+    pub(crate) const fn new() -> Self {
+        Self(1)
+    }
+
     fn next(&mut self) -> i32 {
         self.0 = self
             .0
@@ -538,6 +542,20 @@ impl Args {
             Some(demos.recorder()),
         )?;
         loaded.demos = demos;
+        // NET-7.13: the other local players join after the first, each in the next free slot;
+        // the game brings them into each later level itself.
+        for number in 2..=self.players {
+            loaded
+                .game
+                .join_local_player(number)
+                .map_err(|error| Error::Load(error.to_string()))?
+                .ok_or_else(|| Error::Load(format!("no free slot for player {number}")))?;
+        }
+        // BOT-9.3: the bots the command line asks for, brought in by the first frame's
+        // `Cbuf_Execute`.
+        for line in self.bot_lines() {
+            loaded.game.world_mut().console(&line);
+        }
         if self.starts_paused() {
             loaded.game.start_paused();
         }
@@ -626,13 +644,12 @@ impl Args {
         // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
         let text = localization(&vfs, self)?;
         let (host, startup) = host.host_and_startup();
-        // NET-7.1: `-listen`'s slots, `Host_FindMaxClients`' 8 for none or fewer than 1; a new
-        // game of several sets `deathmatch` 1, which a later level keeps in its host.
-        let maxplayers = self.listen.map_or(qs_sim::MaxPlayers::SINGLE, |n| {
-            qs_sim::MaxPlayers::new(if n < 1 { LISTEN_DEFAULT } else { n })
-        });
-        let settings = if maxplayers.is_multiplayer() && host.is_none() {
-            vec![("deathmatch".to_owned(), "1".to_owned())]
+        // NET-7.1: `-listen`'s slots; a new game of several sets `deathmatch` 1, and coop
+        // `coop` 1, which a later level keeps in its host.
+        let maxplayers = self.maxplayers();
+        self.check_players(maxplayers)?;
+        let settings = if host.is_none() {
+            self.new_game_settings(maxplayers)
         } else {
             Vec::new()
         };
@@ -716,11 +733,8 @@ impl Args {
         // The client reads the serverinfo and the spawn messages the connection wrote.
         let mut client = Client::new(qs_client::Game::Standard);
         let mut describer = Describer { read: reader()? };
-        let mut rand = Rand(1);
-        let packets = game
-            .world_mut()
-            .take_messages(qs_sim::ClientId::FIRST)
-            .packets;
+        let mut rand = Rand::new();
+        let packets = Loopback::FIRST.receive(game.world_mut());
         // CLIENT-10.2: a demo being recorded takes the connection's messages as they are read.
         let events = match recorder {
             Some(recorder) => {

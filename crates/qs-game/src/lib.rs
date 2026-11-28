@@ -17,6 +17,7 @@ mod keys;
 mod load;
 mod map_bsp;
 mod screenshot;
+mod seats;
 mod settings;
 mod values;
 mod view_script;
@@ -24,7 +25,7 @@ mod window;
 
 use load::{Start, Startup};
 
-pub use args::{Args, LookArg, Show};
+pub use args::{Args, BotSkillArg, LookArg, Rules, Show};
 pub use error::Error;
 pub use window::{GameView, Running};
 

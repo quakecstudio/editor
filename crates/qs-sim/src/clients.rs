@@ -26,6 +26,11 @@ use crate::messages::{
 
 /// `MAX_SCOREBOARD` (`WinQuake/quakedef.h`), the most client slots a server has (NET-7.1).
 pub const MAX_SCOREBOARD: usize = 16;
+/// `Host_FindMaxClients`' slots for a `-listen` with no number, or one below 1 (NET-7.1).
+pub const LISTEN_SLOTS: i32 = 8;
+/// The most local players the preview host plays, the first and three more, each in a window
+/// of its own (ADR-0031, NET-7.13).
+pub const MAX_LOCAL_PLAYERS: u8 = 4;
 /// `NUM_SPAWN_PARMS` (`WinQuake/server.h`): `parm1` to `parm16`.
 pub(crate) const NUM_SPAWN_PARMS: usize = 16;
 /// The name `SV_ConnectClient` gives a slot, which a client's `name` then replaces.

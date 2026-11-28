@@ -63,11 +63,13 @@ fn play_needs_a_project_that_builds() {
     let mut none = Workbench::new(MemoryLoader::new(), Config::default());
     let mut game = preview(None, None);
     assert!(matches!(
-        game.play(&mut none, None),
+        game.play(&mut none, None, crate::GameOptions::default()),
         Err(PreviewError::Build(WorkbenchError::NoProject))
     ));
     let mut broken = opened(&dir, "void() worldspawn = { nosuch(); };\n");
-    let error = game.play(&mut broken, None).unwrap_err();
+    let error = game
+        .play(&mut broken, None, crate::GameOptions::default())
+        .unwrap_err();
     assert!(matches!(error, PreviewError::NothingBuilt(_)), "{error}");
     assert!(error.to_string().contains("1 modules with errors"));
     assert_eq!(game.state(), PlayState::Stopped);
@@ -80,7 +82,9 @@ fn play_needs_a_game_and_a_host() {
     let mut workbench = opened(&dir, "void() worldspawn = {};\n");
     let empty = root("empty-game");
     let mut no_game = preview(Some(empty.clone()), None);
-    let error = no_game.play(&mut workbench, None).unwrap_err();
+    let error = no_game
+        .play(&mut workbench, None, crate::GameOptions::default())
+        .unwrap_err();
     assert!(matches!(&error, PreviewError::NoGame(Some(path)) if *path == empty));
     assert!(error.to_string().contains("no Quake game here"));
     // A folder holding id1/pak0.pak is a game (FS-6.1); the host is still missing.
@@ -88,7 +92,9 @@ fn play_needs_a_game_and_a_host() {
     std::fs::create_dir_all(game.join("id1")).unwrap();
     std::fs::write(game.join("id1/pak0.pak"), b"PACK").unwrap();
     let mut no_host = preview(Some(game), Some(dir.join("no-host")));
-    let error = no_host.play(&mut workbench, None).unwrap_err();
+    let error = no_host
+        .play(&mut workbench, None, crate::GameOptions::default())
+        .unwrap_err();
     assert!(matches!(error, PreviewError::Launch(_)), "{error}");
     assert_eq!(no_host.state(), PlayState::Stopped);
     // The run root was made, linking the build.
@@ -128,7 +134,9 @@ fn play_uses_the_game_the_project_is_for() {
     let mut workbench = rerelease(&dir);
     assert_eq!(workbench.flavour(), Flavour::Rerelease);
     let mut preview_of = preview(Some(game.clone()), Some(dir.join("no-host")));
-    let error = preview_of.play(&mut workbench, None).unwrap_err();
+    let error = preview_of
+        .play(&mut workbench, None, crate::GameOptions::default())
+        .unwrap_err();
     assert!(matches!(error, PreviewError::Launch(_)), "{error}");
     assert_eq!(
         linked(dir.join("build/run/rerelease/id1")),
@@ -150,7 +158,11 @@ fn play_uses_the_game_the_project_is_for() {
     let mut workbench = opened(&dir, "void() worldspawn = {};\n");
     assert_eq!(workbench.flavour(), Flavour::Original);
     let mut preview_of = preview(Some(game.clone()), Some(dir.join("no-host")));
-    assert!(preview_of.play(&mut workbench, None).is_err());
+    assert!(
+        preview_of
+            .play(&mut workbench, None, crate::GameOptions::default())
+            .is_err()
+    );
     assert_eq!(
         linked(dir.join("build/run/original/id1")),
         linked(game.join("id1"))
@@ -162,7 +174,11 @@ fn play_uses_the_game_the_project_is_for() {
     let dir = root("rerelease-on-original");
     let mut workbench = rerelease(&dir);
     let mut preview_of = preview(Some(only.clone()), Some(dir.join("no-host")));
-    assert!(preview_of.play(&mut workbench, None).is_err());
+    assert!(
+        preview_of
+            .play(&mut workbench, None, crate::GameOptions::default())
+            .is_err()
+    );
     assert_eq!(
         linked(dir.join("build/run/original/id1")),
         linked(only.join("id1"))
@@ -178,7 +194,9 @@ fn play_uses_the_game_the_project_is_for() {
     assert_eq!(preview_of.game_base_path().map(linked), Some(linked(alone)));
     let dir = root("original-on-rerelease");
     let mut workbench = opened(&dir, "void() worldspawn = {};\n");
-    let error = preview_of.play(&mut workbench, None).unwrap_err();
+    let error = preview_of
+        .play(&mut workbench, None, crate::GameOptions::default())
+        .unwrap_err();
     assert!(matches!(error, PreviewError::NoGame(Some(_))), "{error}");
 }
 
