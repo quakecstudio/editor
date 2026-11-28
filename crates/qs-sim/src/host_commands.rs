@@ -503,7 +503,7 @@ impl SimCall<'_, '_, '_> {
             );
             let address = match slot.kind {
                 SlotKind::Local => "LOCAL",
-                SlotKind::Bot => "BOT",
+                SlotKind::Bot | SlotKind::HostBot => "BOT",
             };
             lines.push(format!("   {address}\n").into_bytes());
         }

@@ -1,0 +1,29 @@
+[package]
+name = "qs-bots"
+description = "Bots for the preview host: a client's moves each server frame from what it sees, played by the mod's own player QuakeC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The progs the world runs, which a bot's reading of the edicts needs.
+qc-progs = { workspace = true }
+# A float field's bits as the QuakeC holds them (`items`).
+qc-vm = { workspace = true }
+# The compiled map a bot's graph is made from.
+qs-bsp = { workspace = true }
+# The ground a player moves on, as a graph a bot routes along (BOT-2).
+qs-map-gen = { workspace = true }
+# The server: the bots' slots, the edicts they read and the moves they send (BOT-1).
+qs-sim = { workspace = true }
+
+[dev-dependencies]
+# The tests compile the maps they route through.
+qs-map = { workspace = true }
+qs-map-bsp = { workspace = true }
+
+[lints]
+workspace = true

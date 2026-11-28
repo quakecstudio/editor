@@ -2045,3 +2045,48 @@ fn a_run_error_pause_answers_its_stack() {
         assert_eq!(stack["stack"], json!([]));
     }
 }
+
+/// The game of the test progs on the floor with three client slots, its player in the game.
+fn game_with_room_for_bots() -> Game {
+    let (bytes, _) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = "{\n\"classname\" \"worldspawn\"\n}\n".to_owned();
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let options = LoadOptions {
+        maxplayers: qs_sim::MaxPlayers::new(3),
+        ..LoadOptions::default()
+    };
+    let mut world = World::load(&progs, "test", &map, Rc::new(|_| None), options).unwrap();
+    world.connect(&progs).unwrap();
+    Game::new(world, bytes, Reporting::Off)
+}
+
+// spec BOT-9.1: before each frame the game gives each bot addbot brought in a mind and takes
+// the mind of each removebot dropped; a bot brought in plays on into the next level
+#[test]
+fn the_game_drives_its_bots_and_carries_them_to_the_next_level() {
+    let mut game = game_with_room_for_bots();
+    game.world_mut().console("addbot 2 Moss\naddbot\n");
+    for _ in 0..3 {
+        game.frame(1.0 / 72.0);
+    }
+    assert_eq!(game.bots.len(), 2);
+    let first = qs_sim::ClientId::new(1).unwrap();
+    assert_eq!(game.bots.skill(first), Some(qs_sim::BotSkill::Hard));
+    game.world_mut().console("removebot\n");
+    for _ in 0..2 {
+        game.frame(1.0 / 72.0);
+    }
+    assert_eq!(game.bots.len(), 1, "the dropped bot's mind is gone");
+    let mut next = game_with_room_for_bots();
+    next.carry_from(game);
+    let bots = next.world().host_bots();
+    assert_eq!(bots, vec![first]);
+    assert_eq!(next.world().client_name(first), Some(b"Moss".to_vec()));
+    next.frame(1.0 / 72.0);
+    assert_eq!(
+        next.bots.skill(first),
+        Some(qs_sim::BotSkill::Hard),
+        "at the same skill"
+    );
+}

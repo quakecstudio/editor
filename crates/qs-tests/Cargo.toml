@@ -25,6 +25,7 @@ qc-sema = { workspace = true }
 qc-syntax = { workspace = true }
 qc-types = { workspace = true }
 qc-vm = { workspace = true }
+qs-bots = { workspace = true }
 qs-bsp = { workspace = true }
 qs-commands = { workspace = true }
 qs-map = { workspace = true }

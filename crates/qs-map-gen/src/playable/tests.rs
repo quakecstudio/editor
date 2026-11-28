@@ -592,3 +592,42 @@ fn a_monster_named_only_for_removal_dies_on_sight() {
     .unwrap();
     assert_eq!(found.exit, ExitReach::Reached);
 }
+
+// spec BOT-2.1: a spawn a search already reached adds nothing, and one past a wall adds the
+// places beyond it; the spawns are each start of the three kinds
+#[test]
+fn a_spawn_already_reached_adds_nothing_to_the_graph() {
+    let beyond = entity(
+        "info_player_deathmatch",
+        &[("origin", "200 0 24")],
+        Vec::new(),
+    );
+    let near = entity("info_player_coop", &[("origin", "-392 8 24")], Vec::new());
+    let map = Room {
+        world: split(),
+        entities: vec![beyond, near],
+        ..Room::default()
+    }
+    .map();
+    let compiled = qs_map_bsp::Compiler::default().compile(&map, None).unwrap();
+    let bsp = Bsp::read(&compiled.bsp, BspLoader::default()).unwrap();
+    let ground = Ground::new(&bsp, Moves::Player, Skill::Normal).unwrap();
+    assert_eq!(
+        ground.spawns(),
+        [[-400.0, 0.0, 24.0], [200.0, 0.0, 24.0], [-392.0, 8.0, 24.0]]
+    );
+    let [start, far, close] = [ground.spawns()[0], ground.spawns()[1], ground.spawns()[2]];
+    let alone = ground.graph(&[start]).unwrap().len();
+    assert_eq!(
+        ground.graph(&[start, close]).unwrap().len(),
+        alone,
+        "8 from the start"
+    );
+    let both = ground.graph(&[start, far]).unwrap();
+    assert!(both.len() > alone, "past the wall");
+    let (a, b) = (both.nearest(start).unwrap(), both.nearest(far).unwrap());
+    assert!(both.route(a, b).is_none(), "no way through the wall");
+    let short = ground.path(start, far).unwrap();
+    let end = short.points().last().unwrap();
+    assert!(end[0] < 0.0, "as near as the start's side reaches: {end:?}");
+}

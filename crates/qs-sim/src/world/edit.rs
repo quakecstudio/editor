@@ -399,9 +399,25 @@ impl World {
         start: [f32; 3],
         end: [f32; 3],
     ) -> Result<LineHit, super::WorldError> {
+        self.trace_line_past(progs, start, end, CLIENT)
+    }
+
+    /// `traceline (start, end, FALSE, pass)`: as [`World::trace_line`], edict `pass` passed
+    /// through, as a bot looks out from inside its own box (BOT-1.6).
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when the trace stops the engine (`Sys_Error`).
+    pub fn trace_line_past(
+        &mut self,
+        progs: &Progs<'_>,
+        start: [f32; 3],
+        end: [f32; 3],
+        pass: usize,
+    ) -> Result<LineHit, super::WorldError> {
         let call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let trace = call
-            .trace((start, POINT, POINT, end), MoveKind::Normal, CLIENT)
+            .trace((start, POINT, POINT, end), MoveKind::Normal, pass)
             .map_err(super::WorldError::Frame)?;
         Ok(LineHit {
             edict: trace.ent.filter(|&n| n != 0).map(EdictNumber::new),

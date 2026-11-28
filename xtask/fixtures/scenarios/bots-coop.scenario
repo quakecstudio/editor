@@ -1,0 +1,24 @@
+# A bot in coop on LibreQuake's lq_e0m4 (L-87, BOT-9.2): the server has two slots, deathmatch 0
+# and coop 1. The player walks west from the start for three seconds and stops; the bot
+# follows it (BOT-4.3) and kills the knight it meets on the way (BOT-3.1, BOT-5.3), which the
+# player, who never fires, cannot have done. In CI it plays twice and must give the same result
+# each time (SCN-2.5).
+map lq_e0m4
+seed 1996
+engine -listen
+engine 2
+engine +deathmatch
+engine 0
+engine +coop
+engine 1
+frames 4
+console addbot 1
+expect global killed_monsters == 0
+move 0 180 0 200 0 0 0 0
+frames 216
+move 0 180 0 0 0 0 0 0
+frames 216
+expect field player origin_x < 1100
+expect field 2 origin_x < 1200
+expect field 2 health > 0
+expect global killed_monsters == 1

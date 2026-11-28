@@ -44,7 +44,8 @@ const FORWARDED: [&str; 11] = [
 
 /// Every command [`World::execute_console`] runs, its own and the forwarded ones, in name
 /// order, for completion (CON-4.3).
-const COMMANDS: [&str; 39] = [
+const COMMANDS: [&str; 41] = [
+    "addbot",
     "alias",
     "begin",
     "changelevel",
@@ -73,6 +74,7 @@ const COMMANDS: [&str; 39] = [
     "prespawn",
     "profile",
     "quit",
+    "removebot",
     "restart",
     "save",
     "say",
@@ -399,6 +401,8 @@ impl World {
                 }
             }
             "maxplayers" => self.maxplayers_command(&words),
+            "addbot" => self.addbot_command(progs, &words),
+            "removebot" => self.removebot_command(progs, &words),
             "version" => {
                 self.print(format!("Version {VERSION}\n"));
                 self.print(format!(

@@ -9,13 +9,15 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use qc_progs::Progs;
+use qs_bots::Bots;
 use qs_bsp::{Bsp, BspLoader};
 use qs_engine::{
     Client, ClientError, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind, locate_host,
     prepare_run_root,
 };
 use qs_sim::scenario::{Report, Scenario, ScenarioError, Shot};
-use qs_sim::{LoadOptions, World};
+use qs_sim::spawn::Deathmatch;
+use qs_sim::{LoadOptions, MaxPlayers, World, atoi};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 use serde::Serialize;
 
@@ -196,16 +198,69 @@ pub fn play_on_game(words: &[String], scenario: &Scenario) -> Result<Report, Sce
             .flatten()
             .map(LoadedFile::into_bytes)
     });
-    // SCN-2.1: id's builtin table, as DIFF-16.1 plays a route; the scenario's seed (SCN-1.3).
+    // SCN-2.1: id's builtin table, as DIFF-16.1 plays a route; the scenario's seed (SCN-1.3);
+    // the slots and settings its engine words choose (BOT-9.2).
+    let host = HostWords::of(words);
     let options = LoadOptions {
         registration: vfs.registration(),
         seed: scenario.seed,
+        maxplayers: host.maxplayers,
+        settings: host.settings,
         ..LoadOptions::default()
     };
     let mut world = World::load(&progs, &scenario.map, &bsp, reader, options)
         .map_err(|e| game(e.to_string()))?;
     world.settle(&progs).map_err(|e| game(e.to_string()))?;
-    Ok(scenario.run(&mut world, &progs))
+    // BOT-9.1: a game with room for bots plays them along its map's graph.
+    let mut bots = if host.maxplayers.is_multiplayer() {
+        let deathmatch = Deathmatch::from_setting(world.setting("deathmatch").unwrap_or(0.0));
+        let graph = Bots::graph_of(&bsp_bytes, deathmatch).map_err(|e| game(e.to_string()))?;
+        Bots::new(Some(graph))
+    } else {
+        Bots::new(None)
+    };
+    Ok(scenario.run(&mut world, &progs, &mut bots))
+}
+
+/// The slots and the settings an engine command line chooses (BOT-9.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct HostWords {
+    maxplayers: MaxPlayers,
+    settings: Vec<(String, String)>,
+}
+
+/// `Host_FindMaxClients`' count for `-listen` with no number after it, or one below 1.
+const LISTEN_DEFAULT: i32 = 8;
+
+impl HostWords {
+    /// The slots `-listen` chooses as `Host_FindMaxClients` reads it, `deathmatch` 1 for more
+    /// than one (NET-7.1), then each `+<name> <value>` pair as a setting.
+    fn of(words: &[String]) -> Self {
+        let mut maxplayers = MaxPlayers::SINGLE;
+        if let Some(at) = words.iter().position(|w| w == "-listen") {
+            let count = words
+                .get(at.saturating_add(1))
+                .map_or(LISTEN_DEFAULT, |next| atoi(next.as_bytes()));
+            maxplayers = MaxPlayers::new(if count < 1 { LISTEN_DEFAULT } else { count });
+        }
+        let mut settings = Vec::new();
+        if maxplayers.is_multiplayer() {
+            settings.push(("deathmatch".to_owned(), "1".to_owned()));
+        }
+        for pair in words.windows(2) {
+            if let [name, value] = pair
+                && let Some(name) = name.strip_prefix('+')
+                && !name.is_empty()
+                && !value.starts_with(['+', '-'])
+            {
+                settings.push((name.to_owned(), value.clone()));
+            }
+        }
+        Self {
+            maxplayers,
+            settings,
+        }
+    }
 }
 
 /// Each of `shots` taken by the headless host: the game paused, the player moved to the

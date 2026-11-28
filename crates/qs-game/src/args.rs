@@ -11,7 +11,14 @@ use qs_sim::protocol::ProtocolVersion;
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
-const ENGINE_OPTIONS: [&str; 5] = ["-basedir", "-game", "-kpf", "-bridge", "-protocol"];
+const ENGINE_OPTIONS: [&str; 6] = [
+    "-basedir",
+    "-game",
+    "-kpf",
+    "-bridge",
+    "-protocol",
+    "-listen",
+];
 
 /// `quakec-engine [-basedir PATH] [-game NAME] [-kpf PATH] [-bridge PATH] [-protocol
 /// 15|666|999] [map]`.
@@ -51,6 +58,10 @@ pub struct Args {
     /// (NET-6.11).
     #[arg(long, value_enum, default_value_t = ProtocolArg::FitzQuake)]
     pub protocol: ProtocolArg,
+    /// The engine's `-listen [n]`: a server of `n` client slots, 8 with no number or one below
+    /// 1, at most 16, and `deathmatch` 1 (NET-7.1), with room for bots (`addbot`, BOT-1.2).
+    #[arg(long, num_args = 0..=1, default_missing_value = "8", allow_negative_numbers = true)]
+    pub listen: Option<i32>,
     /// Where a free camera starts: x, y, z and yaw.
     #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
     pub at: Option<Vec<f32>>,

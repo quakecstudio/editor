@@ -137,6 +137,9 @@ pub enum SlotKind {
     /// A bot `spawnclient` made, with no connection (BUILTIN-18.45): nothing is sent to it,
     /// and its view angles are its edict's `v_angle`.
     Bot,
+    /// A bot the host drives, `addbot` made (BOT-1.1): no connection, as a [`SlotKind::Bot`],
+    /// but its moves are the host's, each read as a local client's is.
+    HostBot,
 }
 
 /// A client slot, `client_t` (NET-1.6, NET-2, NET-7).

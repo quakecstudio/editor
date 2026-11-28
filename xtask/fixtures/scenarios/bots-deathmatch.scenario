@@ -1,0 +1,22 @@
+# Four bots in deathmatch on LibreQuake's start map (L-87, BOT-9.2): the server has five slots,
+# the player's and the bots', and deathmatch 1, as `-listen 5` gives one. In CI (`cargo xtask
+# scenario xtask/fixtures/scenarios/bots-deathmatch.scenario --repeat 2 -- -basedir
+# "$QS_TEST_ASSETS/librequake-lite"`) it plays twice and must give the same result each time
+# (SCN-2.5): the same frags for each bot, which a change to the bots' minds may change and
+# this file then records again. The player stands where it spawned.
+map start
+seed 1996
+engine -listen
+engine 5
+frames 4
+console addbot 1
+console addbot 1
+console addbot 1
+console addbot 1
+frames 2880
+expect field 2 netname == "Ash"
+expect field 5 netname == "Dune"
+expect field 2 frags == 1
+expect field 3 frags == 1
+expect field 4 frags == 0
+expect field 5 frags == -1

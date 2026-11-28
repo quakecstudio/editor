@@ -18,6 +18,8 @@ server runs them. Collision, monster movement, physics and the player all follow
   its `use` or `touch` and the trace of what the program did about it (`World::fire`), this
   project's design. BALANCE-1.1 of [`balance.md`](../../docs/spec/balance.md): what each map
   entity's spawn function added to `total_monsters` and `total_secrets` (`World::map_counts`).
+  BOT-1 of [`bots.md`](../../docs/spec/bots.md): the slots of the bots the host drives and the
+  console's `addbot` and `removebot`, this project's design.
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/world.c`, `sv_move.c`, `sv_phys.c`, `sv_user.c`, `sv_main.c` (`SV_SpawnServer`
   and the message writers) and `host_cmd.c` (the signon commands, `Host_Changelevel_f`, `Host_Savegame_f`, `Host_Loadgame_f`), `cmd.c` (the command buffer, aliases and `Cmd_ForwardToServer`), `cvar.c` (`Cvar_Command`), with parts of
@@ -38,6 +40,12 @@ server runs them. Collision, monster movement, physics and the player all follow
   NET-7.4) and is sent the serverinfo and the signon sequence as one reliable message
   (NET-2); it answers the slot's `ClientId`, or `None` with every slot taken.
   `World::disconnect(progs, id)` drops one (NET-7.9).
+- `World::add_bot(progs, skill, name)` and `World::remove_bot(progs, name)`, which the console's
+  `addbot` and `removebot` call: a bot the host drives, whose move each frame is the one
+  `set_command` set (BOT-1). `World::take_bot_changes()` tells the host each bot brought in or
+  dropped, `World::bodies(progs)` is what a bot's mind reads of the edicts, and
+  `World::trace_line_past` its line of sight. `scenario::Driver` runs before each of a
+  scenario's frames, so a host's bots play in a scenario.
 - `World::set_command(id, cmd)` and `World::frame(progs, frametime)`: a client's `UserCmd`, then
   a server frame of that length: each client's commands and move in slot order, then every
   edict's physics (PHYS-1, PHYS-9, NET-7.7).

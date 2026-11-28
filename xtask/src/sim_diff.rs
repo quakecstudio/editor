@@ -14,7 +14,7 @@ use qc_progs::Progs;
 use qc_trace::{Record, Trace};
 use qc_types::Slot;
 use qs_bsp::{Bsp, BspLoader};
-use qs_sim::scenario::{Moment, Scenario};
+use qs_sim::scenario::{Moment, NoDriver, Scenario};
 use qs_sim::{
     EdictNumber, FieldOffset, GlobalOffset, LoadOptions, NamedValue, QcValue, RawState, State,
     World, read_state,
@@ -190,10 +190,15 @@ impl Game {
         // A route's frames are all it has: its assertions and screenshots, if any, are a
         // scenario's (SCN-1.5, SCN-1.6) and the oracle's harness has none.
         route
-            .play(&mut world, progs, |moment, frame, world| match moment {
-                Moment::Frame => visit(frame, &world.state(progs)),
-                Moment::Expect(_) | Moment::Screenshot(_) => Ok(true),
-            })
+            .play(
+                &mut world,
+                progs,
+                &mut NoDriver,
+                |moment, frame, world| match moment {
+                    Moment::Frame => visit(frame, &world.state(progs)),
+                    Moment::Expect(_) | Moment::Screenshot(_) => Ok(true),
+                },
+            )
             .map_err(|error| error.to_string())
     }
 }

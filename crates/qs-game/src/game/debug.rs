@@ -176,6 +176,11 @@ impl Game {
     /// Runs a frame of `frametime` from the world as it is, snapshotting it first when a
     /// debugger may stop it (WORLD-9.2).
     pub(super) fn run_frame(&mut self, progs: &Progs<'_>, frametime: f64) -> FrameEnd {
+        // BOT-9.1: the bots' moves, which a replay of the frame keeps in its snapshot.
+        if let Err(error) = self.drive_bots(progs, frametime) {
+            self.fail(Some(progs), &error);
+            return FrameEnd::Failed;
+        }
         if self.world.debugger().is_some_and(Debugger::may_stop) {
             self.snapshot = Some(Snapshot {
                 world: self.world.clone(),

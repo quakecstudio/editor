@@ -49,7 +49,7 @@ fn played(text: &str) -> Report {
         0,
     );
     let progs = Progs::read(&run.progs).unwrap();
-    scenario.run(&mut run.world, &progs)
+    scenario.run(&mut run.world, &progs, &mut super::NoDriver)
 }
 
 // spec SCN-1.1: blank lines and # lines are skipped, a \r before a line's end is left out, and
@@ -263,7 +263,7 @@ fn a_run_error_stops_the_run() {
     // The settle's two frames count too (MOVE-6.2): the progs' frame 12 is the run's 10.
     let mut run = world(LoadOptions::default(), 12);
     let progs = Progs::read(&run.progs).unwrap();
-    let stopped = scenario.run(&mut run.world, &progs);
+    let stopped = scenario.run(&mut run.world, &progs, &mut super::NoDriver);
     assert!(!stopped.passed);
     assert_eq!(stopped.frames, 10, "{stopped:?}");
     assert!(stopped.error.as_deref().unwrap().starts_with("frame 10: "));
@@ -352,4 +352,30 @@ fn a_bad_expect_line_says_why() {
         let error = Scenario::parse(&format!("map a\n{line}\n")).unwrap_err();
         assert_eq!(error.to_string(), format!("line 2: {why}"), "{line:?}");
     }
+}
+
+// spec SCN-1.7: a vector field's _x, _y and _z are its components, as floats; another suffix,
+// or one on a field that is no vector, names no field
+#[test]
+fn a_vector_fields_components_are_read() {
+    let report = played(
+        "map test\nstart 16 32 64 90\nframes 4\nexpect field player origin_x == 16\n\
+         expect field player origin_y < 33\nexpect field player origin_z >= 64\n\
+         expect field player origin_w == 1\nexpect field player health_x == 1\n",
+    );
+    let found: Vec<(bool, &str)> = report
+        .checks
+        .iter()
+        .map(|c| (c.passed, c.found.as_str()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (true, "16"),
+            (true, "32"),
+            (true, "64"),
+            (false, "no field origin_w"),
+            (false, "no field health_x"),
+        ]
+    );
 }

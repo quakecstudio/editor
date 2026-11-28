@@ -28,6 +28,8 @@ file.replace_range
 file.save
 file.update
 files.changed
+game.add_bot
+game.remove_bot
 git.blame
 git.branches
 git.commit

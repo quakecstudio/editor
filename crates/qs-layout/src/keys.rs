@@ -1141,7 +1141,7 @@ pub const VIEW_KEYS: [ViewKeyRow; 55] = [
 ];
 
 /// Every command with no key of its own, and why.
-pub const UNKEYED: [(&str, Unkeyed); 197] = [
+pub const UNKEYED: [(&str, Unkeyed); 199] = [
     ("checkpoint.list", Unkeyed::Query),
     ("checkpoint.restore", Unkeyed::Typed),
     ("code.actions", Unkeyed::Typed),
@@ -1168,6 +1168,8 @@ pub const UNKEYED: [(&str, Unkeyed); 197] = [
     ("file.save", Unkeyed::Typed),
     ("file.update", Unkeyed::Typed),
     ("files.changed", Unkeyed::Typed),
+    ("game.add_bot", Unkeyed::Menu),
+    ("game.remove_bot", Unkeyed::Menu),
     ("git.blame", Unkeyed::Typed),
     ("git.branches", Unkeyed::Query),
     ("git.commit", Unkeyed::Typed),

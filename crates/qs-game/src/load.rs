@@ -33,6 +33,8 @@ use crate::keys::{STARTUP, config_path, host_files};
 use crate::map_bsp::MapBsp;
 
 /// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
+/// `Host_FindMaxClients`' slots for a `-listen` with no number, or one below 1 (NET-7.1).
+const LISTEN_DEFAULT: i32 = 8;
 const RAND_MULTIPLIER: u32 = 1_103_515_245;
 /// The step's increment.
 const RAND_INCREMENT: u32 = 12345;
@@ -624,6 +626,16 @@ impl Args {
         // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
         let text = localization(&vfs, self)?;
         let (host, startup) = host.host_and_startup();
+        // NET-7.1: `-listen`'s slots, `Host_FindMaxClients`' 8 for none or fewer than 1; a new
+        // game of several sets `deathmatch` 1, which a later level keeps in its host.
+        let maxplayers = self.listen.map_or(qs_sim::MaxPlayers::SINGLE, |n| {
+            qs_sim::MaxPlayers::new(if n < 1 { LISTEN_DEFAULT } else { n })
+        });
+        let settings = if maxplayers.is_multiplayer() && host.is_none() {
+            vec![("deathmatch".to_owned(), "1".to_owned())]
+        } else {
+            Vec::new()
+        };
         let options = LoadOptions {
             localization: text.map_or_default(|text| Localization::loc_load_file(&text)),
             builtins,
@@ -642,14 +654,13 @@ impl Args {
                 })
                 .collect(),
             seed: None,
-            settings: Vec::new(),
+            settings,
             // NET-6.11: QuakeSpasm's `-protocol`, which a later level's kept host overrides.
             protocol: self.protocol.version(),
             startup,
             // EDICT-1.10, LIMIT-6.3: the game has id's limits.
             room: Room::default(),
-            // NET-7.1: one client, the player's.
-            maxplayers: qs_sim::MaxPlayers::SINGLE,
+            maxplayers,
             profile: qs_sim::EngineProfile::Id,
         };
         // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
@@ -690,6 +701,10 @@ impl Args {
             Reporting::Off
         };
         let mut game = Game::new(world, progs_bytes.clone(), reporting);
+        // BOT-9.1: a game with room for bots has their graph made beside it.
+        if maxplayers.is_multiplayer() {
+            game.make_bot_graph(bytes.clone());
+        }
         // INPUT-3.7: what the startup configuration printed, shown as the map starts.
         game.report_console();
         game.set_lines(lines);

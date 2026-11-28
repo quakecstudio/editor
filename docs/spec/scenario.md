@@ -42,6 +42,9 @@ which a scenario extends, so that every route is a scenario.
   `<=`, `>` or `>=` for floats. `value` is a number, a vector `'x y z'`, a string in double
   quotes, or an edict `#n`. Floats and the components of vectors are compared as `f32`
   values, exactly.
+- **SCN-1.7** A field `<name>_x`, `<name>_y` or `<name>_z` that no field of the edict is, where
+  `<name>` is a vector field of it, is that vector's first, second or third component, a float:
+  `expect field 2 origin_x > 100`.
 - **SCN-1.6** `screenshot <name>`, `name` letters, digits, `-` and `_`, asks for the frame the
   player sees when the steps before it have run: the eye, the player's origin plus its
   `view_ofs`, and its `v_angle`, are kept with the name.
