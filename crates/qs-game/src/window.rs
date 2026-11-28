@@ -43,7 +43,12 @@ use crate::keys::{
 use crate::load::{Acted, Describer, Loaded, Rand, Startup, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::Drawer;
+use crate::seats::Loopback;
 use crate::settings::HostSettings;
+
+mod seat;
+
+use seat::{SeatView, SeatWindow, Shared};
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
@@ -201,6 +206,7 @@ impl Viewer {
             rand,
             printed,
             demos,
+            seats,
         } = loaded;
         // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
         // map's first frame printed (CLIENT-1.7).
@@ -283,6 +289,7 @@ impl Viewer {
             motion: [0.0; 2],
             modifiers: egui::Modifiers::NONE,
             config_file: config_path(),
+            seats: seats.into_iter().map(SeatView::new).collect(),
         }
     }
 }
@@ -356,6 +363,8 @@ struct Viewer {
     modifiers: egui::Modifiers,
     /// The host's own configuration, run after `quake.rc` and written on exit (INPUT-4).
     config_file: Option<std::path::PathBuf>,
+    /// The local players after the first, each in a window of its own (L-86).
+    seats: Vec<SeatView>,
 }
 
 impl eframe::App for Viewer {
@@ -490,11 +499,7 @@ impl Viewer {
         self.serve_bridge(ui);
         // The client reads what the server wrote and advances its clock by the server's
         // frame, as the host does when both run in one process.
-        let packets = self
-            .game
-            .world_mut()
-            .take_messages(qs_sim::ClientId::FIRST)
-            .packets;
+        let packets = Loopback::FIRST.receive(self.game.world_mut());
         // CLIENT-10.2, CLIENT-10.6: a demo being recorded takes each packet, and one being
         // played is read in their place.
         match self.demos.frame(
@@ -512,6 +517,16 @@ impl Viewer {
                 self.audio.handle(&events, &mut self.rand);
             }
             Err(error) => tracing::warn!(%error, "client"),
+        }
+        // L-86: each other local player's client reads what its own slot was sent.
+        let realtime = self.started.elapsed().as_secs_f64();
+        for view in &mut self.seats {
+            view.read(
+                &mut self.game,
+                frametime_f32(frametime),
+                (&mut self.describer, &mut self.rand),
+                realtime,
+            );
         }
         let aspect = rect.width() / rect.height().max(1.0);
         if self.benchmark.is_some() {
@@ -564,11 +579,7 @@ impl Viewer {
         let mut hud = self.client.hud();
         // REND-13.7: QuakeSpasm's 2D layer is the window's own size in points; GLQuake's keeps
         // its 640 wide console, as tall as the window's shape.
-        self.play.screen = if self.mesh.look.native_2d() {
-            [points(rect.width()), points(rect.height())]
-        } else {
-            [CONWIDTH, screen_height(aspect)]
-        };
+        self.play.screen = layer_size(self.mesh.look, rect);
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
         hud.console = self.console_items(seconds);
@@ -642,6 +653,7 @@ impl Viewer {
             self.shown = Some((callback.clone(), size));
         }
         ui.painter().add(self.shell.paint(rect, callback));
+        self.show_seats(ui.ctx(), seconds);
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
         // go in the title bar.
         // The eye: the client's in play, the free camera's with `--fly`.
@@ -701,7 +713,20 @@ impl Viewer {
             printed,
             // The host keeps the demos it had: one may be recording or playing.
             demos: _,
+            seats,
         } = loaded;
+        // Each local player plays on in the next level in its own window.
+        let mut views = core::mem::take(&mut self.seats).into_iter();
+        self.seats = seats
+            .into_iter()
+            .map(|seat| match views.next() {
+                Some(mut view) => {
+                    view.rejoined(seat);
+                    view
+                }
+                None => SeatView::new(seat),
+            })
+            .collect();
         let realtime = self.started.elapsed().as_secs_f64();
         for text in &printed {
             self.console.print(text, realtime);
@@ -984,9 +1009,7 @@ impl Viewer {
         if drift.start {
             self.client.start_pitch_drift();
         }
-        self.game
-            .world_mut()
-            .set_command(qs_sim::ClientId::FIRST, cmd);
+        Loopback::FIRST.send(self.game.world_mut(), cmd);
     }
 
     /// The keys the console takes (CON-4): the backquote toggles it, as id1's `default.cfg`
@@ -1291,6 +1314,49 @@ impl Viewer {
                 axis(egui::Key::Space, egui::Key::C) * speed,
             );
         });
+    }
+}
+
+impl Viewer {
+    /// Each other local player's window for a frame of `seconds` (L-86); a player whose
+    /// window closed leaves the game (NET-7.9), and is not brought into the next level.
+    fn show_seats(&mut self, ctx: &egui::Context, seconds: f32) {
+        let realtime = self.started.elapsed().as_secs_f64();
+        let mut shared = Shared {
+            game: &mut self.game,
+            play: &mut self.play,
+            mesh: &mut self.mesh,
+            bsp: &self.bsp,
+            bindings: &self.bindings,
+            shell: self.shell,
+        };
+        let mut left = Vec::new();
+        self.seats.retain_mut(
+            |view| match view.show(ctx, &mut shared, seconds, realtime) {
+                SeatWindow::Open => true,
+                SeatWindow::Closed => {
+                    left.push(view.seat().loopback());
+                    false
+                }
+            },
+        );
+        for loopback in left {
+            self.game.leave(loopback);
+            self.args.players = self.args.players.saturating_sub(1).max(1);
+        }
+    }
+}
+
+/// The 2D layer's size for a view in `rect` (REND-13.7): QuakeSpasm's is the view's own size
+/// in points; GLQuake's keeps its 640 wide console, as tall as the view's shape.
+fn layer_size(look: qs_render::Look, rect: egui::Rect) -> [i32; 2] {
+    if look.native_2d() {
+        [points(rect.width()), points(rect.height())]
+    } else {
+        [
+            CONWIDTH,
+            screen_height(rect.width() / rect.height().max(1.0)),
+        ]
     }
 }
 

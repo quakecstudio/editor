@@ -20,10 +20,14 @@ use qs_bots::{BotError, Bots, Graph};
 use qs_sim::spawn::Deathmatch;
 use qs_sim::{BotSkill, ClientId};
 
+use qs_client::{Models, Random};
+use qs_sim::ClientCommand;
+
 use crate::AXES;
 use crate::Error;
 use crate::demos::Connection;
 use crate::screenshot::Frame;
+use crate::seats::{Loopback, Seat, SeatError};
 use crate::values::{from_json, named_json, to_json};
 
 mod debug;
@@ -1028,6 +1032,55 @@ impl Game {
             tracing::warn!("the progs did not read for the console");
         }
         self.report_console()
+    }
+
+    /// `line` run as local player `loopback`'s console runs it (NET-7.12), what it prints
+    /// kept for the console on the screen; the client's commands it met, the buttons and
+    /// impulses that player's keys hold among them.
+    pub(crate) fn type_console_as(
+        &mut self,
+        loopback: Loopback,
+        line: &[u8],
+    ) -> Vec<ClientCommand> {
+        let text = String::from_utf8_lossy(line).into_owned();
+        let ran = self.with_progs(|game, progs| {
+            game.world.execute_console_as(progs, loopback.id(), &text);
+        });
+        if ran.is_err() {
+            tracing::warn!("the progs did not read for the console");
+        }
+        self.report_console();
+        self.world.take_client_commands()
+    }
+
+    /// Whether a stop in a spawn function holds the level's load (WORLD-9.7): no client has
+    /// entered yet.
+    pub(crate) const fn holds_load(&self) -> bool {
+        self.loading.holds()
+    }
+
+    /// Local player `number` joined in the first free slot (L-86), as [`Seat::join`] joins it.
+    ///
+    /// # Errors
+    ///
+    /// Why it did not join.
+    pub(crate) fn join_seat(
+        &mut self,
+        number: u8,
+        readers: (&mut dyn Models, &mut dyn Random),
+    ) -> Result<Option<Seat>, SeatError> {
+        self.with_progs(|game, progs| Seat::join(&mut game.world, progs, number, readers))
+            .map_err(|error| SeatError::Progs(error.message))?
+    }
+
+    /// Local player `loopback` leaves, as its window closes: dropped from its slot (NET-7.9).
+    pub(crate) fn leave(&mut self, loopback: Loopback) {
+        let left = self.with_progs(|game, progs| game.world.disconnect(progs, loopback.id()));
+        match left {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => self.fail(None, &error),
+            Err(error) => tracing::warn!(error = %error.message, "a player did not leave"),
+        }
     }
 
     /// The command or setting `partial` completes to (CON-4.3).

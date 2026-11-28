@@ -17,6 +17,7 @@ mod keys;
 mod load;
 mod map_bsp;
 mod screenshot;
+mod seats;
 mod settings;
 mod values;
 mod view_script;

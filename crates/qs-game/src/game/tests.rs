@@ -31,7 +31,10 @@ use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
 use super::{Eye, Game, HeldSpawn, HostAction, NextLevel, Placement, Reporting, Screen};
+use crate::load::Rand;
 use crate::screenshot::Frame;
+use crate::seats::Loopback;
+use qs_sim::input::Button;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
 /// thinker that fails and the entry points; every progs precaches the player's model, which
@@ -2177,4 +2180,138 @@ fn a_swap_makes_the_bots_graph_again() {
         game.bot_graph.is_some(),
         "the new map's graph is being made"
     );
+}
+
+/// Models that are all there, each a brush model, for clients with no install to read.
+struct AnyModel;
+
+impl qs_client::Models for AnyModel {
+    fn describe(&mut self, _name: &str) -> Option<qs_client::ModelInfo> {
+        Some(qs_client::ModelInfo::brush())
+    }
+}
+
+/// A client's frame of what `loopback`'s slot was sent: the text it printed.
+fn printed_to(
+    game: &mut Game,
+    loopback: Loopback,
+    client: &mut qs_client::Client,
+    (models, rand): (&mut AnyModel, &mut Rand),
+) -> Vec<u8> {
+    let packets = loopback.receive(game.world_mut());
+    let events = client.frame(0.0, &packets, models, rand).unwrap();
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            qs_client::Event::Print(text) => Some(text),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+fn holds(bytes: &[u8], text: &[u8]) -> bool {
+    bytes.windows(text.len()).any(|w| w == text)
+}
+
+// spec NET-7.3, NET-7.12: two local players, each joined to its own slot through its loopback
+// connection: each one's client reads only what its slot was sent, and a line the second
+// player's keys run is sent from its own slot
+#[test]
+fn two_local_players_each_read_their_own_messages() {
+    let mut game = game_with_room_for_bots();
+    let mut describer = AnyModel;
+    let mut rand = Rand::new();
+    let mut first = qs_client::Client::new(qs_client::Game::Standard);
+    printed_to(
+        &mut game,
+        Loopback::FIRST,
+        &mut first,
+        (&mut describer, &mut rand),
+    );
+    let mut seat = game
+        .join_seat(2, (&mut describer, &mut rand))
+        .unwrap()
+        .expect("a free slot");
+    assert_eq!(seat.number(), 2);
+    assert_eq!(seat.loopback().id().slot(), 1, "the slot after the first");
+    assert_eq!(first.viewentity(), 1);
+    assert_eq!(seat.client().viewentity(), 2, "its own slot's edict");
+    game.frame(1.0 / 72.0);
+    printed_to(
+        &mut game,
+        Loopback::FIRST,
+        &mut first,
+        (&mut describer, &mut rand),
+    );
+    seat.read(game.world_mut(), 0.0, (&mut describer, &mut rand))
+        .unwrap();
+    assert_eq!(
+        game.world().client_name(seat.loopback().id()),
+        Some(b"player2".to_vec()),
+        "it sent its own name"
+    );
+    let commands = game.type_console_as(seat.loopback(), b"tell player psst");
+    assert!(commands.is_empty());
+    game.frame(1.0 / 72.0);
+    let to_first = printed_to(
+        &mut game,
+        Loopback::FIRST,
+        &mut first,
+        (&mut describer, &mut rand),
+    );
+    // `Host_Tell_f`'s text is `Cmd_Args`, the name too (NET-7.6).
+    assert!(holds(&to_first, b"player2: player psst"), "{to_first:?}");
+    let packets = seat.loopback().receive(game.world_mut());
+    assert!(
+        !holds(&packets.concat(), b"psst"),
+        "the second player's slot was not sent it"
+    );
+}
+
+// spec INPUT-2.1, NET-7.12: a binding a local player's key runs holds that player's button
+#[test]
+fn a_local_players_binding_holds_its_own_button() {
+    let mut game = game_with_room_for_bots();
+    let mut describer = AnyModel;
+    let mut rand = Rand::new();
+    let seat = game
+        .join_seat(2, (&mut describer, &mut rand))
+        .unwrap()
+        .unwrap();
+    let commands = game.type_console_as(seat.loopback(), b"+forward 119");
+    assert_eq!(
+        commands,
+        vec![qs_sim::ClientCommand::Press(Button::Forward, Some(119))]
+    );
+}
+
+// spec NET-7.9: a local player leaving frees its slot for the next to join
+#[test]
+fn a_local_player_leaving_frees_its_slot() {
+    let mut game = game_with_room_for_bots();
+    let mut describer = AnyModel;
+    let mut rand = Rand::new();
+    let seat = game
+        .join_seat(2, (&mut describer, &mut rand))
+        .unwrap()
+        .unwrap();
+    let third = game
+        .join_seat(3, (&mut describer, &mut rand))
+        .unwrap()
+        .unwrap();
+    assert_eq!(third.loopback().id().slot(), 2);
+    assert!(
+        game.join_seat(4, (&mut describer, &mut rand))
+            .unwrap()
+            .is_none(),
+        "every slot active"
+    );
+    game.leave(seat.loopback());
+    assert!(!game.world().is_spawned(seat.loopback().id()));
+    let again = game
+        .join_seat(4, (&mut describer, &mut rand))
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.loopback().id(), seat.loopback().id());
 }

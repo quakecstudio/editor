@@ -32,6 +32,7 @@ use crate::keys::focus;
 use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::{Drawer, Frame};
+use crate::seats::{Loopback, Seat};
 use crate::settings::{DrawingSettings, HostSettings};
 use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
@@ -398,6 +399,9 @@ struct Headless {
     input: Input,
     /// The demo being recorded and the one being played (CLIENT-10).
     demos: Demos,
+    /// The local players after the first (L-86), whose clients read their slots' messages
+    /// each frame, with no window to draw them in.
+    seats: Vec<Seat>,
 }
 
 impl Headless {
@@ -416,6 +420,7 @@ impl Headless {
             audio,
             printed,
             demos,
+            seats,
         } = loaded;
         match drawer {
             Some(drawer) => {
@@ -446,6 +451,7 @@ impl Headless {
             printed,
             input: Input::new(),
             demos,
+            seats,
         }
     }
 
@@ -465,9 +471,7 @@ impl Headless {
         if drift.start {
             self.client.start_pitch_drift();
         }
-        self.game
-            .world_mut()
-            .set_command(qs_sim::ClientId::FIRST, cmd);
+        Loopback::FIRST.send(self.game.world_mut(), cmd);
     }
 
     /// The client's commands the console met, run in order (CON-6.1): the buttons and the
@@ -635,11 +639,7 @@ impl Headless {
     fn read_messages(&mut self, frametime: f64, realtime: f64) {
         // The console on the screen is the window's; with none, what it would show goes.
         self.game.take_printed();
-        let packets = self
-            .game
-            .world_mut()
-            .take_messages(qs_sim::ClientId::FIRST)
-            .packets;
+        let packets = Loopback::FIRST.receive(self.game.world_mut());
         let seconds = frametime_f32(frametime);
         // CLIENT-10.2, CLIENT-10.6: a demo being recorded takes each packet, and one being
         // played is read in their place.
@@ -653,6 +653,15 @@ impl Headless {
             Ok(events) if self.audio.captures() => self.audio.handle(&events, &mut self.rand),
             Ok(_) => {}
             Err(error) => tracing::warn!(%error, "client"),
+        }
+        for seat in &mut self.seats {
+            if let Err(error) = seat.read(
+                self.game.world_mut(),
+                seconds,
+                (&mut self.describer, &mut self.rand),
+            ) {
+                tracing::warn!(%error, player = seat.number(), "client");
+            }
         }
         let view = self.client.scene().view;
         // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.

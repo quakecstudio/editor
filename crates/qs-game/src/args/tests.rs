@@ -126,3 +126,64 @@ fn listen_takes_an_optional_count() {
     );
     assert_eq!(parse(&[]).listen, None);
 }
+
+fn setting<'a>(settings: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    settings
+        .iter()
+        .rev()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.as_str())
+}
+
+// spec NET-7.1: with no `-listen` the game is single player, one slot and no setting; with
+// one, `-listen`'s slots and deathmatch 1
+#[test]
+fn the_default_is_single_player_with_no_bots() {
+    let args = parse(&["e1m1"]).unwrap();
+    assert_eq!(args.players, 1);
+    assert_eq!(args.bots, 0);
+    assert!(!args.coop);
+    assert_eq!(args.maxplayers(), qs_sim::MaxPlayers::SINGLE);
+    assert!(args.new_game_settings(args.maxplayers()).is_empty());
+    assert!(args.bot_lines().is_empty());
+    let args = parse(&["-listen", "4"]).unwrap();
+    assert_eq!(args.maxplayers().get(), 4);
+    let settings = args.new_game_settings(args.maxplayers());
+    assert_eq!(setting(&settings, "deathmatch"), Some("1"));
+    assert_eq!(setting(&settings, "coop"), None);
+    assert_eq!(parse(&["-listen", "0"]).unwrap().maxplayers().get(), 8);
+}
+
+// spec DIFF-3.2: `--coop` sets coop 1 and deathmatch 0, the last word on deathmatch
+#[test]
+fn coop_sets_coop_and_not_deathmatch() {
+    let args = parse(&["-listen", "4", "--coop"]).unwrap();
+    let settings = args.new_game_settings(args.maxplayers());
+    assert_eq!(setting(&settings, "coop"), Some("1"));
+    assert_eq!(setting(&settings, "deathmatch"), Some("0"));
+    let alone = parse(&["--coop"]).unwrap();
+    let settings = alone.new_game_settings(alone.maxplayers());
+    assert_eq!(setting(&settings, "coop"), Some("1"));
+}
+
+// spec BOT-9.3: `--bots n` types `addbot` n times, with `--bot-skill` when given
+#[test]
+fn bots_are_typed_as_addbot() {
+    let args = parse(&["-listen", "4", "--bots", "3", "--bot-skill", "2"]).unwrap();
+    assert_eq!(args.bot_lines(), vec!["addbot 2\n"; 3]);
+    let args = parse(&["-listen", "4", "--bots", "1"]).unwrap();
+    assert_eq!(args.bot_lines(), vec!["addbot\n"]);
+    assert!(parse(&["--bot-skill", "4"]).is_err(), "skill is 0 to 3");
+}
+
+// spec NET-7.4: the local players are 1 to 4
+#[test]
+fn the_local_players_are_one_to_four() {
+    assert_eq!(parse(&["--players", "4"]).unwrap().players, 4);
+    assert!(parse(&["--players", "0"]).is_err());
+    assert!(parse(&["--players", "5"]).is_err());
+    let two = parse(&["--players", "2"]).unwrap();
+    assert!(two.check_players(two.maxplayers()).is_err(), "one slot");
+    let room = parse(&["--players", "2", "-listen", "2"]).unwrap();
+    assert!(room.check_players(room.maxplayers()).is_ok());
+}

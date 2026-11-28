@@ -6,8 +6,13 @@
 use std::path::PathBuf;
 
 use crate::Error;
+use crate::seats::MAX_LOCAL_PLAYERS;
 use qs_render::Look;
+use qs_sim::MaxPlayers;
 use qs_sim::protocol::ProtocolVersion;
+
+/// `Host_FindMaxClients`' slots for a `-listen` with no number, or one below 1 (NET-7.1).
+const LISTEN_DEFAULT: i32 = 8;
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
@@ -62,6 +67,22 @@ pub struct Args {
     /// 1, at most 16, and `deathmatch` 1 (NET-7.1), with room for bots (`addbot`, BOT-1.2).
     #[arg(long, num_args = 0..=1, default_missing_value = "8", allow_negative_numbers = true)]
     pub listen: Option<i32>,
+    /// Coop: `coop` 1 and `deathmatch` 0 for a new game, as the console's `coop 1` before a
+    /// `map` sets them; with `-listen`, in place of its `deathmatch` 1.
+    #[arg(long)]
+    pub coop: bool,
+    /// The local players, 1 to 4 (L-86): the first in the window or the Game tab, each other
+    /// one in a window of its own, joined after the first; it needs as many slots
+    /// (`-listen`).
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=i64::from(MAX_LOCAL_PLAYERS)))]
+    pub players: u8,
+    /// Bots brought in as the first map starts, `addbot` typed once for each (BOT-1.2); they
+    /// take the slots after the local players.
+    #[arg(long, default_value_t = 0)]
+    pub bots: u8,
+    /// How well those bots play, 0 to 3 (BOT-1.4); the game's `skill` setting without it.
+    #[arg(long, value_parser = clap::value_parser!(u8).range(0..=3))]
+    pub bot_skill: Option<u8>,
     /// Where a free camera starts: x, y, z and yaw.
     #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
     pub at: Option<Vec<f32>>,
@@ -217,6 +238,52 @@ impl Args {
         }
         engine.extend(self.engine.iter().cloned());
         engine
+    }
+
+    /// The server's slots (NET-7.1): `-listen`'s count, `Host_FindMaxClients`' 8 for none or
+    /// fewer than 1, else one.
+    pub fn maxplayers(&self) -> MaxPlayers {
+        self.listen.map_or(MaxPlayers::SINGLE, |n| {
+            MaxPlayers::new(if n < 1 { LISTEN_DEFAULT } else { n })
+        })
+    }
+
+    /// Whether `maxplayers` slots hold `--players` local players.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Usage`] when there are more players than slots.
+    pub fn check_players(&self, maxplayers: MaxPlayers) -> Result<(), Error> {
+        if usize::from(self.players) > maxplayers.get() {
+            return Err(Error::Usage(format!(
+                "--players {} needs as many slots: -listen {} or more",
+                self.players, self.players
+            )));
+        }
+        Ok(())
+    }
+
+    /// The settings a new game of `maxplayers` slots starts with: `deathmatch` 1 for more
+    /// than one (NET-7.1), and with `--coop`, `coop` 1 and `deathmatch` 0 (DIFF-3.2).
+    pub fn new_game_settings(&self, maxplayers: MaxPlayers) -> Vec<(String, String)> {
+        let mut settings = Vec::new();
+        if maxplayers.is_multiplayer() {
+            settings.push(("deathmatch".to_owned(), "1".to_owned()));
+        }
+        if self.coop {
+            settings.push(("coop".to_owned(), "1".to_owned()));
+            settings.push(("deathmatch".to_owned(), "0".to_owned()));
+        }
+        settings
+    }
+
+    /// The console lines that bring `--bots` bots in as the first map starts, each `addbot`
+    /// with `--bot-skill` when it is given (BOT-9.3).
+    pub fn bot_lines(&self) -> Vec<String> {
+        let skill = self
+            .bot_skill
+            .map_or_else(String::new, |skill| format!(" {skill}"));
+        (0..self.bots).map(|_| format!("addbot{skill}\n")).collect()
     }
 
     /// The cue sheet in the game root whose CD the game's music plays from (SND-6.4, SND-6.5):

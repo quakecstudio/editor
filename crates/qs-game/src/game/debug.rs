@@ -14,6 +14,7 @@ use qs_sim::{World, WorldError};
 use serde_json::{Map, Value, json};
 
 use super::{FrameEnd, Game, NextLevel, Reason, State};
+use crate::seats::Loopback;
 use crate::values::to_json;
 
 /// The host's id for a breakpoint it took, which `breakpoint/set` answers (BRIDGE-4.9).
@@ -255,7 +256,7 @@ impl Game {
             Err(WorldError::Spawn(LoadError::Run(error)))
                 if error.kind == ErrorKind::Interrupted =>
             {
-                drop(self.world.take_messages(qs_sim::ClientId::FIRST));
+                Loopback::discard_all(&mut self.world);
                 self.stopped_at(progs, error.trace);
                 FrameEnd::Stopped
             }
@@ -282,7 +283,7 @@ impl Game {
         {
             // The half frame's messages never reach the client: the frame replays from its
             // snapshot, which writes them again (WORLD-9.2).
-            drop(self.world.take_messages(qs_sim::ClientId::FIRST));
+            Loopback::discard_all(&mut self.world);
             self.stopped_at(progs, error.trace.clone());
             return FrameEnd::Stopped;
         }
@@ -451,7 +452,7 @@ impl HeldSpawn {
             Err(WorldError::Spawn(LoadError::Run(error)))
                 if error.kind == ErrorKind::Interrupted =>
             {
-                drop(world.take_messages(qs_sim::ClientId::FIRST));
+                Loopback::discard_all(world);
                 Ok(Some(Self {
                     prepared,
                     stack: Some(error.trace),
