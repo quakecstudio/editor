@@ -170,7 +170,9 @@ pub(crate) struct SetGameCommand;
 
 impl<C: HasPreview + 'static> Command<C> for SetGameCommand {
     const ID: &'static str = SET_GAME;
-    const SUMMARY: &'static str = "Chooses the game Play and Play from here play when given         none: single player, coop or deathmatch, the players on this machine and the bots. The         map's issues check its player starts for it.";
+    const SUMMARY: &'static str = "Chooses the game Play and Play from here play when \
+        given none: single player, coop or deathmatch, the players on this machine and the bots. \
+        The map's issues check its player starts for it.";
     type Params = SetGameParams;
     type Output = GameOptions;
     type Error = PreviewError;

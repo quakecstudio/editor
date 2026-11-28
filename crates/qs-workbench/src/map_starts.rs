@@ -1,40 +1,45 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The player starts of a coop or deathmatch map (L-88, MAP-39): what would spoil the game
-//! before it is played, as `map.issues` lists it for the game `preview.set_game` chose. Each
-//! finding quotes what id1's QuakeC does then, from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73
-//! `qcc/v101qc/client.qc` (`SelectSpawnPoint`, `PutClientInServer`) and `triggers.qc`
-//! (`spawn_tdeath`, `tdeath_touch`):
+//! before it is played, as `map.issues` lists it for the game `preview.set_game` chose
+//! (START-3). Each finding quotes what id1's QuakeC does then (START-1, START-2):
 //!
 //! - too few `info_player_deathmatch`: `SelectSpawnPoint` takes them in turn, so players share
 //!   one;
 //! - no `info_player_coop` in coop: every player falls back to the `info_player_start`;
-//! - a start whose player box is in a world brush: the player is stuck there;
-//! - two starts of one game whose boxes `spawn_tdeath` reaches across: one telefrags the other.
+//! - a start whose player box is in a solid brush: the player is stuck there;
+//! - two starts of one group close enough that `spawn_tdeath` reaches across: one telefrags
+//!   the other.
 
 use qs_map::{Brush, Entity, MapFile};
 use qs_map_edit::{EntityIndex, EntityProblem, QuickFix};
 
 use crate::{GameMode, GameOptions};
 
-/// The players a deathmatch map is checked for when deathmatch is not the game chosen: four.
+/// The players a deathmatch map is checked for when deathmatch is not the game chosen: four
+/// (START-3.1).
 pub const DEATHMATCH_PLAYERS: usize = 4;
 
-/// The player's box, `VEC_HULL_MIN` and `VEC_HULL_MAX` in id1's `defs.qc`.
+/// The player's box, `VEC_HULL_MIN` and `VEC_HULL_MAX` in id1's `defs.qc` (START-1.3).
 const HULL_MIN: [f64; 3] = [-16.0, -16.0, -24.0];
 const HULL_MAX: [f64; 3] = [16.0, 16.0, 32.0];
-/// How far above its spot `PutClientInServer` puts the player: `spot.origin + '0 0 1'`.
+/// How far above its spot `PutClientInServer` puts the player: `spot.origin + '0 0 1'`
+/// (START-1.3).
 const SPAWN_LIFT: f64 = 1.0;
 /// How much bigger than the player's box `spawn_tdeath` makes its trigger: `mins - '1 1 1'`
-/// to `maxs + '1 1 1'`.
+/// to `maxs + '1 1 1'` (START-2.1).
 const TDEATH_GROW: f64 = 1.0;
-/// How far up a start in solid is looked for room, then down, a unit at a time.
+/// How much bigger than its box `SV_LinkEdict` links an entity that is not an item
+/// (START-2.2).
+const LINK_GROW: f64 = 1.0;
+/// How far up a start in solid is looked for room, then down, a unit at a time (START-3.3).
 const ROOM_SEARCH: u8 = 64;
-/// How far from a start another place for it is looked for, in each of eight directions.
+/// How far from a start another place for it is looked for, in each of eight directions
+/// (START-3.2).
 const STEP_ASIDE: f64 = 64.0;
-/// How far below its feet a new place must have a floor, so a start is not put in the air.
+/// How far below its feet a player's place must have a floor (START-3.5).
 const FLOOR_REACH: f64 = 16.0;
-/// The eight directions a place beside a start is looked for in.
+/// The eight directions a place beside a start is looked for in (START-3.2).
 const ASIDE: [[f64; 2]; 8] = [
     [1.0, 0.0],
     [-1.0, 0.0],
@@ -45,11 +50,19 @@ const ASIDE: [[f64; 2]; 8] = [
     [1.0, -1.0],
     [-1.0, -1.0],
 ];
+/// The brush entities whose brushes are not solid to a player: `func_illusionary` and the
+/// extended dialect's `func_detail_illusionary` (START-3.3).
+const NOT_SOLID: [&[u8]; 2] = [b"func_illusionary", b"func_detail_illusionary"];
+/// The classname prefix of the brush entities whose brushes are solid, `func_group` and
+/// `func_detail` among them (START-3.3).
+const SOLID_PREFIX: &[u8] = b"func_";
+/// The axes of a player's box.
+const BOX_AXES: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
 /// The entities a player spawns at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StartClass {
-    /// `info_player_start`, single player's, and coop's when there is no coop start.
+    /// `info_player_start`, single player's, and coop's after the coop starts.
     Start,
     /// `info_player_start2`, the start with a rune (`serverflags`).
     Start2,
@@ -90,6 +103,19 @@ impl StartClass {
     }
 }
 
+/// The starts players of one game take in turn (START-3.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Group {
+    /// The `info_player_deathmatch` (START-1.2).
+    Deathmatch,
+    /// The `info_player_coop` and the first `info_player_start` (START-1.1).
+    Coop,
+}
+
+impl Group {
+    const ALL: [Self; 2] = [Self::Deathmatch, Self::Coop];
+}
+
 /// A start of the map.
 #[derive(Clone, Copy, Debug)]
 struct Start {
@@ -102,20 +128,19 @@ struct Start {
 }
 
 impl Start {
-    /// The box of a player put at this start, a box `grow` bigger each way.
-    fn player_box(self, grow: f64) -> [[f64; 3]; 2] {
-        player_box_at(self.origin, grow)
-    }
-
-    /// Whether a player spawning at one start telefrags one standing at the other: the
-    /// spawner's `spawn_tdeath` trigger touches the other's box.
-    fn telefrags(self, other: Self) -> bool {
-        overlap(self.player_box(TDEATH_GROW), other.player_box(0.0))
+    /// Whether a player spawning at this start telefrags one standing at `other`: the
+    /// spawner's `spawn_tdeath` trigger and the other's box, each as `SV_LinkEdict` links it,
+    /// touch (START-2.2).
+    fn telefrags(self, other: [f64; 3]) -> bool {
+        touch(
+            player_box(self.origin, TDEATH_GROW + LINK_GROW),
+            player_box(other, LINK_GROW),
+        )
     }
 }
 
-/// The box of a player put at a start at `origin`, `grow` bigger each way.
-fn player_box_at(origin: [f64; 3], grow: f64) -> [[f64; 3]; 2] {
+/// The box of a player put at a start at `origin` (START-1.3), `grow` bigger each way.
+fn player_box(origin: [f64; 3], grow: f64) -> [[f64; 3]; 2] {
     let [x, y, z] = origin;
     let [lx, ly, lz] = HULL_MIN;
     let [hx, hy, hz] = HULL_MAX;
@@ -126,20 +151,61 @@ fn player_box_at(origin: [f64; 3], grow: f64) -> [[f64; 3]; 2] {
     ]
 }
 
-/// Whether two boxes share a volume; boxes that only touch do not.
-fn overlap([a_lo, a_hi]: [[f64; 3]; 2], [b_lo, b_hi]: [[f64; 3]; 2]) -> bool {
-    a_lo.iter().zip(&b_hi).all(|(a, b)| a < b) && b_lo.iter().zip(&a_hi).all(|(b, a)| b < a)
+/// Whether two boxes touch or share a volume, as `SV_TouchLinks` tests them: neither is wholly
+/// past the other (START-2.2).
+fn touch([a_lo, a_hi]: [[f64; 3]; 2], [b_lo, b_hi]: [[f64; 3]; 2]) -> bool {
+    a_lo.iter().zip(&b_hi).all(|(a, b)| a <= b) && b_lo.iter().zip(&a_hi).all(|(b, a)| b <= a)
 }
 
-/// A solid world brush: its faces' planes and its bounds.
+/// The most two starts may be apart across, on x and on y, and up and down, and still
+/// telefrag (START-2.2).
+fn telefrag_reach() -> [f64; 2] {
+    let [lx, _, lz] = HULL_MIN;
+    let [hx, _, hz] = HULL_MAX;
+    let grown = TDEATH_GROW + LINK_GROW + LINK_GROW;
+    [hx - lx + grown, hz - lz + grown]
+}
+
+/// A box's eight corners.
+fn corners([lo, hi]: [[f64; 3]; 2]) -> [[f64; 3]; 8] {
+    let [lx, ly, lz] = lo;
+    let [hx, hy, hz] = hi;
+    [
+        [lx, ly, lz],
+        [hx, ly, lz],
+        [lx, hy, lz],
+        [hx, hy, lz],
+        [lx, ly, hz],
+        [hx, ly, hz],
+        [lx, hy, hz],
+        [hx, hy, hz],
+    ]
+}
+
+fn dot([a, b, c]: [f64; 3], [x, y, z]: [f64; 3]) -> f64 {
+    a * x + b * y + c * z
+}
+
+/// The least and greatest of `points` along `axis`.
+fn span(points: &[[f64; 3]], axis: [f64; 3]) -> [f64; 2] {
+    points
+        .iter()
+        .map(|&point| dot(point, axis))
+        .fold([f64::INFINITY, f64::NEG_INFINITY], |[lo, hi], at| {
+            [lo.min(at), hi.max(at)]
+        })
+}
+
+/// A solid brush (START-3.3): its corners, and the axes a box is apart from it along when it
+/// is: the box's, the brush's faces' normals and each brush edge crossed with each box axis.
 struct Solid {
-    planes: Vec<([f64; 3], f64)>,
-    bounds: [[f64; 3]; 2],
+    corners: Vec<[f64; 3]>,
+    axes: Vec<[f64; 3]>,
 }
 
 impl Solid {
-    /// `brush` as the player's hull meets it: none for one with no volume or a liquid, whose
-    /// textures start with `*`, which a player stands in.
+    /// `brush` as a player's box meets it: none for one with no volume, or a liquid, whose
+    /// faces' textures all start with `*`.
     fn of(brush: &Brush) -> Option<Self> {
         if !brush.is_valid()
             || brush
@@ -153,43 +219,52 @@ impl Solid {
         if corners.is_empty() {
             return None;
         }
-        let axis = |i: usize, pick: fn(f64, f64) -> f64, start: f64| {
-            corners
+        let mut axes: Vec<[f64; 3]> = BOX_AXES.to_vec();
+        axes.extend(
+            brush
+                .faces
                 .iter()
-                .filter_map(|corner| corner.get(i).copied())
-                .fold(start, pick)
-        };
-        let bounds = [
-            core::array::from_fn(|i| axis(i, f64::min, f64::INFINITY)),
-            core::array::from_fn(|i| axis(i, f64::max, f64::NEG_INFINITY)),
-        ];
-        let planes = brush
-            .faces
-            .iter()
-            .filter_map(qs_map::Face::plane)
-            .map(|plane| (plane.normal, plane.dist))
-            .collect();
-        Some(Self { planes, bounds })
+                .filter_map(qs_map::Face::plane)
+                .map(|plane| plane.normal),
+        );
+        for polygon in brush.polygons() {
+            let next = polygon.iter().cycle().skip(1);
+            for (&[fx, fy, fz], &[tx, ty, tz]) in polygon.iter().zip(next) {
+                let [ex, ey, ez] = [tx - fx, ty - fy, tz - fz];
+                for [ax, ay, az] in BOX_AXES {
+                    let cross = [ey * az - ez * ay, ez * ax - ex * az, ex * ay - ey * ax];
+                    if dot(cross, cross) > f64::EPSILON {
+                        axes.push(cross);
+                    }
+                }
+            }
+        }
+        Some(Self { corners, axes })
     }
 
-    /// Whether `area`, a box, shares a volume with the brush: their bounds overlap, and no
-    /// face's plane has the whole box outside it.
+    /// Whether `area`, a box, shares a volume with the brush: along no axis are the two apart
+    /// or only touching.
     fn holds(&self, area: [[f64; 3]; 2]) -> bool {
-        overlap(self.bounds, area)
-            && self.planes.iter().all(|&(normal, dist)| {
-                // The corner of the box deepest behind the plane.
-                let [lo, hi] = area;
-                let deepest: f64 = normal
-                    .iter()
-                    .zip(lo.iter().zip(&hi))
-                    .map(|(n, (lo, hi))| n * if *n > 0.0 { lo } else { hi })
-                    .sum();
-                deepest < dist
-            })
+        let area = corners(area);
+        self.axes.iter().all(|&axis| {
+            let [a_lo, a_hi] = span(&self.corners, axis);
+            let [b_lo, b_hi] = span(&area, axis);
+            a_lo < b_hi && b_lo < a_hi
+        })
     }
 }
 
-/// What a check reads of the map: its starts and its world's solid brushes.
+/// Whether `entity`'s brushes are solid to a player: the world's and a `func_` brush
+/// entity's, but for the illusionary ones (START-3.3).
+fn solid_entity(entity: &Entity) -> bool {
+    let Some(classname) = entity.classname() else {
+        return false;
+    };
+    classname == b"worldspawn"
+        || (classname.starts_with(SOLID_PREFIX) && !NOT_SOLID.contains(&classname))
+}
+
+/// What a check reads of the map: its starts and its solid brushes.
 struct Starts {
     starts: Vec<Start>,
     solids: Vec<Solid>,
@@ -212,8 +287,12 @@ impl Starts {
             })
             .collect();
         let solids = map
-            .world()
-            .map_or_default(|world| world.brushes().filter_map(Solid::of).collect());
+            .entities
+            .iter()
+            .filter(|entity| solid_entity(entity))
+            .flat_map(Entity::brushes)
+            .filter_map(Solid::of)
+            .collect();
         Self { starts, solids }
     }
 
@@ -221,60 +300,144 @@ impl Starts {
         self.starts.iter().filter(move |start| start.class == class)
     }
 
-    /// Whether a player at `origin` would be in a world brush.
+    /// The starts of `group`, in the order `SelectSpawnPoint` takes them (START-3.4).
+    fn group(&self, group: Group) -> Vec<Start> {
+        match group {
+            Group::Deathmatch => self.of_class(StartClass::Deathmatch).copied().collect(),
+            Group::Coop => self
+                .of_class(StartClass::Coop)
+                .chain(self.of_class(StartClass::Start).take(1))
+                .copied()
+                .collect(),
+        }
+    }
+
+    /// The starts `start` takes turns with: its group's, none for a start in no group.
+    fn group_of(&self, start: Start) -> Vec<Start> {
+        Group::ALL
+            .into_iter()
+            .map(|group| self.group(group))
+            .find(|starts| starts.iter().any(|other| other.entity == start.entity))
+            .unwrap_or_default()
+    }
+
+    /// Whether a player at `origin` would be in a solid brush (START-3.3).
     fn in_solid(&self, origin: [f64; 3]) -> bool {
-        let area = player_box_at(origin, 0.0);
+        let area = player_box(origin, 0.0);
         self.solids.iter().any(|solid| solid.holds(area))
     }
 
-    /// Whether a player at `origin` would stand: there is a floor within [`FLOOR_REACH`] below
-    /// its feet.
+    /// Whether a player at `origin` stands: a solid brush is within [`FLOOR_REACH`] below its
+    /// feet (START-3.5).
     fn stands(&self, origin: [f64; 3]) -> bool {
-        let [[lx, ly, feet], [hx, hy, _]] = player_box_at(origin, 0.0);
+        let [[lx, ly, feet], [hx, hy, _]] = player_box(origin, 0.0);
         let below = [[lx, ly, feet - FLOOR_REACH], [hx, hy, feet]];
         self.solids.iter().any(|solid| solid.holds(below))
     }
 
-    /// The nearest height above, then below, `start` within [`ROOM_SEARCH`] units where its
-    /// player is out of solid.
-    fn room_for(&self, start: Start) -> Option<[f64; 3]> {
+    /// Whether `origin` is a place for `start`: a player there is out of solid, stands, and
+    /// telefrags none of `others` but itself, nor is telefragged by them.
+    fn fits(&self, origin: [f64; 3], start: Start, others: &[Start]) -> bool {
+        let placed = Start { origin, ..start };
+        !self.in_solid(origin)
+            && self.stands(origin)
+            && !others.iter().any(|other| {
+                other.entity != start.entity
+                    && (placed.telefrags(other.origin) || other.telefrags(origin))
+            })
+    }
+
+    /// The nearest height above, then below, `start` within [`ROOM_SEARCH`] units that fits it
+    /// among `others` (START-3.3).
+    fn room_for(&self, start: Start, others: &[Start]) -> Option<[f64; 3]> {
         let [x, y, z] = start.origin;
         let heights = (1..=ROOM_SEARCH)
             .map(|n| z + f64::from(n))
             .chain((1..=ROOM_SEARCH).map(|n| z - f64::from(n)));
         heights
             .map(|at| [x, y, at])
-            .find(|&origin| !self.in_solid(origin))
+            .find(|&origin| self.fits(origin, start, others))
     }
 
-    /// A place [`STEP_ASIDE`] from `origin` where a player stands out of solid and telefrags
-    /// none of `others`.
-    fn aside(&self, origin: [f64; 3], others: &[Start]) -> Option<[f64; 3]> {
-        let [x, y, z] = origin;
+    /// The first of the eight places [`STEP_ASIDE`] from `start` that fits it among `others`
+    /// (START-3.2, START-3.4).
+    fn aside(&self, start: Start, others: &[Start]) -> Option<[f64; 3]> {
+        let [x, y, z] = start.origin;
         ASIDE
             .iter()
             .map(|[dx, dy]| [x + dx * STEP_ASIDE, y + dy * STEP_ASIDE, z])
-            .find(|&at| {
-                let placed = Start {
-                    entity: EntityIndex::new(0),
-                    line: 0,
-                    class: StartClass::Coop,
-                    origin: at,
-                    angle: 0.0,
-                };
-                !self.in_solid(at)
-                    && self.stands(at)
-                    && !others
-                        .iter()
-                        .any(|other| placed.telefrags(*other) || other.telefrags(placed))
+            .find(|&at| self.fits(at, start, others))
+    }
+
+    /// Each start whose player is in a solid brush; the fix moves it to the nearest height
+    /// with room (START-3.3).
+    fn starts_in_solid(&self) -> Vec<EntityProblem> {
+        self.starts
+            .iter()
+            .filter(|start| self.in_solid(start.origin))
+            .map(|start| EntityProblem {
+                entity: Some(start.entity),
+                line: start.line,
+                message: format!(
+                    "this {} is in solid: id1's PutClientInServer puts the player at it \
+                     (`self.origin = spot.origin + '0 0 1'`) with the box '-16 -16 -24' to \
+                     '16 16 32', and a player there is stuck",
+                    start.class.classname()
+                ),
+                fix: self
+                    .room_for(*start, &self.group_of(*start))
+                    .map(|origin| QuickFix::MoveTo {
+                        entity: start.entity,
+                        origin,
+                    }),
+                point: None,
             })
+            .collect()
+    }
+
+    /// Each start of a group close enough to an earlier one to telefrag; the fix moves it
+    /// aside where it telefrags none (START-3.4).
+    fn telefrags(&self) -> Vec<EntityProblem> {
+        let [across, up] = telefrag_reach();
+        let mut problems = Vec::new();
+        for group in Group::ALL {
+            let starts = self.group(group);
+            for (n, start) in starts.iter().enumerate() {
+                let Some(earlier) = starts
+                    .iter()
+                    .take(n)
+                    .find(|other| start.telefrags(other.origin))
+                else {
+                    continue;
+                };
+                problems.push(EntityProblem {
+                    entity: Some(start.entity),
+                    line: start.line,
+                    message: format!(
+                        "this {} is close enough to entity {}'s {} to telefrag: a player \
+                         spawning at one (`spawn_tdeath (self.origin, self)`) kills whoever \
+                         stands on the other; keep starts more than {across} units apart \
+                         across or more than {up} up and down",
+                        start.class.classname(),
+                        earlier.entity.get(),
+                        earlier.class.classname()
+                    ),
+                    fix: self.aside(*start, &starts).map(|origin| QuickFix::MoveTo {
+                        entity: start.entity,
+                        origin,
+                    }),
+                    point: None,
+                });
+            }
+        }
+        problems
     }
 }
 
 impl GameOptions {
-    /// What would spoil the open map for this game (L-88): too few deathmatch starts for the
-    /// players and bots, no coop start in coop, a start in solid, and two starts close enough to
-    /// telefrag; each with a quick fix where one puts it right.
+    /// What would spoil the open map for this game (START-3): too few deathmatch starts for
+    /// the players and bots, no coop start in coop, a start in solid, and two starts close
+    /// enough to telefrag; each with a quick fix where one puts it right.
     #[must_use]
     pub fn start_problems(self, map: &MapFile) -> Vec<EntityProblem> {
         let found = Starts::of(map);
@@ -290,8 +453,8 @@ impl GameOptions {
         usize::from(self.players).saturating_add(usize::from(self.bots))
     }
 
-    /// Too few `info_player_deathmatch` on a deathmatch map, or one played as deathmatch: for
-    /// the players and bots of a deathmatch chosen, else [`DEATHMATCH_PLAYERS`].
+    /// Too few `info_player_deathmatch` on a deathmatch map, or one played as deathmatch, for
+    /// the players and bots of a deathmatch chosen, else [`DEATHMATCH_PLAYERS`] (START-3.1).
     fn deathmatch_count(self, found: &Starts) -> Option<EntityProblem> {
         let starts: Vec<&Start> = found.of_class(StartClass::Deathmatch).collect();
         let chosen = self.mode == GameMode::Deathmatch;
@@ -332,15 +495,24 @@ impl GameOptions {
         })
     }
 
-    /// No `info_player_coop` when coop is the game chosen; the fix places one beside the
-    /// `info_player_start` where a player has room.
+    /// No `info_player_coop` when coop is the game chosen for more than one player and bot; the
+    /// fix places one beside the `info_player_start` (START-3.2).
     fn coop_start(self, found: &Starts) -> Option<EntityProblem> {
-        if self.mode != GameMode::Coop || found.of_class(StartClass::Coop).next().is_some() {
+        if self.mode != GameMode::Coop
+            || self.clients() < 2
+            || found.of_class(StartClass::Coop).next().is_some()
+        {
             return None;
         }
         let start = found.of_class(StartClass::Start).next().copied();
         let fix = start.and_then(|start| {
-            let origin = found.aside(start.origin, &[start])?;
+            // A new entity, which is none of the map's.
+            let coop = Start {
+                entity: EntityIndex::new(usize::MAX),
+                class: StartClass::Coop,
+                ..start
+            };
+            let origin = found.aside(coop, &[start])?;
             Some(QuickFix::AddCoopStart {
                 origin,
                 angle: start.angle,
@@ -357,75 +529,6 @@ impl GameOptions {
             fix,
             point: None,
         })
-    }
-}
-
-impl Starts {
-    /// Each start whose player is in a world brush; the fix moves it to the nearest height
-    /// with room.
-    fn starts_in_solid(&self) -> Vec<EntityProblem> {
-        self.starts
-            .iter()
-            .filter(|start| self.in_solid(start.origin))
-            .map(|start| EntityProblem {
-                entity: Some(start.entity),
-                line: start.line,
-                message: format!(
-                    "this {} is in solid: id1's PutClientInServer puts the player at it \
-                     (`self.origin = spot.origin + '0 0 1'`) with the box '-16 -16 -24' to \
-                     '16 16 32', and a player there is stuck",
-                    start.class.classname()
-                ),
-                fix: self.room_for(*start).map(|origin| QuickFix::MoveTo {
-                    entity: start.entity,
-                    origin,
-                }),
-                point: None,
-            })
-            .collect()
-    }
-
-    /// Each start of the deathmatch or the coop starts close enough to an earlier one of its
-    /// class to telefrag a player on it; the fix moves it aside where it telefrags none.
-    fn telefrags(&self) -> Vec<EntityProblem> {
-        let mut problems = Vec::new();
-        for class in [StartClass::Deathmatch, StartClass::Coop] {
-            let starts: Vec<Start> = self.of_class(class).copied().collect();
-            for (n, start) in starts.iter().enumerate() {
-                let Some(earlier) = starts
-                    .iter()
-                    .take(n)
-                    .find(|other| start.telefrags(**other) || other.telefrags(*start))
-                else {
-                    continue;
-                };
-                let others: Vec<Start> = starts
-                    .iter()
-                    .enumerate()
-                    .filter(|(m, _)| *m != n)
-                    .map(|(_, other)| *other)
-                    .collect();
-                problems.push(EntityProblem {
-                    entity: Some(start.entity),
-                    line: start.line,
-                    message: format!(
-                        "this {} is close enough to entity {}'s to telefrag: a player spawning \
-                         at one (`spawn_tdeath (self.origin, self)`) kills whoever stands on the \
-                         other; keep starts 33 units apart across or 57 up and down",
-                        class.classname(),
-                        earlier.entity.get()
-                    ),
-                    fix: self
-                        .aside(start.origin, &others)
-                        .map(|origin| QuickFix::MoveTo {
-                            entity: start.entity,
-                            origin,
-                        }),
-                    point: None,
-                });
-            }
-        }
-        problems
     }
 }
 

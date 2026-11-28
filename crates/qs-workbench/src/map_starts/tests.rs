@@ -10,8 +10,8 @@
 use std::fmt::Write as _;
 
 use qs_commands::Session;
-use qs_map::{Brush, Item, MapFile, Surface, TexDef};
-use qs_map_edit::{EntityProblem, MAP_FIX, MAP_ISSUES, MapIssue, MapIssues, QuickFix};
+use qs_map::{Brush, Entity, Face, Item, MapFile, Surface, TexDef};
+use qs_map_edit::{EntityIndex, EntityProblem, MAP_FIX, MAP_ISSUES, MapIssue, MapIssues, QuickFix};
 use serde_json::json;
 
 use super::DEATHMATCH_PLAYERS;
@@ -87,8 +87,11 @@ fn deathmatch_starts(count: usize) -> Vec<(&'static str, [f64; 3])> {
         .collect()
 }
 
-// No spec statement: L-88: a deathmatch map is checked for four starts when deathmatch is not
-// the game chosen; four is enough, three is not, and a map with none is no deathmatch map
+const TELEFRAG: &str = "to telefrag:";
+
+// spec START-3.1: a deathmatch map is checked for four starts when deathmatch is not the game
+// chosen; four is enough, three is not, and a map with none is no deathmatch map
+// spec START-1.2: players share a deathmatch start when there are fewer than they
 #[test]
 fn a_deathmatch_map_needs_four_starts_by_default() {
     let single = GameOptions::default();
@@ -110,8 +113,8 @@ fn a_deathmatch_map_needs_four_starts_by_default() {
     assert!(single.start_problems(&none).is_empty(), "no deathmatch map");
 }
 
-// No spec statement: L-88: played as deathmatch, a map is checked for a start for each player and
-// bot chosen, and one with none is told that every player spawns at the info_player_start
+// spec START-3.1: played as deathmatch, a map is checked for a start for each player and bot
+// spec START-1.2: with no deathmatch start every player spawns at the info_player_start
 #[test]
 fn a_deathmatch_chosen_needs_a_start_for_each_player_and_bot() {
     let seven = game(GameMode::Deathmatch, 2, 5);
@@ -133,13 +136,13 @@ fn a_deathmatch_chosen_needs_a_start_for_each_player_and_bot() {
     assert_eq!(missing[0].line, 0, "about the map, not an entity");
 }
 
-// No spec statement: L-88: coop chosen, a map with no info_player_coop is told every player spawns
-// on the info_player_start; the fix places one beside it, facing its way, where a player stands
-// and telefrags no one; coop not chosen, or a coop start there, finds nothing
+// spec START-3.2: coop chosen for two or more, a map with no info_player_coop is told every
+// player spawns on the info_player_start; the fix places one beside it, facing its way
+// spec START-1.1: with no coop start every coop player spawns at the info_player_start
 #[test]
 fn coop_needs_a_coop_start() {
     let map = room(&[("info_player_start", [0.0, 0.0, 24.0])]);
-    let coop = game(GameMode::Coop, 1, 0);
+    let coop = game(GameMode::Coop, 1, 1);
     let problems = coop.start_problems(&map);
     let missing = found(&problems, "no info_player_coop");
     assert_eq!(missing.len(), 1, "{problems:?}");
@@ -152,6 +155,10 @@ fn coop_needs_a_coop_start() {
         })
     );
     assert!(GameOptions::default().start_problems(&map).is_empty());
+    assert!(
+        game(GameMode::Coop, 1, 0).start_problems(&map).is_empty(),
+        "one player alone telefrags no one"
+    );
     let with_one = room(&[
         ("info_player_start", [0.0, 0.0, 24.0]),
         ("info_player_coop", [96.0, 0.0, 24.0]),
@@ -166,12 +173,12 @@ fn coop_needs_a_coop_start() {
     );
 }
 
-// No spec statement: L-88: a coop start is put where a player stands: not off the floor's edge
-// and not in the water, but in the next place around
+// spec START-3.5: a coop start is put where a player stands: not off the floor's edge, but in the
+// next place around
 #[test]
 fn a_new_coop_start_stands_on_the_floor() {
     let map = room(&[("info_player_start", [-224.0, -224.0, 24.0])]);
-    let problems = game(GameMode::Coop, 1, 0).start_problems(&map);
+    let problems = game(GameMode::Coop, 2, 0).start_problems(&map);
     let fix = found(&problems, "no info_player_coop")[0].fix.clone();
     assert_eq!(
         fix,
@@ -183,8 +190,9 @@ fn a_new_coop_start_stands_on_the_floor() {
     );
 }
 
-// No spec statement: L-88: a start whose player box is in a world brush is found, with a fix that
-// moves it up to the nearest height with room; one standing on the floor, or in water, is not
+// spec START-3.3: a start whose player box is in a solid brush is found, with a fix that moves it
+// up to the nearest height with room; one standing on the floor, or in water, is not
+// spec START-1.3: the player's box is '-16 -16 -24' to '16 16 32', 1 unit above the start
 #[test]
 fn a_start_in_solid_is_moved_out() {
     let sunk = room(&[("info_player_start", [0.0, 0.0, 10.0])]);
@@ -195,7 +203,7 @@ fn a_start_in_solid_is_moved_out() {
     assert_eq!(
         stuck[0].fix,
         Some(QuickFix::MoveTo {
-            entity: qs_map_edit::EntityIndex::new(1),
+            entity: EntityIndex::new(1),
             origin: [0.0, 0.0, 23.0],
         }),
         "the box's bottom, 24 below and 1 up, rests on the floor"
@@ -218,62 +226,227 @@ fn a_start_in_solid_is_moved_out() {
     );
     let buried = room(&[("info_player_start", [0.0, 0.0, -200.0])]);
     let problems = GameOptions::default().start_problems(&buried);
-    assert_eq!(
-        found(&problems, "in solid").len(),
-        0,
+    assert!(
+        found(&problems, "in solid").is_empty(),
         "below the floor is not in it"
     );
     let deep = room(&[("info_player_coop", [-224.0, 224.0, 100.0])]);
     let problems = GameOptions::default().start_problems(&deep);
-    let deep = found(&problems, "in solid");
-    assert_eq!(deep[0].fix, None, "no room within 64 units");
+    assert_eq!(
+        found(&problems, "in solid")[0].fix,
+        None,
+        "no room within 64 units"
+    );
 }
 
-// No spec statement: L-88: two deathmatch or coop starts whose boxes spawn_tdeath reaches across
-// are found on the later one, with a fix that moves it aside where it telefrags none; 33 apart
-// across, or 57 up and down, is clear
+// spec START-3.3: the move out of solid goes to a height where a player stands and telefrags no
+// start of its group, not merely the first out of solid
+#[test]
+fn a_start_moved_out_of_solid_telefrags_no_one() {
+    let stacked = room(&[
+        ("info_player_deathmatch", [0.0, 0.0, 70.0]),
+        ("info_player_deathmatch", [0.0, 0.0, 10.0]),
+    ]);
+    let problems = GameOptions::default().start_problems(&stacked);
+    let stuck = found(&problems, "in solid");
+    assert_eq!(stuck.len(), 1, "{problems:?}");
+    // Up from 10 every height telefrags the start at 70 until it floats; down is solid floor.
+    assert_eq!(stuck[0].fix, None, "{:?}", stuck[0].fix);
+    let beside = room(&[
+        ("info_player_deathmatch", [128.0, 0.0, 24.0]),
+        ("info_player_deathmatch", [0.0, 0.0, 10.0]),
+    ]);
+    let problems = GameOptions::default().start_problems(&beside);
+    assert_eq!(
+        found(&problems, "in solid")[0].fix,
+        Some(QuickFix::MoveTo {
+            entity: EntityIndex::new(2),
+            origin: [0.0, 0.0, 23.0],
+        })
+    );
+}
+
+/// A brush entity of `classname` holding a box from `min` to `max`.
+fn brush_entity(classname: &str, min: [f64; 3], max: [f64; 3]) -> Entity {
+    let mut entity = Entity::new();
+    entity.set(b"classname", classname.as_bytes()).unwrap();
+    let surface = Surface {
+        texture: b"rock".to_vec(),
+        texdef: TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [1.0; 2],
+        },
+    };
+    entity
+        .items
+        .push(Item::Brush(Brush::cuboid(min, max, &surface).unwrap()));
+    entity
+}
+
+// spec START-3.3: the brushes of func_detail, func_group and func_wall are solid, and those of
+// func_illusionary and func_detail_illusionary, and of a trigger, are not
+#[test]
+fn brush_entities_are_solid_as_the_game_makes_them() {
+    for (classname, solid) in [
+        ("func_detail", true),
+        ("func_group", true),
+        ("func_wall", true),
+        ("func_illusionary", false),
+        ("func_detail_illusionary", false),
+        ("trigger_multiple", false),
+    ] {
+        let mut map = room(&[("info_player_start", [0.0, 0.0, 24.0])]);
+        map.push_entity(brush_entity(classname, [-8.0, -8.0, 0.0], [8.0, 8.0, 32.0]));
+        let problems = GameOptions::default().start_problems(&map);
+        assert_eq!(
+            !found(&problems, "in solid").is_empty(),
+            solid,
+            "{classname}"
+        );
+    }
+}
+
+/// A face of the plane whose outward normal is `normal` through `point`, its points ordered so
+/// its plane faces out.
+fn face(normal: [f64; 3], point: [f64; 3]) -> Face {
+    let [nx, ny, nz] = normal;
+    let cross =
+        |[a, b, c]: [f64; 3], [x, y, z]: [f64; 3]| [b * z - c * y, c * x - a * z, a * y - b * x];
+    // Two directions along the plane: across a helper axis, then across that.
+    let helper = if nz.abs() < 0.9 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let first = cross(normal, helper);
+    let along = [first, cross(normal, first)];
+    let [px, py, pz] = point;
+    let step = |[x, y, z]: [f64; 3]| [px + x * 64.0, py + y * 64.0, pz + z * 64.0];
+    let texdef = TexDef::Standard {
+        shift: [0.0; 2],
+        rotate: 0.0,
+        scale: [1.0; 2],
+    };
+    let made = Face::new([point, step(along[0]), step(along[1])], b"rock", texdef).unwrap();
+    let out = made.plane().unwrap().normal;
+    if out[0] * nx + out[1] * ny + out[2] * nz > 0.0 {
+        made
+    } else {
+        Face::new([point, step(along[1]), step(along[0])], b"rock", texdef).unwrap()
+    }
+}
+
+// spec START-3.3: a box beside a sloped face of a brush, apart from it, is out of solid, and one
+// across it is in: the solid is the brush's own shape, not its bounds
+#[test]
+fn a_start_beside_a_slope_is_out_of_solid() {
+    // A ramp rising to the east: solid below the plane z = x, from x = 0 to 128.
+    let mut ramp = Brush::new();
+    for (normal, point) in [
+        ([-1.0, 1.0, 0.0], [0.0, 0.0, 0.0]),
+        ([0.0, -1.0, 0.0], [0.0, -64.0, 0.0]),
+        ([0.0, 1.0, 0.0], [0.0, 64.0, 0.0]),
+        ([0.0, 0.0, -1.0], [0.0, 0.0, 0.0]),
+        ([1.0, 0.0, 0.0], [128.0, 0.0, 0.0]),
+    ] {
+        ramp.faces.push(face(normal, point));
+    }
+    ramp.faces[0] = face([-1.0, 0.0, 1.0], [0.0, 0.0, 0.0]);
+    let mut map = room(&[("info_player_start", [16.0, 0.0, 90.0])]);
+    map.entities[0].items.push(Item::Brush(ramp.clone()));
+    let problems = GameOptions::default().start_problems(&map);
+    assert!(
+        found(&problems, "in solid").is_empty(),
+        "above the slope, inside its bounds: {problems:?}"
+    );
+    let mut map = room(&[("info_player_start", [96.0, 0.0, 60.0])]);
+    map.entities[0].items.push(Item::Brush(ramp));
+    let problems = GameOptions::default().start_problems(&map);
+    assert_eq!(found(&problems, "in solid").len(), 1, "under the slope");
+}
+
+// spec START-2.2: two deathmatch starts telefrag up to 35 units apart across and 59 up and down,
+// as SV_LinkEdict grows both boxes by 1 and SV_TouchLinks counts touching; 36 and 60 are clear
+// spec START-2.1: spawn_tdeath's trigger is the player's box grown by 1
+// spec START-3.4: the later one is found, with a fix that moves it aside where it telefrags none
 #[test]
 fn starts_close_enough_to_telefrag_are_moved_apart() {
     let close = room(&[
         ("info_player_deathmatch", [0.0, 0.0, 24.0]),
-        ("info_player_deathmatch", [32.0, 0.0, 24.0]),
+        ("info_player_deathmatch", [35.0, 0.0, 24.0]),
     ]);
     let problems = GameOptions::default().start_problems(&close);
-    let telefrag = found(&problems, "close enough to entity 1's to telefrag:");
+    let telefrag = found(&problems, TELEFRAG);
     assert_eq!(telefrag.len(), 1, "{problems:?}");
     assert_eq!(
         telefrag[0].entity.map(|e| e.get()),
         Some(2),
         "the later one"
     );
+    assert!(
+        telefrag[0]
+            .message
+            .contains("more than 35 units apart across")
+    );
+    assert!(telefrag[0].message.contains("more than 59 up and down"));
     assert_eq!(
         telefrag[0].fix,
         Some(QuickFix::MoveTo {
-            entity: qs_map_edit::EntityIndex::new(2),
-            origin: [96.0, 0.0, 24.0],
+            entity: EntityIndex::new(2),
+            origin: [99.0, 0.0, 24.0],
         })
     );
-    for (class, at) in [
-        ("info_player_deathmatch", [33.0, 0.0, 24.0]),
-        ("info_player_deathmatch", [0.0, 33.0, 24.0]),
-        ("info_player_deathmatch", [0.0, 0.0, 81.0]),
-        ("info_player_coop", [0.0, 0.0, 24.0]),
+    for (at, telefrags) in [
+        ([0.0, 35.0, 24.0], true),
+        ([0.0, 0.0, 83.0], true),
+        ([36.0, 0.0, 24.0], false),
+        ([0.0, 36.0, 24.0], false),
+        ([0.0, 0.0, 84.0], false),
     ] {
-        let apart = room(&[("info_player_deathmatch", [0.0, 0.0, 24.0]), (class, at)]);
-        let problems = GameOptions::default().start_problems(&apart);
-        assert!(
-            found(&problems, "to telefrag:").is_empty(),
-            "{class} {at:?}"
-        );
+        let pair = room(&[
+            ("info_player_deathmatch", [0.0, 0.0, 24.0]),
+            ("info_player_deathmatch", at),
+        ]);
+        let problems = GameOptions::default().start_problems(&pair);
+        assert_eq!(!found(&problems, TELEFRAG).is_empty(), telefrags, "{at:?}");
     }
-    let coop = room(&[
+    let apart = room(&[
+        ("info_player_deathmatch", [0.0, 0.0, 24.0]),
         ("info_player_coop", [0.0, 0.0, 24.0]),
-        ("info_player_coop", [0.0, 20.0, 24.0]),
+    ]);
+    assert!(
+        found(&GameOptions::default().start_problems(&apart), TELEFRAG).is_empty(),
+        "a coop start and a deathmatch start are of no group together"
+    );
+}
+
+// spec START-3.4: the coop starts and the first info_player_start are one group, as coop players
+// take them in turn
+// spec START-1.1: coop falls back to the first info_player_start after the coop starts
+#[test]
+fn coop_starts_telefrag_the_info_player_start() {
+    let coop = room(&[
+        ("info_player_start", [0.0, 0.0, 24.0]),
+        ("info_player_coop", [20.0, 0.0, 24.0]),
     ]);
     let problems = GameOptions::default().start_problems(&coop);
+    let telefrag = found(&problems, TELEFRAG);
+    assert_eq!(telefrag.len(), 1, "{problems:?}");
     assert_eq!(
-        found(&problems, "info_player_coop is close enough").len(),
-        1
+        telefrag[0].entity.map(|e| e.get()),
+        Some(1),
+        "the start comes after the coop starts"
+    );
+    assert!(telefrag[0].message.contains("entity 2's info_player_coop"));
+    let second = room(&[
+        ("info_player_start", [500.0, 0.0, 24.0]),
+        ("info_player_start", [0.0, 0.0, 24.0]),
+        ("info_player_coop", [20.0, 0.0, 24.0]),
+    ]);
+    assert!(
+        found(&GameOptions::default().start_problems(&second), TELEFRAG).is_empty(),
+        "only the first info_player_start is coop's"
     );
 }
 
@@ -299,8 +472,8 @@ fn issues(session: &mut Session<Context>) -> Vec<MapIssue> {
     found.issues
 }
 
-// No spec statement: L-88: through the workbench, map.issues checks the starts for the game
-// preview.set_game chose, and each fix map.issues gives puts its issue right
+// spec START-3.1, START-3.2, START-3.3, START-3.4: through the workbench, map.issues checks the
+// starts for the game preview.set_game chose, and each fix map.issues gives puts its issue right
 #[test]
 fn map_issues_checks_the_starts_for_the_game_chosen_and_fixes_them() {
     let (mut session, found) = session_with(
@@ -315,7 +488,7 @@ fn map_issues_checks_the_starts_for_the_game_chosen_and_fixes_them() {
         game(GameMode::Coop, 2, 1),
     );
     // The start comes out of the floor first, which leaves room beside it for a coop start.
-    for name in ["in solid", "no info_player_coop", "to telefrag:"] {
+    for name in ["in solid", "no info_player_coop", TELEFRAG] {
         let fix = issues(&mut session)
             .iter()
             .find(|issue| issue.message.contains(name))
