@@ -113,20 +113,38 @@ pub struct GameAddBotParams {
     pub name: Option<String>,
 }
 
+/// A bot's name as a console line takes it (BOT-9.3): quoted, its own quotes and control
+/// characters, a line's end among them, left out.
+fn quoted_name(name: &str) -> String {
+    let kept: String = name
+        .chars()
+        .filter(|&c| c != '"' && !c.is_control())
+        .collect();
+    format!(" \"{kept}\"")
+}
+
 impl GameAddBotParams {
-    /// The console line: `addbot [skill] ["name"]`, the name's quotes left out (BOT-9.3).
-    #[must_use]
-    pub fn console_line(&self) -> String {
+    /// The console line: `addbot [skill] ["name"]` (BOT-9.3).
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::BadValue`] for a name of digits alone with no skill, which `addbot`
+    /// would take for the skill (BOT-1.4).
+    pub fn console_line(&self) -> Result<String, PreviewError> {
+        let digits = |name: &String| !name.is_empty() && name.bytes().all(|b| b.is_ascii_digit());
+        if self.skill.is_none() && self.name.as_ref().is_some_and(digits) {
+            return Err(PreviewError::BadValue {
+                field: "name".to_owned(),
+                kind: "skill beside a name of digits alone".to_owned(),
+            });
+        }
         let skill = self.skill.map(|skill| format!(" {}", skill.level()));
-        let name = self
-            .name
-            .as_ref()
-            .map(|name| format!(" \"{}\"", name.replace('"', "")));
-        format!(
+        let name = self.name.as_deref().map(quoted_name);
+        Ok(format!(
             "addbot{}{}",
             skill.unwrap_or_default(),
             name.unwrap_or_default()
-        )
+        ))
     }
 }
 
@@ -140,13 +158,13 @@ pub struct GameRemoveBotParams {
 }
 
 impl GameRemoveBotParams {
-    /// The console line: `removebot ["name"]`, the name's quotes left out (BOT-9.3).
+    /// The console line: `removebot ["name"]` (BOT-9.3).
     #[must_use]
     pub fn console_line(&self) -> String {
-        match &self.name {
-            Some(name) => format!("removebot \"{}\"", name.replace('"', "")),
-            None => "removebot".to_owned(),
-        }
+        format!(
+            "removebot{}",
+            self.name.as_deref().map_or_default(quoted_name)
+        )
     }
 }
 
@@ -417,7 +435,7 @@ impl<C: HasPreview + 'static> Command<C> for GameAddBot {
         params: GameAddBotParams,
     ) -> Result<Outcome<Vec<String>, C>, PreviewError> {
         let (_, preview) = context.workbench_and_preview();
-        let lines = preview.console_lines(&params.console_line())?;
+        let lines = preview.console_lines(&params.console_line()?)?;
         Ok(Outcome::outside_history(lines))
     }
 }

@@ -21,6 +21,11 @@ const RUN: f32 = 400.0;
 const SWIM_UP: f32 = 200.0;
 /// How long a bot keeps a route before choosing again, in seconds (BOT-4.1).
 const RECHOOSE: f64 = 4.0;
+/// How long a bot whose route is done, or that found none, waits before it chooses again
+/// (BOT-4.1), so that one with nowhere to go searches the graph twice a second, not each frame.
+const RETRY: f64 = 0.5;
+/// The `waterlevel` from which a bot swims (BOT-4.4): waist deep.
+const WAIST_DEEP: f32 = 2.0;
 /// How long a bot may move less than [`STUCK_DISTANCE`] before it chooses again (BOT-4.1).
 const STUCK_TIME: f64 = 2.0;
 const STUCK_DISTANCE: f32 = 32.0;
@@ -303,7 +308,9 @@ impl Mind {
             }
             self.moved = (view.time, me.origin);
         }
-        if self.stale || self.next >= self.route.len() || view.time - self.chosen_at >= RECHOOSE {
+        let since = view.time - self.chosen_at;
+        let done = self.next >= self.route.len() && since >= RETRY;
+        if self.stale || done || since >= RECHOOSE {
             self.choose(view, graph, weapons);
         }
     }
@@ -434,7 +441,7 @@ impl Mind {
         if ledge || gap {
             cmd.buttons |= JUMP;
         }
-        if me.waterlevel >= 2.0 && up > 0.0 {
+        if me.waterlevel >= WAIST_DEEP && up > 0.0 {
             cmd.up = SWIM_UP;
         }
     }

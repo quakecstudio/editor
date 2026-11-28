@@ -26,7 +26,8 @@ bits `IT_SHOTGUN` 1 to `IT_LIGHTNING` 64 and `IT_AXE` 4096.
 - **BOT-1.1** A bot the host drives is a client slot of its own kind: it has no connection, so
   it is sent nothing (NET-7.3), and each frame its move is the one the host last set, read as
   a local client's move is read off the wire (PHYS-9.6): its angles and speeds quantized, its
-  buttons and impulse set on its edict. `status` lists its address as `BOT`.
+  buttons and impulse set on its edict. `status` lists its address as `BOT`, and `clienttype`
+  answers 2, `CLIENTTYPE_BOT`, for it, as for any slot with no connection (BUILTIN-18.20).
 - **BOT-1.2** The console's `addbot [skill] [name]` brings a bot into the first slot not active
   (NET-7.4): it connects with `SetNewParms`' parms, or those it carries from the last level,
   sends `name` and `color` as a client does, then `prespawn`, `spawn` and `begin`, so the mod's
@@ -41,8 +42,8 @@ bits `IT_SHOTGUN` 1 to `IT_LIGHTNING` 64 and `IT_AXE` 4096.
   `Onyx`, `Pike` that no active slot has, ASCII case apart, else `bot` and its slot's number
   from 1. Its shirt and pants colours are its slot's, from a list of sixteen.
 - **BOT-1.4** A bot plays at a skill from 0 to 3. `addbot`'s first argument is the skill when it
-  starts with a digit, `atoi` of it rounded and kept to 0 to 3, and the name is the next; any
-  other first argument is the name. With no skill given, the bot plays at the `skill`
+  is digits alone, `atoi` of it rounded and kept to 0 to 3, and the name is the next; any other
+  first argument, `2Fast` among them, is the name. With no skill given, the bot plays at the `skill`
   setting, rounded and kept to 0 to 3 as the server reads it (DIFF-3.2).
 - **BOT-1.5** Each bot brought in or dropped is told to the host once, in order, with its slot,
   and a bot brought in with its skill, so the host gives it a mind or takes its mind away.
@@ -51,6 +52,9 @@ bits `IT_SHOTGUN` 1 to `IT_LIGHTNING` 64 and `IT_AXE` 4096.
   `armorvalue`, `items`, `weapon`, the four ammunition counts, `deadflag`, `flags`, `solid`,
   `takedamage`, `frags`, `team`, `modelindex` and `waterlevel`; and it sees along a line traced
   through the world and its entities from inside its own box, its own edict passed through.
+- **BOT-1.7** A bot the last level had comes into the next in the slot it had, so it carries
+  the spawn parms that slot kept (PHYS-10.4), its name and skill the same; it does not come in
+  when that slot is taken.
 
 ## BOT-2 The ground as a graph
 
@@ -101,8 +105,9 @@ opens them.
 ### Behaviour
 
 - **BOT-4.1** A bot chooses where to go when it has no route, when it has come to the end of
-  its route, when it has moved less than 32 units in two seconds while it has a route, when
-  it reaches the item it went for, and every four seconds; when it has not moved it also
+  its route or found none, at most every half second, when it has moved less than 32 units in
+  two seconds while it has a route, when it reaches the item it went for, and every four
+  seconds; when it has not moved it also
   jumps. It
   weighs each goal by its need of it divided by one plus the route's length over 256, and takes
   the goal of the greatest weight above 0; with none it goes to a place of the graph chosen at
@@ -161,6 +166,10 @@ cell).
 - **BOT-6.2** A bot holds the first weapon of the table it has (`items`) with the least
   ammunition it fires with; when that is not its `weapon`, it sends the weapon's impulse, at
   most once every half second.
+- **BOT-6.3** A weapon of the table says what it does fired in water. id's lightning gun
+  discharges: `W_FireLightning` (`weapons.qc`) has "`// explode if under water`" and "`if
+  (self.waterlevel > 1) { T_RadiusDamage (self, self, 35*self.ammo_cells, world);`", so a bot
+  with a `waterlevel` above 1 does not hold one that discharges.
 
 ## BOT-7 How a bot moves
 
@@ -201,4 +210,10 @@ cell).
   line's `+` commands run once the host has started, such as `+deathmatch 0 +coop 1`.
 - **BOT-9.3** The commands `game.add_bot`, with an optional skill from 0 to 3 and name, and
   `game.remove_bot`, with an optional name, type `addbot` and `removebot` at the running
-  game's console and answer what it printed.
+  game's console and answer what it printed. The name is written in quotes, its own quotes
+  and control characters left out, so it never ends the line; a name of digits alone with no
+  skill is refused, as `addbot` would take it for the skill (BOT-1.4).
+- **BOT-9.4** A level that loads with its spawning stopped at a breakpoint (WORLD-9.7) brings
+  the last level's bots in only once it is loaded again to its end, after the player.
+- **BOT-9.5** After the map is swapped for a new build of it in play (BRIDGE-4.14), the host
+  makes the bots' graph again from the new map, and the bots route along it once it is made.

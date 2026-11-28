@@ -346,20 +346,42 @@ fn a_breakpoint_on_a_line_with_no_statement_is_refused() {
 }
 
 // spec BOT-9.3: game.add_bot and game.remove_bot type addbot and removebot, the skill as its
-// number and the name quoted without its own quotes
+// number and the name quoted without its own quotes or control characters; a name of digits
+// alone needs a skill
 #[test]
 fn the_bot_commands_type_addbot_and_removebot() {
-    assert_eq!(GameAddBotParams::default().console_line(), "addbot");
+    assert_eq!(
+        GameAddBotParams::default().console_line().unwrap(),
+        "addbot"
+    );
     let named = GameAddBotParams {
         skill: Some(BotSkillParam::Nightmare),
         name: Some("Mo\"ss".to_owned()),
     };
-    assert_eq!(named.console_line(), "addbot 3 \"Moss\"");
+    assert_eq!(named.console_line().unwrap(), "addbot 3 \"Moss\"");
     let easy = GameAddBotParams {
         skill: Some(BotSkillParam::Easy),
         name: None,
     };
-    assert_eq!(easy.console_line(), "addbot 0");
+    assert_eq!(easy.console_line().unwrap(), "addbot 0");
+    let line_end = GameAddBotParams {
+        skill: None,
+        name: Some("Moss\nmap e1m2".to_owned()),
+    };
+    assert_eq!(line_end.console_line().unwrap(), "addbot \"Mossmap e1m2\"");
+    let digits = GameAddBotParams {
+        skill: None,
+        name: Some("2".to_owned()),
+    };
+    assert!(
+        digits.console_line().is_err(),
+        "addbot would take it for the skill"
+    );
+    let fast = GameAddBotParams {
+        skill: None,
+        name: Some("2Fast".to_owned()),
+    };
+    assert_eq!(fast.console_line().unwrap(), "addbot \"2Fast\"");
     assert_eq!(GameRemoveBotParams::default().console_line(), "removebot");
     let gone = GameRemoveBotParams {
         name: Some("Ash".to_owned()),

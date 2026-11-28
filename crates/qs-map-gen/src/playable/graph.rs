@@ -9,6 +9,8 @@ use std::collections::{BinaryHeap, HashMap};
 
 use super::{CLIMB, Cell, Ground, PACE, Search, cell};
 
+/// How many times a height apart counts against a distance across (BOT-2.2).
+const HEIGHT_WEIGHT: f32 = 2.0;
 /// How wide a square of the index that finds the place nearest a point is, in map units.
 const BUCKET: f32 = 64.0;
 
@@ -107,7 +109,11 @@ impl Graph {
     pub fn nearest(&self, at: [f32; 3]) -> Option<Place> {
         let weighed = |n: u32| {
             let point = self.places.get(usize::try_from(n).ok()?)?;
-            let [dx, dy, dz] = [point[0] - at[0], point[1] - at[1], (point[2] - at[2]) * 2.0];
+            let [dx, dy, dz] = [
+                point[0] - at[0],
+                point[1] - at[1],
+                (point[2] - at[2]) * HEIGHT_WEIGHT,
+            ];
             Some((dx * dx + dy * dy + dz * dz, n))
         };
         let [x, y] = bucket(at);

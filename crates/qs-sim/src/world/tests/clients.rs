@@ -811,3 +811,85 @@ fn a_bots_slot_tells_its_kind_and_name() {
     typed(&mut run, "removebot\n");
     assert_eq!(run.world.slot_kind(id(1)), None);
 }
+
+// spec BOT-1.4: only a first argument of digits alone is the skill; one that starts with a
+// digit is the name
+#[test]
+fn a_name_that_starts_with_a_digit_is_a_name() {
+    let mut run = players(3, 1, "", "");
+    typed(&mut run, "skill 3\naddbot 2Fast\n");
+    assert_eq!(slot_name(&run, id(1)), b"2Fast");
+    let skills: Vec<crate::BotChange> = run.world.take_bot_changes();
+    assert_eq!(
+        skills,
+        [crate::BotChange::Joined {
+            id: id(1),
+            skill: crate::BotSkill::Nightmare
+        }]
+    );
+}
+
+// spec BOT-1.7: a bot comes into the next level in the slot it had, with that slot's carried
+// parms, and not when the slot is taken
+#[test]
+fn a_bot_rejoins_in_its_own_slot() {
+    let mut run = players(4, 1, "", "");
+    let bytes = run.progs.clone();
+    let progs = Progs::read(&bytes).unwrap();
+    assert!(
+        run.world
+            .rejoin_bot(&progs, id(3), crate::BotSkill::Hard, b"Cedar")
+            .unwrap()
+    );
+    assert_eq!(slot_kind(&run, id(3)), Some(SlotKind::HostBot));
+    assert_eq!(slot_name(&run, id(3)), b"Cedar");
+    assert_eq!(
+        slot_kind(&run, id(1)),
+        None,
+        "the slots before it stay free"
+    );
+    assert!(
+        !run.world
+            .rejoin_bot(&progs, ClientId::FIRST, crate::BotSkill::Hard, b"Ash")
+            .unwrap(),
+        "the player's slot"
+    );
+    assert_eq!(
+        run.world.take_bot_changes(),
+        [crate::BotChange::Joined {
+            id: id(3),
+            skill: crate::BotSkill::Hard
+        }]
+    );
+}
+
+// spec BOT-1.1: clienttype answers CLIENTTYPE_BOT for a bot the host drives
+#[test]
+fn clienttype_answers_bot_for_a_host_bot() {
+    let more = format!(
+        "{BOT_BUILTINS}float kind;\n\
+         void() StartFrame = {{ kind = clienttype(nextent(world)); }};\n"
+    );
+    let more = more.replace(
+        "float kind;",
+        "entity(entity e) nextent = #47;\nfloat kind;",
+    );
+    let mut run = server(2, "", &more, EngineProfile::VkQuake);
+    connect(&mut run);
+    typed(&mut run, "addbot\n");
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(
+        global_float(&run, "kind"),
+        1.0,
+        "the player, edict 1, is real"
+    );
+    let bot_kind = format!(
+        "{BOT_BUILTINS}entity(entity e) nextent = #47;\nfloat kind;\n\
+         void() StartFrame = {{ kind = clienttype(nextent(nextent(world))); }};\n"
+    );
+    let mut run = server(2, "", &bot_kind, EngineProfile::VkQuake);
+    connect(&mut run);
+    typed(&mut run, "addbot\n");
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(global_float(&run, "kind"), 2.0, "the bot, edict 2");
+}

@@ -973,3 +973,57 @@ fn the_bots_take_a_table_a_graph_and_a_seed() {
     );
     assert!(own.skill(bot()).is_none());
 }
+
+// spec BOT-6.3: waist deep in water a bot does not hold the lightning gun, which discharges
+// there, but the next weapon it has; at the surface it does
+#[test]
+fn a_bot_in_water_does_not_hold_the_lightning_gun() {
+    use crate::Water;
+    const LIGHTNING: f32 = 64.0;
+    let weapons = Weapons::id();
+    let armed = |waterlevel: f32| Body {
+        items: SHOTGUN + LIGHTNING + AXE,
+        ammo: [10.0, 0.0, 0.0, 50.0],
+        waterlevel,
+        ..body(2, [0.0; 3])
+    };
+    assert_eq!(weapons.best(&armed(1.0)).unwrap().impulse, 8);
+    assert_eq!(weapons.best(&armed(2.0)).unwrap().impulse, 2);
+    assert_eq!(weapons.best(&armed(3.0)).unwrap().impulse, 2);
+    let lightning = weapons.by_pickup(b"weapon_lightning").unwrap();
+    assert_eq!(lightning.water, Water::Discharges);
+    assert_eq!(
+        weapons.by_pickup(b"weapon_rocketlauncher").unwrap().water,
+        Water::Fires
+    );
+}
+
+// spec BOT-4.1: a bot whose route is done, or that found none, chooses again at most every
+// half second
+#[test]
+fn a_bot_with_nowhere_to_go_chooses_twice_a_second() {
+    let graph = Bots::graph_of(&compiled(&lift_and_door()), Deathmatch::Off).unwrap();
+    let rocket = Body {
+        origin: [-100.0, 0.0, 0.0],
+        ..item(9, "weapon_rocketlauncher")
+    };
+    let mut mind = Mind::new(bot(), BotSkill::Normal, 1);
+    let goal = |mind: &mut Mind, bodies: &[Body], time: f64| {
+        mind.decide(
+            &view(&bodies[0], bodies, &[], time),
+            Some(&graph),
+            &Weapons::id(),
+        );
+        mind.item_goal()
+    };
+    let alone = [body(2, [-400.0, 0.0, 24.0])];
+    let with_rocket = [alone[0].clone(), rocket];
+    assert_eq!(goal(&mut mind, &alone, 0.0), None, "nothing it needs");
+    mind.follow(Vec::new(), 0.0);
+    assert_eq!(
+        goal(&mut mind, &with_rocket, 0.4),
+        None,
+        "not yet half a second"
+    );
+    assert_eq!(goal(&mut mind, &with_rocket, 0.5), Some(9));
+}

@@ -33,7 +33,7 @@ pub use goals::{choose, follow_need, item_need, weigh};
 pub use mind::{Mind, Mode, View};
 pub use qs_map_gen::playable::Graph;
 pub use rng::BotRng;
-pub use weapons::{Ammo, Weapon, Weapons};
+pub use weapons::{Ammo, Water, Weapon, Weapons};
 
 /// The seed a host gives its bots when it has none of its own (BOT-8.1).
 pub const DEFAULT_SEED: u64 = 1996;
@@ -151,19 +151,9 @@ impl Bots {
         self.minds.is_empty()
     }
 
-    /// Before a server frame of `frametime` seconds (BOT-9.1): a mind for each bot the server
-    /// brought in, none for each it dropped or whose slot is no longer a bot's, and each bot's
-    /// move from its mind.
-    ///
-    /// # Errors
-    ///
-    /// [`WorldError::Frame`] when a line of sight stops the engine.
-    pub fn drive(
-        &mut self,
-        world: &mut World,
-        progs: &Progs<'_>,
-        frametime: f64,
-    ) -> Result<(), WorldError> {
+    /// A mind for each bot the server brought in since the last call, none for each it dropped
+    /// or whose slot is no longer a bot's (BOT-9.1).
+    pub fn take_changes(&mut self, world: &mut World) {
         for change in world.take_bot_changes() {
             match change {
                 BotChange::Joined { id, skill } => {
@@ -177,6 +167,22 @@ impl Bots {
         // A bot dropped another way, as `kick` drops one, has no mind either.
         self.minds
             .retain(|&id, _| world.slot_kind(id) == Some(SlotKind::HostBot));
+    }
+
+    /// Before a server frame of `frametime` seconds (BOT-9.1): a mind for each bot the server
+    /// brought in, none for each it dropped or whose slot is no longer a bot's, and each bot's
+    /// move from its mind.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when a line of sight stops the engine.
+    pub fn drive(
+        &mut self,
+        world: &mut World,
+        progs: &Progs<'_>,
+        frametime: f64,
+    ) -> Result<(), WorldError> {
+        self.take_changes(world);
         if self.minds.is_empty() {
             return Ok(());
         }

@@ -32,9 +32,9 @@ use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
 use crate::keys::{STARTUP, config_path, host_files};
 use crate::map_bsp::MapBsp;
 
-/// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
 /// `Host_FindMaxClients`' slots for a `-listen` with no number, or one below 1 (NET-7.1).
 const LISTEN_DEFAULT: i32 = 8;
+/// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
 const RAND_MULTIPLIER: u32 = 1_103_515_245;
 /// The step's increment.
 const RAND_INCREMENT: u32 = 12345;

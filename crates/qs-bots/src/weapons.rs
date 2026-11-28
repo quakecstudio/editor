@@ -91,13 +91,113 @@ pub struct Weapon {
     pub pickup: Vec<u8>,
     /// How much a bot without it needs its pickup (BOT-4.2).
     pub value: f32,
+    /// What it does fired in water (BOT-6.3).
+    pub water: Water,
 }
 
+/// What a weapon does fired with its holder waist deep in water or deeper (BOT-6.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Water {
+    /// It fires as anywhere.
+    Fires,
+    /// It discharges into the water around its holder, as id's lightning gun does
+    /// (`W_FireLightning`: "explode if under water").
+    Discharges,
+}
+
+/// The `waterlevel` from which a weapon that discharges does (`if (self.waterlevel > 1)`).
+const WAIST_DEEP: f32 = 1.0;
+
+/// One weapon of id's table: its bit, impulse, ammunition, the least it fires with
+/// (`W_ChangeWeapon`'s `am` checks), its pickup, its value as a goal, and what it does in
+/// water.
+type IdWeapon = (u32, u8, Ammo, f32, &'static str, f32, Water);
+
+/// `W_ChangeWeapon`'s impulses (`weapons.qc`).
+const IMPULSE_AXE: u8 = 1;
+const IMPULSE_SHOTGUN: u8 = 2;
+const IMPULSE_SUPER_SHOTGUN: u8 = 3;
+const IMPULSE_NAILGUN: u8 = 4;
+const IMPULSE_SUPER_NAILGUN: u8 = 5;
+const IMPULSE_GRENADE_LAUNCHER: u8 = 6;
+const IMPULSE_ROCKET_LAUNCHER: u8 = 7;
+const IMPULSE_LIGHTNING: u8 = 8;
+
+/// id's weapons, best first (BOT-6.1).
+const ID_WEAPONS: [IdWeapon; 8] = [
+    (
+        IT_ROCKET_LAUNCHER,
+        IMPULSE_ROCKET_LAUNCHER,
+        Ammo::Rockets,
+        1.0,
+        "weapon_rocketlauncher",
+        100.0,
+        Water::Fires,
+    ),
+    (
+        IT_LIGHTNING,
+        IMPULSE_LIGHTNING,
+        Ammo::Cells,
+        1.0,
+        "weapon_lightning",
+        90.0,
+        Water::Discharges,
+    ),
+    (
+        IT_SUPER_NAILGUN,
+        IMPULSE_SUPER_NAILGUN,
+        Ammo::Nails,
+        2.0,
+        "weapon_supernailgun",
+        70.0,
+        Water::Fires,
+    ),
+    (
+        IT_GRENADE_LAUNCHER,
+        IMPULSE_GRENADE_LAUNCHER,
+        Ammo::Rockets,
+        1.0,
+        "weapon_grenadelauncher",
+        60.0,
+        Water::Fires,
+    ),
+    (
+        IT_SUPER_SHOTGUN,
+        IMPULSE_SUPER_SHOTGUN,
+        Ammo::Shells,
+        2.0,
+        "weapon_supershotgun",
+        50.0,
+        Water::Fires,
+    ),
+    (
+        IT_NAILGUN,
+        IMPULSE_NAILGUN,
+        Ammo::Nails,
+        1.0,
+        "weapon_nailgun",
+        40.0,
+        Water::Fires,
+    ),
+    (
+        IT_SHOTGUN,
+        IMPULSE_SHOTGUN,
+        Ammo::Shells,
+        1.0,
+        "",
+        0.0,
+        Water::Fires,
+    ),
+    (IT_AXE, IMPULSE_AXE, Ammo::None, 0.0, "", 0.0, Water::Fires),
+];
+
 impl Weapon {
-    /// Whether `body` holds it and has the ammunition it fires with.
+    /// Whether `body` holds it, has the ammunition it fires with, and is not where it would
+    /// discharge (BOT-6.2, BOT-6.3).
     #[must_use]
     pub fn ready(&self, body: &Body) -> bool {
-        self.held(body) && self.ammo.of(body) >= self.least
+        let drowned = self.water == Water::Discharges && body.waterlevel > WAIST_DEEP;
+        self.held(body) && self.ammo.of(body) >= self.least && !drowned
     }
 
     /// Whether `body` holds it.
@@ -133,52 +233,16 @@ impl Weapons {
     /// id's weapons (BOT-6.1), with `W_ChangeWeapon`'s impulses and least ammunition.
     #[must_use]
     pub fn id() -> Self {
-        let weapon = |bit, impulse, ammo, least, pickup: &str, value| Weapon {
+        let weapon = |(bit, impulse, ammo, least, pickup, value, water): IdWeapon| Weapon {
             bit,
             impulse,
             ammo,
             least,
             pickup: pickup.as_bytes().to_vec(),
             value,
+            water,
         };
-        Self(vec![
-            weapon(
-                IT_ROCKET_LAUNCHER,
-                7,
-                Ammo::Rockets,
-                1.0,
-                "weapon_rocketlauncher",
-                100.0,
-            ),
-            weapon(IT_LIGHTNING, 8, Ammo::Cells, 1.0, "weapon_lightning", 90.0),
-            weapon(
-                IT_SUPER_NAILGUN,
-                5,
-                Ammo::Nails,
-                2.0,
-                "weapon_supernailgun",
-                70.0,
-            ),
-            weapon(
-                IT_GRENADE_LAUNCHER,
-                6,
-                Ammo::Rockets,
-                1.0,
-                "weapon_grenadelauncher",
-                60.0,
-            ),
-            weapon(
-                IT_SUPER_SHOTGUN,
-                3,
-                Ammo::Shells,
-                2.0,
-                "weapon_supershotgun",
-                50.0,
-            ),
-            weapon(IT_NAILGUN, 4, Ammo::Nails, 1.0, "weapon_nailgun", 40.0),
-            weapon(IT_SHOTGUN, 2, Ammo::Shells, 1.0, "", 0.0),
-            weapon(IT_AXE, 1, Ammo::None, 0.0, "", 0.0),
-        ])
+        Self(ID_WEAPONS.into_iter().map(weapon).collect())
     }
 
     /// The weapon `body` should hold: the first it has with the ammunition it fires with

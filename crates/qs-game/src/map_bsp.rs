@@ -29,6 +29,11 @@ impl MapBsp {
         Self::try_new(bytes, |bytes| Bsp::read(bytes, BspLoader::default()))
     }
 
+    /// The file's bytes.
+    pub(crate) fn bytes(&self) -> &[u8] {
+        self.borrow_owner()
+    }
+
     /// The BSP.
     pub(crate) fn bsp(&self) -> &Bsp<'_> {
         self.borrow_dependent()

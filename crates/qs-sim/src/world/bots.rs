@@ -171,6 +171,44 @@ impl World {
         let Some(id) = self.builtins.messages.clients.free() else {
             return Ok(None);
         };
+        self.bring_in_bot(progs, id, skill, name).map(|()| Some(id))
+    }
+
+    /// A bot the last level had in slot `id` brought into this level in that slot, so it
+    /// carries what it carried (BOT-1.7): as [`World::add_bot`], `false` when the slot is
+    /// active.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when a function fails.
+    pub fn rejoin_bot(
+        &mut self,
+        progs: &Progs<'_>,
+        id: ClientId,
+        skill: BotSkill,
+        name: &[u8],
+    ) -> Result<bool, WorldError> {
+        let free = self
+            .builtins
+            .messages
+            .clients
+            .get(id)
+            .is_some_and(|slot| !slot.active);
+        if !free {
+            return Ok(false);
+        }
+        self.bring_in_bot(progs, id, skill, Some(name))
+            .map(|()| true)
+    }
+
+    /// Slot `id`, not active, connected as a bot the host drives and brought in (BOT-1.2).
+    fn bring_in_bot(
+        &mut self,
+        progs: &Progs<'_>,
+        id: ClientId,
+        skill: BotSkill,
+        name: Option<&[u8]>,
+    ) -> Result<(), WorldError> {
         let name = self.bot_name(name);
         let (top, bottom) = BOT_COLOURS.get(id.slot()).copied().unwrap_or_default();
         self.signon_connect(progs, id, SlotKind::HostBot)?;
@@ -191,7 +229,7 @@ impl World {
             }
         }
         self.bot_changes.push(BotChange::Joined { id, skill });
-        Ok(Some(id))
+        Ok(())
     }
 
     /// `removebot`'s bot (BOT-1.2): the active bot the host drives named `name`, ASCII case
@@ -335,14 +373,12 @@ impl World {
         format!("bot{next}").into_bytes()
     }
 
-    /// The console's `addbot [skill] [name]` (BOT-1.2): a first argument that starts with a
-    /// digit is the skill, `atoi` of it kept to 0 to 3, and the next the name; any other first
-    /// argument is the name. With no skill the bot plays at the `skill` setting.
+    /// The console's `addbot [skill] [name]` (BOT-1.2): a first argument of digits alone is the
+    /// skill, `atoi` of it kept to 0 to 3, and the next the name; any other first argument is
+    /// the name. With no skill the bot plays at the `skill` setting.
     pub(crate) fn addbot_command(&mut self, progs: &Progs<'_>, words: &Words) {
         let first = words.argv.get(1);
-        let skill_given = first
-            .and_then(|w| w.first())
-            .is_some_and(u8::is_ascii_digit);
+        let skill_given = first.is_some_and(|w| !w.is_empty() && w.iter().all(u8::is_ascii_digit));
         let (skill, name) = if skill_given {
             let level = first.map_or(0, |w| atoi(w));
             (
