@@ -1141,7 +1141,7 @@ pub const VIEW_KEYS: [ViewKeyRow; 55] = [
 ];
 
 /// Every command with no key of its own, and why.
-pub const UNKEYED: [(&str, Unkeyed); 199] = [
+pub const UNKEYED: [(&str, Unkeyed); 200] = [
     ("checkpoint.list", Unkeyed::Query),
     ("checkpoint.restore", Unkeyed::Typed),
     ("code.actions", Unkeyed::Typed),
@@ -1297,6 +1297,7 @@ pub const UNKEYED: [(&str, Unkeyed); 199] = [
     ("preview.poll", Unkeyed::Window),
     ("preview.select", Unkeyed::Typed),
     ("preview.set_field", Unkeyed::Typed),
+    ("preview.set_game", Unkeyed::Typed),
     ("preview.step_by", Unkeyed::Typed),
     ("preview.unwatch", Unkeyed::Typed),
     ("preview.watch", Unkeyed::Typed),

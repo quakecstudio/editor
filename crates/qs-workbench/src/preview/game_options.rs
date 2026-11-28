@@ -5,10 +5,12 @@
 //! host's command line gives them. The model is Roblox Studio's local test, which starts a
 //! server with a number of players and a window for each.
 
+use qs_commands::{Command, Outcome};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::engine::BotSkillParam;
+use super::{HasPreview, PreviewError};
 
 pub use qs_sim::{MAX_LOCAL_PLAYERS, MAX_SCOREBOARD};
 
@@ -147,6 +149,43 @@ impl GameOptions {
             }
         }
         Ok(words)
+    }
+}
+
+/// The id of `preview.set_game`.
+pub const SET_GAME: &str = "preview.set_game";
+
+/// The parameters of `preview.set_game`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetGameParams {
+    /// The game: single player, coop or deathmatch, the players on this machine and the bots.
+    pub game: GameOptions,
+}
+
+/// `preview.set_game`: the game Play and Play from here play when they are given none, and the
+/// open map's issues are checked for (L-88); options that make no game are refused and the game
+/// stays as it was.
+pub(crate) struct SetGameCommand;
+
+impl<C: HasPreview + 'static> Command<C> for SetGameCommand {
+    const ID: &'static str = SET_GAME;
+    const SUMMARY: &'static str = "Chooses the game Play and Play from here play when \
+        given none: single player, coop or deathmatch, the players on this machine and the bots. \
+        The map's issues check its player starts for it.";
+    type Params = SetGameParams;
+    type Output = GameOptions;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        SetGameParams { game }: SetGameParams,
+    ) -> Result<Outcome<GameOptions, C>, PreviewError> {
+        game.host_words().map_err(PreviewError::GameOptions)?;
+        let (workbench, _) = context.workbench_and_preview();
+        workbench.set_game(game);
+        Ok(Outcome::outside_history(game))
     }
 }
 

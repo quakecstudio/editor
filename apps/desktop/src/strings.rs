@@ -3320,6 +3320,10 @@ pub fn fix_label(fix: &QuickFix) -> String {
         QuickFix::RenameKey { to, .. } => format!("Rename to {to}"),
         QuickFix::SetClassname { classname, .. } => format!("Make {classname}"),
         QuickFix::AddPlayerStart { .. } => "Add player start".to_owned(),
+        QuickFix::AddCoopStart { .. } => "Add coop start".to_owned(),
+        QuickFix::MoveTo {
+            origin: [x, y, z], ..
+        } => format!("Move to ({x} {y} {z})"),
     }
 }
 

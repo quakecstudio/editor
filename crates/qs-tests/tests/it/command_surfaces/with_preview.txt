@@ -171,6 +171,7 @@ preview.restart
 preview.resume
 preview.select
 preview.set_field
+preview.set_game
 preview.step
 preview.step_by
 preview.stop

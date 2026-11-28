@@ -32,6 +32,7 @@ pub mod map_filter;
 pub mod map_logic;
 pub mod map_playable;
 pub mod map_profile;
+pub mod map_starts;
 pub mod models;
 pub mod next_edit;
 pub mod open_paths;
@@ -72,7 +73,8 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::preview::game_options::{
-    GameMode, GameOptions, GameOptionsError, MAX_LOCAL_PLAYERS, MAX_SCOREBOARD,
+    GameMode, GameOptions, GameOptionsError, MAX_LOCAL_PLAYERS, MAX_SCOREBOARD, SET_GAME,
+    SetGameParams,
 };
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
@@ -387,9 +389,23 @@ pub struct Workbench<L> {
     last_compile: Option<map_playable::LastCompile>,
     /// The world the open `.map` was last compiled to for spawning (FIRE-5.4).
     spawn_world: map_filter::SpawnWorld,
+    /// The game Play plays and the open map is checked for (L-86, L-88): single player, coop or
+    /// deathmatch, the players and the bots, as `preview.set_game` chose them.
+    game: GameOptions,
 }
 
 impl<L: Loader> Workbench<L> {
+    /// The game Play plays and the open map is checked for (L-86, L-88).
+    #[must_use]
+    pub const fn game(&self) -> GameOptions {
+        self.game
+    }
+
+    /// Chooses the game Play plays and the open map is checked for (L-88).
+    pub(crate) const fn set_game(&mut self, game: GameOptions) {
+        self.game = game;
+    }
+
     /// A workbench with no project, reading files through `loader` and analysing them as
     /// `config` says over the project file.
     pub fn new(loader: L, config: Config) -> Self {
@@ -420,6 +436,7 @@ impl<L: Loader> Workbench<L> {
             play_run: None,
             last_compile: None,
             spawn_world: map_filter::SpawnWorld::default(),
+            game: GameOptions::default(),
         }
     }
 

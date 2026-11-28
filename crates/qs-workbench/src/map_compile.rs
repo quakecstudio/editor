@@ -416,9 +416,10 @@ pub struct PlayFromHereParams {
     #[serde(default)]
     pub start: GameStart,
     /// The game: single player, coop or deathmatch, the players on this machine and the bots;
-    /// single player with no bots when absent. The player put at the eye is the first.
+    /// the one `preview.set_game` chose when absent, single player with no bots until then. The
+    /// player put at the eye is the first.
     #[serde(default)]
-    pub game: GameOptions,
+    pub game: Option<GameOptions>,
 }
 
 /// How far, in whole units up or down, [`PlayFromHereParams::origin_in`] looks for room for
@@ -791,7 +792,8 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         // The player's own light is read again where the game puts it.
         let (_, dark) =
             PlaceLight::around(&bsp, origin, &|name| drawn.contains(name)).map_err(entity_lump)?;
-        preview.play_built(built, Some(name.clone()), params.start, params.game)?;
+        let game = params.game.unwrap_or_else(|| workbench.game());
+        preview.play_built(built, Some(name.clone()), params.start, game)?;
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
         let angles = angles.unwrap_or_default().map(single);
         // BRIDGE-4.19: the game puts the player where its box is free of the map's entities

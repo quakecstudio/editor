@@ -52,7 +52,13 @@ impl Host for Recording {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::of(["entity/spawn", "entity/edit", "entity/remove", "map/swap"])
+        Capabilities::of([
+            "entity/spawn",
+            "entity/edit",
+            "entity/remove",
+            "map/swap",
+            "player/spawn_at",
+        ])
     }
 
     fn call(&mut self, _id: &Id, method: &str, params: &Value) -> Answer {
@@ -462,10 +468,12 @@ fn a_full_build_asked_for_while_one_runs_replaces_it() {
     );
 }
 
-/// An embedded host that hands out a [`Recording`] host's client, and counts.
+/// An embedded host that hands out a [`Recording`] host's client, and counts: the specs it
+/// started, how many times it stopped, and what each host it started was sent.
 struct Window {
     shows: bool,
     counts: std::rc::Rc<std::cell::RefCell<(Vec<qs_engine::LaunchSpec>, u32)>>,
+    seen: std::rc::Rc<std::cell::RefCell<Vec<Seen>>>,
 }
 
 impl qs_engine::EmbeddedHost for Window {
@@ -479,7 +487,9 @@ impl qs_engine::EmbeddedHost for Window {
         _client_name: &str,
     ) -> Result<Client, qs_engine::LaunchError> {
         self.counts.borrow_mut().0.push(spec.clone());
-        Ok(recording_client().0)
+        let (client, seen) = recording_client();
+        self.seen.borrow_mut().push(seen);
+        Ok(client)
     }
 
     fn stop(&mut self) {
@@ -518,6 +528,7 @@ fn a_play_starts_the_game_in_the_apps_own_window_when_it_shows_it() {
         Box::new(Window {
             shows,
             counts: std::rc::Rc::clone(&counts),
+            seen: std::rc::Rc::default(),
         })
     };
     let mut hidden = Preview::with_embedded(config(), window(false));
@@ -696,4 +707,66 @@ fn a_breakpoint_the_host_did_not_answer_is_kept() {
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].id, None);
     preview.stop();
+}
+
+// No spec statement: L-88: map.play_from_here in deathmatch with three bots, the game
+// preview.set_game chose, starts the game with a deathmatch's slots and the three bots, and puts
+// the player at the map's start; the host brings the bots in as its first frame runs
+// (`qs-game`'s `a_deathmatch_with_three_bots_spawns_the_player_and_the_bots`)
+#[test]
+fn play_from_here_in_deathmatch_starts_the_player_and_three_bots() {
+    use crate::map_compile::MAP_PLAY_FROM_HERE;
+    use crate::map_compile::tests::Context;
+    use crate::preview::PreviewConfig;
+    use crate::{SET_GAME, register, register_preview};
+    use qs_map_edit::testing::{Opening, room};
+    let dir = std::env::temp_dir().join(format!("qs-wb-dm-bots-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    let project = dir.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    std::fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    let game = dir.join("game");
+    std::fs::create_dir_all(game.join("id1")).unwrap();
+    std::fs::write(game.join("id1/pak0.pak"), b"PACK").unwrap();
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.open_project(&project).unwrap();
+    let counts = std::rc::Rc::default();
+    let seen = std::rc::Rc::default();
+    let window = Box::new(Window {
+        shows: true,
+        counts: std::rc::Rc::clone(&counts),
+        seen: std::rc::Rc::clone(&seen),
+    });
+    let config = PreviewConfig {
+        host: Some(dir.join("no-host")),
+        app: PathBuf::from("/nowhere/app"),
+        game: Some(game),
+        extra: Vec::new(),
+    };
+    let preview = Preview::with_embedded(config, window);
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    register_preview(&mut registry).unwrap();
+    let mut session = Session::new(Context::new(workbench, preview), registry);
+    let map = room("dm-bots", "wall", Opening::Sealed);
+    session.execute(MAP_OPEN, json!({ "path": map })).unwrap();
+    session
+        .execute(
+            SET_GAME,
+            json!({ "game": { "mode": "deathmatch", "bots": 3 } }),
+        )
+        .unwrap();
+    session.execute(MAP_PLAY_FROM_HERE, json!({})).unwrap();
+    let counts = counts.borrow();
+    let spec = &counts.0[0];
+    assert_eq!(spec.extra, ["-listen", "8", "--bots", "3"]);
+    let words = spec.extra.join(" ");
+    assert!(!words.contains("--rules"), "deathmatch is -listen's own");
+    let seen = seen.borrow();
+    let sent = seen[0].lock().unwrap();
+    assert!(
+        sent.iter().any(|(method, _)| method == "player/spawn_at"),
+        "the player was put at the start: {sent:?}"
+    );
 }

@@ -190,6 +190,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.resume`](#previewresume) | Resumes the paused game. |
 | [`preview.select`](#previewselect) | Selects an edict of the running game and reads its fields for the Properties panel. |
 | [`preview.set_field`](#previewset_field) | Sets a field of the selected edict while the game is paused, the value read as the field's type. The game is given the value when it resumes, and reads the old one until then (`applied`: `on_resume`); each poll lists the fields waiting (`held`). |
+| [`preview.set_game`](#previewset_game) | Chooses the game Play and Play from here play when given none: single player, coop or deathmatch, the players on this machine and the bots. The map's issues check its player starts for it. |
 | [`preview.step`](#previewstep) | Runs one server frame of the game, pausing it first, and leaves it paused. |
 | [`preview.step_by`](#previewstep_by) | Steps the game stopped in a frame by a statement, into a call, over one or out to the caller. |
 | [`preview.stop`](#previewstop) | Stops the game. |
@@ -2116,6 +2117,67 @@ Parameters:
           },
           "required": [
             "kind",
+            "origin"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Place an `info_player_coop`, facing as `angle` says, where a coop player has room\n(L-88).",
+          "properties": {
+            "angle": {
+              "description": "Its `angle`, the way it faces, in degrees.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "add_coop_start",
+              "type": "string"
+            },
+            "origin": {
+              "description": "Where.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 3,
+              "minItems": 3,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "origin",
+            "angle"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Move an entity to `origin`, such as a player start out of a wall (L-88).",
+          "properties": {
+            "entity": {
+              "$ref": "#/$defs/EntityIndex",
+              "description": "The entity."
+            },
+            "kind": {
+              "const": "move_to",
+              "type": "string"
+            },
+            "origin": {
+              "description": "Its new origin.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 3,
+              "minItems": 3,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "entity",
             "origin"
           ],
           "type": "object"
@@ -6971,14 +7033,16 @@ Parameters:
       ]
     },
     "game": {
-      "$ref": "#/$defs/GameOptions",
-      "default": {
-        "bot_skill": null,
-        "bots": 0,
-        "mode": "single",
-        "players": 1
-      },
-      "description": "The game: single player, coop or deathmatch, the players on this machine and the bots;\nsingle player with no bots when absent. The player put at the eye is the first."
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GameOptions"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The game: single player, coop or deathmatch, the players on this machine and the bots;\nthe one `preview.set_game` chose when absent, single player with no bots until then. The\nplayer put at the eye is the first."
     },
     "region": {
       "anyOf": [
@@ -8942,14 +9006,16 @@ Parameters:
   "description": "The parameters of `preview.play`.",
   "properties": {
     "game": {
-      "$ref": "#/$defs/GameOptions",
-      "default": {
-        "bot_skill": null,
-        "bots": 0,
-        "mode": "single",
-        "players": 1
-      },
-      "description": "The game: single player, coop or deathmatch, the players on this machine and the bots;\nsingle player with no bots when absent."
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GameOptions"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The game: single player, coop or deathmatch, the players on this machine and the bots;\nthe one `preview.set_game` chose when absent, single player with no bots until then."
     },
     "map": {
       "default": null,
@@ -9112,6 +9178,118 @@ Parameters:
     "value"
   ],
   "title": "SetFieldParams",
+  "type": "object"
+}
+```
+
+## `preview.set_game`
+
+Chooses the game Play and Play from here play when given none: single player, coop or deathmatch, the players on this machine and the bots. The map's issues check its player starts for it.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BotSkillParam": {
+      "description": "How well a bot plays (BOT-1.4).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "Skill 0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "Skill 1.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "Skill 2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "Skill 3.",
+          "type": "string"
+        }
+      ]
+    },
+    "GameMode": {
+      "description": "Which game a Play starts.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "One player and no bots, as the game has always played.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Coop: `coop` 1, the players on the same side against the map's monsters.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch` 1, every player against every other.",
+          "type": "string"
+        }
+      ]
+    },
+    "GameOptions": {
+      "additionalProperties": false,
+      "description": "What a Play plays: the game, the players on this machine, the bots and how well they play.\nThe default is single player with no bots.",
+      "properties": {
+        "bot_skill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BotSkillParam"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How well the bots play; the game's `skill` setting when absent."
+        },
+        "bots": {
+          "default": 0,
+          "description": "The bots brought in as the game starts, which play any mod through its own QuakeC\n(ADR-0031); none when absent. Players and bots are 16 at most.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/GameMode",
+          "default": "single",
+          "description": "Single player, coop or deathmatch; single player when absent."
+        },
+        "players": {
+          "default": 1,
+          "description": "The players on this machine, 1 to 4; each after the first plays in a window of its own.\nOne when absent.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.set_game`.",
+  "properties": {
+    "game": {
+      "$ref": "#/$defs/GameOptions",
+      "description": "The game: single player, coop or deathmatch, the players on this machine and the bots."
+    }
+  },
+  "required": [
+    "game"
+  ],
+  "title": "SetGameParams",
   "type": "object"
 }
 ```
