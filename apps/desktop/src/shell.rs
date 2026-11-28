@@ -34,7 +34,6 @@ use qs_map_edit::{
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::GitHub;
-use qs_workbench::GameOptions;
 use qs_workbench::TASK_LIST;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
@@ -59,6 +58,7 @@ use qs_workbench::{
 };
 use qs_workbench::{CandidateKind, FileText, READ_FILE};
 use qs_workbench::{FieldSet, SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
+use qs_workbench::{SET_GAME, SetGameParams};
 
 use crate::about::{self, AboutWindow};
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
@@ -330,9 +330,6 @@ pub struct Shell {
     preview_error: Option<String>,
     /// What the last Play played: the open map, or the project (L-52).
     played: Played,
-    /// The game Play plays, as the toolbar's play options chose it (L-86); Play from here in
-    /// the map editor plays it too.
-    play: GameOptions,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
     /// Each feature's state (P6-41).
@@ -404,7 +401,6 @@ impl Shell {
             review_seen: 0,
             preview_error: None,
             played: Played::Project,
-            play: GameOptions::default(),
             menu: MenuPlace::default(),
             settings_file: None,
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
@@ -1723,7 +1719,8 @@ impl Shell {
         let mut export_asked = false;
         let mut control = None;
         let mut layout_command = None;
-        let mut play = self.play;
+        let mut play = self.session.context().workbench.game();
+        let mut play_changed = false;
         let preview = &self.session.context().preview;
         let state = preview.state();
         let place = self.session.context().layout.game_place;
@@ -1750,7 +1747,7 @@ impl Shell {
                 name_area(ui, accesskit::Role::Toolbar, Text::Toolbar);
                 ui.horizontal_centered(|ui| {
                     control = play_controls(ui, theme, state);
-                    play_options::button(ui, theme, &mut play);
+                    play_changed = play_options::button(ui, theme, &mut play);
                     help::button(ui, theme, Topic::Toolbar);
                     ui.separator();
                     ui.label(Text::PreviewHost.get());
@@ -1839,7 +1836,14 @@ impl Shell {
                     });
                 });
             });
-        self.play = play;
+        // L-86, L-88: the game Play and Play from here play, and the map's issues check for.
+        if play_changed
+            && let Err(error) = serde_json::to_value(SetGameParams { game: play })
+                .map_err(ShellError::from)
+                .and_then(|params| Ok(self.session.execute(SET_GAME, params)?))
+        {
+            tracing::warn!(%error, "the play options were not kept");
+        }
         if let Some(panel) = toggled
             && let Err(error) = self.toggle(panel)
         {
@@ -1887,7 +1891,7 @@ impl Shell {
                 angles: None,
                 region: None,
                 start: qs_workbench::GameStart::Running,
-                game: self.play,
+                game: None,
             };
             serde_json::to_value(params)
                 .map_err(ShellError::from)
@@ -1895,7 +1899,7 @@ impl Shell {
         } else if id == PLAY {
             let params = PlayParams {
                 map: None,
-                game: self.play,
+                game: None,
             };
             serde_json::to_value(params)
                 .map_err(ShellError::from)
@@ -2626,8 +2630,6 @@ impl Shell {
     /// Runs `call` on the map's feature with the commands, then carries out what it asked of
     /// the window, in order.
     fn with_map<R>(&mut self, call: impl FnOnce(&mut MapFeature, &mut Commands<'_>) -> R) -> R {
-        // L-86: Play from here plays the game the toolbar's play options chose.
-        self.features.map.play = self.play;
         let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
         let out = call(&mut self.features.map, &mut commands);
         for request in self.features.map.take_requests() {

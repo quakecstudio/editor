@@ -2400,3 +2400,43 @@ fn local_players_wait_for_a_held_load() {
     assert_eq!(loaded.local_players(), [player]);
     assert!(loaded.world().is_spawned(player.loopback.id()));
 }
+
+// spec BOT-9.3, NET-7.1: a deathmatch started with three bots, as map.play_from_here starts one
+// (`-listen 8 --bots 3`), has its player and the three bots in the game after its first frame
+#[test]
+fn a_deathmatch_with_three_bots_spawns_the_player_and_the_bots() {
+    let args = crate::Args::parse_words(
+        ["-listen", "8", "--bots", "3", "--bot-skill", "2", "dm"].map(str::to_owned),
+    )
+    .unwrap();
+    let maxplayers = args.maxplayers();
+    let settings = args.new_game_settings(maxplayers);
+    let (bytes, _) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = "{\n\"classname\" \"worldspawn\"\n}\n".to_owned();
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let options = LoadOptions {
+        maxplayers,
+        settings,
+        ..LoadOptions::default()
+    };
+    let mut world = World::load(&progs, "dm", &map, Rc::new(|_| None), options).unwrap();
+    world.connect(&progs).unwrap();
+    let mut game = Game::new(world, bytes, Reporting::Off);
+    assert_eq!(game.world().setting("deathmatch"), Some(1.0));
+    for line in args.bot_lines() {
+        game.world_mut().console(&line);
+    }
+    game.frame(1.0 / 72.0);
+    let slot = |n| qs_sim::ClientId::new(n).unwrap();
+    assert!(
+        game.world().is_spawned(qs_sim::ClientId::FIRST),
+        "the player"
+    );
+    assert_eq!(game.world().host_bots(), vec![slot(1), slot(2), slot(3)]);
+    for n in 1..=3 {
+        assert!(game.world().is_spawned(slot(n)), "bot {n}");
+    }
+    game.frame(1.0 / 72.0);
+    assert_eq!(game.bots.skill(slot(1)), Some(qs_sim::BotSkill::Hard));
+}

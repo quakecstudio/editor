@@ -118,6 +118,28 @@ it too.
   and a skill's heading shows the map as that skill spawns it with the view's entity filter:
   every skill in single player, and normal in coop and deathmatch, which is the one the filter
   offers there.
+- **Coop and deathmatch starts (L-88, MAP-39):** `map.issues` checks the player starts for
+  the game the run toolbar's play options chose (`preview.set_game`), and the issue browser
+  lists what it finds, each quoting what id1's QuakeC does then (`client.qc`'s
+  `SelectSpawnPoint` and `PutClientInServer`, `triggers.qc`'s `spawn_tdeath`):
+  - a deathmatch map, one with an `info_player_deathmatch` or played as deathmatch, with fewer
+    deathmatch starts than its players and bots, 4 when deathmatch is not the game chosen:
+    `SelectSpawnPoint` takes them in turn, so players share one and telefrag each other, and
+    with none every player spawns at the `info_player_start`;
+  - coop chosen and no `info_player_coop`: every player falls back to the `info_player_start`
+    and telefrags the one there. Add coop start places one 64 units beside it, facing its way,
+    where a player stands on a floor, out of solid and away from other starts;
+  - a start whose player box (`'-16 -16 -24'` to `'16 16 32'`, 1 unit above its origin) is in a
+    world brush, water and other liquids aside: the player is stuck. Move to puts it at the
+    nearest height within 64 units with room;
+  - two deathmatch or two coop starts close enough that a player spawning at one telefrags one
+    standing on the other: less than 33 units apart across and 57 up and down. Move to puts the
+    later one 64 units aside where it telefrags none.
+- **Play coop and deathmatch with bots (L-86, L-88):** the run toolbar's play options choose
+  single player, coop or deathmatch, the players on this computer (1 to 4, each after the first
+  in a window of its own) and the bots with their skill. Play from here plays the map in that
+  game from the camera, the first player put there; `map.play_from_here` takes a `game` of its
+  own, and with none plays the one chosen. An agent chooses it with `preview.set_game`.
 - **Engine limits (L-79, MAP-38):** `map.budget` shows how much of your target engine's limits
   the map uses, and of id's: each BSP lump of the last compile, the largest face extent, and the
   edicts, precached models and sounds and light styles of the map spawned by your mod's QuakeC

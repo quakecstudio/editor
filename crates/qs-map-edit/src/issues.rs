@@ -29,6 +29,8 @@ pub const MAP_SEARCH: &str = "map.search";
 
 /// The classname of the player's start, which id's `PutClientInServer` looks for.
 const PLAYER_START: &str = "info_player_start";
+/// The classname of a coop player's start, which id's `SelectSpawnPoint` takes in coop.
+const COOP_START: &str = "info_player_coop";
 /// The fewest faces with a polygon a brush with volume has: a tetrahedron's.
 const SOLID_FACES: usize = 4;
 /// How far above the floor a player start is placed, in map units: id's player box reaches
@@ -65,6 +67,21 @@ pub enum QuickFix {
     /// Place an `info_player_start` at a point inside the map.
     AddPlayerStart {
         /// Where.
+        origin: [f64; 3],
+    },
+    /// Place an `info_player_coop`, facing as `angle` says, where a coop player has room
+    /// (L-88).
+    AddCoopStart {
+        /// Where.
+        origin: [f64; 3],
+        /// Its `angle`, the way it faces, in degrees.
+        angle: f64,
+    },
+    /// Move an entity to `origin`, such as a player start out of a wall (L-88).
+    MoveTo {
+        /// The entity.
+        entity: EntityIndex,
+        /// Its new origin.
         origin: [f64; 3],
     },
 }
@@ -369,6 +386,29 @@ impl MapDocument {
                 Ok(Some(EntityIndex::new(
                     self.file.entities.len().saturating_sub(1),
                 )))
+            }
+            QuickFix::AddCoopStart { origin, angle } => {
+                let mut entity = Entity::new();
+                for (key, value) in [
+                    ("classname", COOP_START.to_owned()),
+                    ("origin", origin_text(*origin)),
+                    ("angle", format!("{angle}")),
+                ] {
+                    entity
+                        .set(key.as_bytes(), value.as_bytes())
+                        .map_err(|error| self.map_error(error))?;
+                }
+                self.file.push_entity(entity);
+                Ok(Some(EntityIndex::new(
+                    self.file.entities.len().saturating_sub(1),
+                )))
+            }
+            QuickFix::MoveTo { entity, origin } => {
+                let set = self
+                    .entity_mut(*entity)?
+                    .set(b"origin", origin_text(*origin).as_bytes());
+                set.map_err(|error| self.map_error(error))?;
+                Ok(Some(*entity))
             }
         }
     }
