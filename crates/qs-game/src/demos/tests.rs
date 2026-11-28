@@ -103,7 +103,11 @@ impl Host {
 
     /// The client's frame at the host's time `realtime`, over the server's packets.
     fn frame(&mut self, realtime: f64) -> Result<Vec<Event>, DemoFrameError> {
-        let packets = self.game.world_mut().take_messages().packets;
+        let packets = self
+            .game
+            .world_mut()
+            .take_messages(qs_sim::ClientId::FIRST)
+            .packets;
         self.demos.frame(
             &mut self.client,
             (frametime_f32(FRAME), realtime, &packets),
@@ -607,7 +611,11 @@ fn no_level_follows_the_one_a_demo_plays_over() {
 #[test]
 fn record_waits_for_the_second_signon_stage() {
     let mut host = Host::new("signon");
-    let packets = host.game.world_mut().take_messages().packets;
+    let packets = host
+        .game
+        .world_mut()
+        .take_messages(qs_sim::ClientId::FIRST)
+        .packets;
     let mut stages = Vec::new();
     for packet in &packets {
         host.client

@@ -508,13 +508,9 @@ host: a client and a server in one process (`cmd_source == src_command`).
   `_cl_color` to `top * 16 + bottom` printed with `%f` (`Cvar_SetValue`), and when connected
   forwards the command. `_cl_name` starts as "player", `_cl_color` as "0" and `hostname` as
   "UNNAMED".
-- **PHYS-13.5** `status` prints `host:    <hostname>`, `version: 1.09` (`%4.2f` of
-  `VERSION`), `map:     <map>`, `players: <n> active (1 max)` and an empty line, then for the
-  connected player `#1  <name, padded and cut to 16>  <frags, %3i>  <h>:<mm>:<ss>` and
-  `   LOCAL`, the loopback server address (`net_loop.c`). `version` prints `Version 1.09`
-  and an `Exe:` line. `prespawn`, `spawn` and `begin` print "`<name>` is not valid from the
-  console". `kick` from the console of a single-player game changes nothing the console tests
-  read.
+- **PHYS-13.5** **Withdrawn** 2026-11-27: it gave `status` one slot, `(1 max)`, and said
+  `kick` from the console changed nothing; both now follow the server's slots. Replaced by
+  PHYS-13.10 and NET-7.6.
 - **PHYS-13.6** `map <name>`, `changelevel <name>` (exactly one argument, else its usage
   "changelevel <levelname> : continue game on a new level"), `restart`, `save <name>` and
   `load <name>` (exactly one argument, else "save <savename> : save a game" and "load
@@ -551,6 +547,9 @@ host: a client and a server in one process (`cmd_source == src_command`).
   `viewmodel`, `viewframe`, `viewnext`, `viewprev` and `mcache` are not part of the preview
   host, which has no remote server, and print `Unknown command`. The demo commands are
   CLIENT-10's.
+- **PHYS-13.10** `status` prints what NET-7.6 says, for every slot. `version` prints
+  `Version 1.09` and an `Exe:` line. `prespawn`, `spawn` and `begin` print "`<name>` is not
+  valid from the console". `kick` from the console drops the client it names, as NET-7.6 says.
 
 ## Constants
 

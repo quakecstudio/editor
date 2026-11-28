@@ -58,13 +58,16 @@ fn main() -> Result<(), String> {
     let mut out = std::io::stdout().lock();
     for n in 0..frames {
         if play {
-            world.set_command(qs_sim::UserCmd {
-                angles: [0.0, 90.0, 0.0],
-                ..qs_sim::UserCmd::default()
-            });
+            world.set_command(
+                qs_sim::ClientId::FIRST,
+                qs_sim::UserCmd {
+                    angles: [0.0, 90.0, 0.0],
+                    ..qs_sim::UserCmd::default()
+                },
+            );
         }
         world.frame(&progs, 1.0 / 60.0).map_err(|e| e.to_string())?;
-        if let Some((eye, angles)) = world.player_view() {
+        if let Some((eye, angles)) = world.player_view(qs_sim::ClientId::FIRST) {
             writeln!(out, "frame {n}: eye {eye:?} angles {angles:?}").map_err(|e| e.to_string())?;
         }
     }

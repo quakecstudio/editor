@@ -12,6 +12,7 @@
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
 use qc_builtins::math::vector_normalize;
+use qc_builtins::mock::EngineProfile;
 use std::rc::Rc;
 
 use qc_builtins::mock::{BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_NOTARGET, ModelBounds, Precache};
@@ -25,6 +26,7 @@ use qc_vm::{Builtins, Context, ErrorKind, Machine, RunError, ServerState};
 use qs_bsp::{Bsp, BspLoader, Submodel};
 use qs_mdl::Sprite;
 
+use crate::clients::MaxPlayers;
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
@@ -94,6 +96,13 @@ pub(crate) const PARM4: u16 = 4;
 const CENTERPRINT: u32 = 73;
 /// `ambientsound` (BUILTIN-12.4).
 const AMBIENTSOUND: u32 = 74;
+/// `setspawnparms` (BUILTIN-8.7).
+const SETSPAWNPARMS: u32 = 78;
+/// vkQuake's `dropclient`, `spawnclient` and `clienttype` (BUILTIN-18.46, BUILTIN-18.45,
+/// BUILTIN-18.20).
+const DROPCLIENT: u32 = 453;
+const SPAWNCLIENT: u32 = 454;
+const CLIENTTYPE: u32 = 455;
 /// `precache_model2`.
 const PRECACHE_MODEL2: u32 = 75;
 /// `end[2] -= 256` in `PF_droptofloor` (WORLD-8.5).
@@ -133,6 +142,8 @@ pub struct SimBuiltins {
     /// The PVS of the client `checkclient` chose last, id's `checkpvs`.
     checkpvs: Vec<u8>,
     pub(crate) files: ModelFiles,
+    /// What the host's console printed since it was taken, `Con_Printf` (PHYS-13).
+    pub(crate) console_out: Vec<u8>,
 }
 
 impl SimBuiltins {
@@ -145,6 +156,7 @@ impl SimBuiltins {
         files: ModelFiles,
         crc: i32,
         table: BuiltinTable,
+        max: MaxPlayers,
     ) -> Self {
         let mut mock = MockBuiltins::with_engine(engine);
         mock.engine_mut()
@@ -154,7 +166,7 @@ impl SimBuiltins {
             mock,
             collision: Collision::new(map),
             sounds: Vec::new(),
-            messages: ServerMessages::new(map, crc),
+            messages: ServerMessages::new(map, crc, max),
             table,
             debugger: None,
             tracer: None,
@@ -163,6 +175,7 @@ impl SimBuiltins {
             paused: false,
             checkpvs: Vec::new(),
             files,
+            console_out: Vec::new(),
         }
     }
 
@@ -383,6 +396,23 @@ impl Builtins for SimBuiltins {
                     SimCall::new(context, self).mirror_write(number);
                 }
                 Ok(())
+            }
+            SETSPAWNPARMS => {
+                self.mock.call(number, context)?;
+                SimCall::new(context, self).set_spawn_parms();
+                Ok(())
+            }
+            // BUILTIN-18.45, BUILTIN-18.46: the bot builtins act on the world's slots, under
+            // vkQuake's profile, whose table reaches them.
+            SPAWNCLIENT if self.mock.engine().profile == EngineProfile::VkQuake => {
+                SimCall::new(context, self).spawn_client()
+            }
+            DROPCLIENT if self.mock.engine().profile == EngineProfile::VkQuake => {
+                SimCall::new(context, self).drop_client_builtin()
+            }
+            CLIENTTYPE => {
+                self.mock.call(number, context)?;
+                SimCall::new(context, self).mark_bot_type()
             }
             TRACELINE => SimCall::new(context, self).traceline(),
             CHECKCLIENT => SimCall::new(context, self).checkclient(),
@@ -924,7 +954,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     }
 
     /// Returns the entity value of edict `n`.
-    fn set_return_entity(&mut self, n: usize) -> Result<(), RunError> {
+    pub(crate) fn set_return_entity(&mut self, n: usize) -> Result<(), RunError> {
         let value = self.value_of(n);
         if self
             .context

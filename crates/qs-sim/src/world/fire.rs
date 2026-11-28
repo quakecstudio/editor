@@ -23,6 +23,7 @@ use qc_vm::convert::double_to_float;
 use super::{CLIENT_EDICT, EdictChange, HostCommand, NamedValue, World, WorldError};
 use crate::builtins::{SimCall, field_slot};
 use crate::client::UserCmd;
+use crate::clients::ClientId;
 use crate::scenario::{SCN_FRAMETIME, Seconds};
 
 /// `find` in id's builtin table (BUILTIN-8).
@@ -667,18 +668,18 @@ impl World {
     pub fn enter(&mut self, progs: &Progs<'_>, frametime: Seconds) -> Result<(), WorldError> {
         for frame in 1..=ENTERED {
             match frame {
-                1 => self.connect_next_frame(),
-                2 => self.client_command("prespawn"),
+                1 => self.connect_next_frame(ClientId::FIRST),
+                2 => self.client_command(ClientId::FIRST, "prespawn"),
                 3 => {
-                    self.client_command("name \"player\"\n");
-                    self.client_command("color 0 0\n");
-                    self.client_command("spawn ");
+                    self.client_command(ClientId::FIRST, "name \"player\"\n");
+                    self.client_command(ClientId::FIRST, "color 0 0\n");
+                    self.client_command(ClientId::FIRST, "spawn ");
                 }
-                _ => self.client_command("begin"),
+                _ => self.client_command(ClientId::FIRST, "begin"),
             }
-            self.set_command(UserCmd::default());
+            self.set_command(ClientId::FIRST, UserCmd::default());
             self.frame(progs, frametime.get())?;
-            drop(self.take_messages());
+            drop(self.take_messages(ClientId::FIRST));
         }
         Ok(())
     }
@@ -727,7 +728,9 @@ impl World {
         self.builtins.tracer = Some(Tracer::new(n));
 
         // FIRE-1.4: the player when one is in the game, else the world.
-        let activator = if self.in_use(CLIENT_EDICT) && self.builtins.messages.client.active {
+        let activator = if self.in_use(CLIENT_EDICT)
+            && self.builtins.messages.clients.is_active(ClientId::FIRST)
+        {
             CLIENT_EDICT
         } else {
             0
@@ -779,7 +782,7 @@ impl World {
             if let Err(error) = self.frame(progs, frametime) {
                 end = Some(TraceEnd::Error(error.to_string()));
             }
-            drop(self.take_messages());
+            drop(self.take_messages(ClientId::FIRST));
             seconds += frametime;
             self.take_trace(progs, &mut classnames, &mut events);
         };

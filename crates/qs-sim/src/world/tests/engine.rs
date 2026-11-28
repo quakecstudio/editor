@@ -166,24 +166,32 @@ fn the_signon_runs_a_stage_at_a_time() {
         LoadOptions::default(),
     );
     let read = Progs::read(&bytes).unwrap();
-    run.world.signon(&read, Signon::Connect).unwrap();
+    run.world
+        .signon(&read, crate::ClientId::FIRST, Signon::Connect)
+        .unwrap();
     assert_eq!(run.world.float(1, "frags"), 0.0, "not spawned");
-    run.world.signon(&read, Signon::Prespawn).unwrap();
-    run.world.signon(&read, Signon::Spawn).unwrap();
+    run.world
+        .signon(&read, crate::ClientId::FIRST, Signon::Prespawn)
+        .unwrap();
+    run.world
+        .signon(&read, crate::ClientId::FIRST, Signon::Spawn)
+        .unwrap();
     assert_eq!(run.world.float(1, "frags"), 42.0, "SetNewParms' parm1");
     let turn = UserCmd {
         angles: [0.0, 90.0, 0.0],
         ..UserCmd::default()
     };
-    run.world.set_command(turn);
+    run.world.set_command(crate::ClientId::FIRST, turn);
     run.frames(1, 0.1).unwrap();
     assert_eq!(
         run.world.vector(1, "v_angle")[1],
         0.0,
         "no moves before begin"
     );
-    run.world.signon(&read, Signon::Begin).unwrap();
-    run.world.set_command(turn);
+    run.world
+        .signon(&read, crate::ClientId::FIRST, Signon::Begin)
+        .unwrap();
+    run.world.set_command(crate::ClientId::FIRST, turn);
     run.frames(1, 0.1).unwrap();
     assert_eq!(run.world.vector(1, "v_angle")[1], 90.0);
 }

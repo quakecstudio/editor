@@ -87,9 +87,9 @@ fn jumps_onto(height: f64) -> bool {
     let on_top = (height as f32) + 24.0 + EYE - 1.0;
     for frame in 0..FRAMES {
         let buttons = if frame < RELEASED { 0 } else { 2 };
-        world.set_command(UserCmd { buttons, ..run });
+        world.set_command(qs_sim::ClientId::FIRST, UserCmd { buttons, ..run });
         world.frame(&progs, FRAME).unwrap();
-        let (eye, _) = world.player_view().unwrap();
+        let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
         if f64::from(eye[0]) > FACE + 16.0 && eye[2] > on_top {
             return true;
         }
@@ -169,20 +169,23 @@ fn leaps(width: f64) -> bool {
     world.settle(&progs).unwrap();
     world.connect(&progs).unwrap();
     for _ in 0..FRAMES {
-        let (eye, _) = world.player_view().unwrap();
+        let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
         // Jump from the last moment the box still stands on the edge: its back 16 short of it.
         let buttons = if f64::from(eye[0]) >= 16.0 - GAP_STEP {
             2
         } else {
             0
         };
-        world.set_command(UserCmd {
-            forward: 320.0,
-            buttons,
-            ..UserCmd::default()
-        });
+        world.set_command(
+            qs_sim::ClientId::FIRST,
+            UserCmd {
+                forward: 320.0,
+                buttons,
+                ..UserCmd::default()
+            },
+        );
         world.frame(&progs, FRAME).unwrap();
-        let (eye, _) = world.player_view().unwrap();
+        let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
         if f64::from(eye[0]) > width + 16.0 && eye[2] > 24.0 + EYE - 1.0 {
             return true;
         }

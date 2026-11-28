@@ -135,15 +135,18 @@ fn the_full_profile_makes_a_map_that_plays() {
     world
         .move_player(&progs, [-96.0, 0.0, 24.0], [0.0; 3])
         .unwrap();
-    world.set_command(UserCmd {
-        angles: [0.0, 0.0, 0.0],
-        forward: 320.0,
-        ..UserCmd::default()
-    });
+    world.set_command(
+        qs_sim::ClientId::FIRST,
+        UserCmd {
+            angles: [0.0, 0.0, 0.0],
+            forward: 320.0,
+            ..UserCmd::default()
+        },
+    );
     let mut through = false;
     for _ in 0..216 {
         world.frame(&progs, FRAME).unwrap();
-        let (eye, _) = world.player_view().unwrap();
+        let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
         if eye[0] > 64.0 {
             through = true;
             break;

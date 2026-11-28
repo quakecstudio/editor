@@ -22,6 +22,7 @@ use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::float_to_int;
 
+use crate::clients::ClientId;
 use crate::host_commands::{COLOR_MASK, COLOR_ROW, MAX_COLOR, Words, atoi, tokenize};
 use crate::input::Button;
 use crate::offsets::FieldOffset;
@@ -31,7 +32,7 @@ use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
 /// `VERSION` (`WinQuake/quakedef.h`), which `version` and `status` print.
-const VERSION: &str = "1.09";
+pub(crate) const VERSION: &str = "1.09";
 /// `MAX_ALIAS_NAME` (`WinQuake/cmd.c`).
 const MAX_ALIAS_NAME: usize = 32;
 
@@ -43,7 +44,7 @@ const FORWARDED: [&str; 11] = [
 
 /// Every command [`World::execute_console`] runs, its own and the forwarded ones, in name
 /// order, for completion (CON-4.3).
-const COMMANDS: [&str; 38] = [
+const COMMANDS: [&str; 39] = [
     "alias",
     "begin",
     "changelevel",
@@ -62,6 +63,7 @@ const COMMANDS: [&str; 38] = [
     "kill",
     "load",
     "map",
+    "maxplayers",
     "name",
     "noclip",
     "notarget",
@@ -291,11 +293,11 @@ impl World {
     /// The lines the console printed since the last call, each without its line feed; text
     /// after the last line feed waits for the rest of its line.
     pub fn take_console_output(&mut self) -> Vec<Vec<u8>> {
-        let Some(last) = self.console_out.iter().rposition(|&c| c == b'\n') else {
+        let Some(last) = self.builtins.console_out.iter().rposition(|&c| c == b'\n') else {
             return Vec::new();
         };
-        let rest = self.console_out.split_off(last.saturating_add(1));
-        let done = core::mem::replace(&mut self.console_out, rest);
+        let rest = self.builtins.console_out.split_off(last.saturating_add(1));
+        let done = core::mem::replace(&mut self.builtins.console_out, rest);
         done.split(|&c| c == b'\n')
             .take(done.iter().map(|&c| usize::from(c == b'\n')).sum::<usize>())
             .map(<[u8]>::to_vec)
@@ -354,7 +356,7 @@ impl World {
 
     /// `Con_Printf`.
     fn print(&mut self, text: impl AsRef<[u8]>) {
-        self.console_out.extend_from_slice(text.as_ref());
+        self.builtins.console_out.extend_from_slice(text.as_ref());
     }
 
     /// `Cmd_ExecuteString (text, src_command)` (PHYS-13.1): the first word, ASCII
@@ -389,8 +391,14 @@ impl World {
             "cmd" => self.forward(&words, Forward::Args),
             "name" => self.name(&words),
             "color" => self.color(&words),
-            "status" => self.status(),
-            "kick" => {}
+            "status" => self.status(progs),
+            "kick" => {
+                // A `ClientDisconnect` that stops is reported where the command was typed.
+                if let Err(error) = self.console_kick(progs, &words) {
+                    self.print(format!("{}\n", error.message()));
+                }
+            }
+            "maxplayers" => self.maxplayers_command(&words),
             "version" => {
                 self.print(format!("Version {VERSION}\n"));
                 self.print(format!(
@@ -566,7 +574,7 @@ impl World {
     /// [`World::forward`] with `args` as `Cmd_Args`, `None` for a command alone.
     fn forward_args(&mut self, words: &Words, form: Forward, args: Option<&[u8]>) {
         let name = words.argv.first().cloned().unwrap_or_default();
-        if !self.builtins.messages.client.active {
+        if !self.builtins.messages.clients.is_active(ClientId::FIRST) {
             self.print(format!(
                 "Can't \"{}\", not connected\n",
                 String::from_utf8_lossy(&name)
@@ -582,7 +590,9 @@ impl World {
             Some(args) => text.extend_from_slice(args),
             None => text.push(b'\n'),
         }
-        self.commands.push(text);
+        if let Some(slot) = self.builtins.messages.clients.get_mut(ClientId::FIRST) {
+            slot.commands.push(text);
+        }
     }
 
     /// `Host_Name_f` from the console (PHYS-13.4): with no argument it prints `_cl_name`; else
@@ -617,7 +627,7 @@ impl World {
             2 => words.args.clone(),
             _ => cut,
         };
-        if self.builtins.messages.client.active {
+        if self.builtins.messages.clients.is_active(ClientId::FIRST) {
             self.forward_args(words, Forward::Named, Some(&args));
         }
     }
@@ -658,33 +668,27 @@ impl World {
             .engine_mut()
             .cvars
             .set("_cl_color", &format!("{player_colour}.000000"));
-        if self.builtins.messages.client.active {
+        if self.builtins.messages.clients.is_active(ClientId::FIRST) {
             self.forward(words, Forward::Named);
         }
     }
 
-    /// `Host_Status_f` on the server's console (PHYS-13.5).
-    fn status(&mut self) {
-        let hostname = self
-            .builtins
-            .mock
-            .engine()
-            .cvars
-            .text("hostname")
-            .unwrap_or_default()
-            .to_owned();
-        let map = self.map().to_owned();
-        let active = usize::from(self.builtins.messages.client.active);
-        self.print(format!("host:    {hostname}\n"));
-        self.print(format!("version: {VERSION}\n"));
-        self.print(format!("map:     {map}\n"));
-        self.print(format!("players: {active} active (1 max)\n\n"));
-        if active == 1 {
-            let name = String::from_utf8_lossy(&self.builtins.messages.client.name).into_owned();
-            let frags = float_to_int(self.field(1, "frags").as_f32());
-            self.print(format!("#1  {name:<16.16}  {frags:3}   0:00:00\n"));
-            // `loop_server->address`, the server's end of the loopback connection.
-            self.print("   LOCAL\n");
+    /// `Host_Status_f` on the server's console (PHYS-13.5, NET-7.6).
+    fn status(&mut self, progs: &Progs<'_>) {
+        for line in self.status_lines(progs) {
+            self.print(line);
+        }
+    }
+
+    /// `MaxPlayers_f` (NET-7.1): with no argument the slots; with one, "maxplayers can not be
+    /// changed while a server is running.", as a world is one; the host chooses the slots
+    /// before the map loads ([`crate::LoadOptions::maxplayers`]).
+    fn maxplayers_command(&mut self, words: &Words) {
+        if words.argv.len() == 2 {
+            self.print("maxplayers can not be changed while a server is running.\n");
+        } else {
+            let max = self.maxplayers().get();
+            self.print(format!("\"maxplayers\" is \"{max}\"\n"));
         }
     }
 

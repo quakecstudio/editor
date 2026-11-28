@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/host_cmd.c, Host_Name_f, Host_Color_f, Host_Pause_f, Host_Say, Host_Tell_f, Host_Status_f, Host_Ping_f, Host_Kick_f
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/host.c, SV_ClientPrintf
 
 //! The string commands a client sends, as `SV_ReadClientMessage` filters them and
 //! `Cmd_ExecuteString` runs them on the server (PHYS-11): the cheats, `kill`, `give`, `name`,
-//! `color` and `pause`, and the signon's `prespawn`, `spawn` and `begin`, which the world runs.
+//! `color`, `pause`, `say`, `say_team`, `tell`, `status`, `ping` and `kick`, and the signon's
+//! `prespawn`, `spawn` and `begin`, which the world runs.
 
 use qc_builtins::mock::BUILTIN_FL_NOTARGET;
 use qc_types::Slot;
@@ -10,10 +16,12 @@ use qc_vm::RunError;
 use qc_vm::convert::{float_to_int, int_to_float};
 
 use crate::builtins::SimCall;
+use crate::clients::{ClientId, SlotKind, UNCONNECTED};
+use crate::console::VERSION;
 use crate::messages::SVC_PRINT;
 use crate::physics::MoveType;
 use crate::settings::Setting;
-use crate::spawn::{Parser, Token};
+use crate::spawn::{Parser, Token, c_atof};
 
 /// `FL_GODMODE` (`WinQuake/server.h`), which `god` toggles (PHYS-11.3).
 const FL_GODMODE: i32 = 64;
@@ -28,6 +36,13 @@ const SVC_SETPAUSE: i32 = 24;
 const MAX_ARGS: usize = 80;
 /// The longest name `Host_Name_f` keeps: `newName[15] = 0`.
 const NAME_LENGTH: usize = 15;
+/// `Host_Say`'s `text[64]` and the 2 bytes it keeps for the line feed and the terminator.
+const SAY_BUFFER: usize = 64;
+const SAY_TAIL: usize = 2;
+/// `tell`'s fewest words, `Cmd_Argc () < 3`: the command, a name and the text.
+const TELL_WORDS: usize = 3;
+/// The byte before a `say`'s name that turns on the console's second colour set.
+const SAY_COLOR: u8 = 1;
 
 /// The command names `SV_ReadClientMessage` lets a client run, each as the prefix it compares
 /// case-insensitively with `Q_strncasecmp` (PHYS-11.1).
@@ -197,6 +212,16 @@ impl SimCall<'_, '_, '_> {
             b"name" => self.name(ent, &words),
             b"color" => self.color(ent, &words),
             b"pause" => self.pause(ent),
+            b"say" => self.say(ent, &words, SayTo::All),
+            b"say_team" => self.say(ent, &words, SayTo::Team),
+            b"tell" => self.tell(ent, &words),
+            b"status" => self.status(ent),
+            b"ping" => self.ping(ent),
+            b"kick" => {
+                if let Some(sender) = ClientId::of_edict(ent) {
+                    self.kick(KickBy::Client(sender), &words)?;
+                }
+            }
             // PHYS-10.7: "prespawn not valid -- allready spawned", and the same for spawn.
             b"prespawn" if stage == ClientStage::Connecting => {
                 return Ok(Some(SignonCommand::Prespawn));
@@ -211,7 +236,7 @@ impl SimCall<'_, '_, '_> {
     /// PHYS-11.4: `Host_Kill_f`.
     fn kill(&mut self, ent: usize) -> Result<(), RunError> {
         if self.float(ent, "health") <= 0.0 {
-            self.client_printf("Can't suicide -- allready dead!\n");
+            self.client_printf(ent, b"Can't suicide -- allready dead!\n");
             return Ok(());
         }
         self.set_time(self.clock());
@@ -227,7 +252,7 @@ impl SimCall<'_, '_, '_> {
         let flags = self.flags(ent) ^ flag;
         self.set_flags(ent, flags);
         let state = if flags & flag == 0 { "OFF" } else { "ON" };
-        self.client_printf(&format!("{what} {state}\n"));
+        self.client_printf(ent, format!("{what} {state}\n").as_bytes());
     }
 
     /// PHYS-11.3: `Host_Noclip_f` and `Host_Fly_f`: `movetype` becomes `to`, or `MOVETYPE_WALK`
@@ -239,7 +264,7 @@ impl SimCall<'_, '_, '_> {
             (to, "ON")
         };
         self.set_float(ent, "movetype", next.to_float());
-        self.client_printf(&format!("{what} {state}\n"));
+        self.client_printf(ent, format!("{what} {state}\n").as_bytes());
     }
 
     /// PHYS-11.6: `Host_Give_f`, the original game's: `give <n>` for a digit 2 to 9 adds the
@@ -270,7 +295,9 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// PHYS-11.7: `Host_Name_f`: one word, or with more the rest of the text, cut to 15 bytes,
-    /// is the client's name and its `netname`, and `svc_updatename` goes to every client.
+    /// is the client's name and its `netname`, and `svc_updatename` goes to every client; a
+    /// client with a name already, not "unconnected", that changes it is reported on the
+    /// host's console (NET-7.6).
     fn name(&mut self, ent: usize, words: &Words) {
         let mut name = match words.argv.len() {
             0 | 1 => return,
@@ -278,12 +305,25 @@ impl SimCall<'_, '_, '_> {
             _ => words.args.clone(),
         };
         name.truncate(NAME_LENGTH);
-        self.sim.messages.client.name.clone_from(&name);
+        let Some(id) = ClientId::of_edict(ent) else {
+            return;
+        };
+        let Some(slot) = self.sim.messages.clients.get_mut(id) else {
+            return;
+        };
+        let old = core::mem::replace(&mut slot.name, name.clone());
+        if !old.is_empty() && old != UNCONNECTED && old != name {
+            let mut line = old;
+            line.extend_from_slice(b" renamed to ");
+            line.extend_from_slice(&name);
+            line.push(b'\n');
+            self.sim.console_out.extend_from_slice(&line);
+        }
         let value = self.sim.mock.engine_mut().strings.make(name.clone());
         self.set_entity_raw(ent, "netname", value);
         let message = &mut self.sim.messages.reliable_datagram;
         message.write_byte(SVC_UPDATENAME);
-        message.write_byte(0);
+        message.write_byte(id.byte());
         message.write_string(&name);
     }
 
@@ -305,11 +345,16 @@ impl SimCall<'_, '_, '_> {
         let top = (top & COLOR_MASK).min(MAX_COLOR);
         let bottom = (bottom & COLOR_MASK).min(MAX_COLOR);
         let colors = top.wrapping_mul(COLOR_ROW).wrapping_add(bottom);
-        self.sim.messages.client.colors = colors;
+        let Some(id) = ClientId::of_edict(ent) else {
+            return;
+        };
+        if let Some(slot) = self.sim.messages.clients.get_mut(id) {
+            slot.colors = colors;
+        }
         self.set_float(ent, "team", int_to_float(bottom.wrapping_add(1)));
         let message = &mut self.sim.messages.reliable_datagram;
         message.write_byte(SVC_UPDATECOLORS);
-        message.write_byte(0);
+        message.write_byte(id.byte());
         message.write_byte(colors);
     }
 
@@ -317,7 +362,7 @@ impl SimCall<'_, '_, '_> {
     /// every client, and `svc_setpause` goes to every client; otherwise "Pause not allowed.".
     fn pause(&mut self, ent: usize) {
         if self.setting(Setting::Pausable) == 0.0 {
-            self.client_printf("Pause not allowed.\n");
+            self.client_printf(ent, b"Pause not allowed.\n");
             return;
         }
         self.sim.paused = !self.sim.paused;
@@ -329,20 +374,296 @@ impl SimCall<'_, '_, '_> {
         };
         let mut said = netname;
         said.extend_from_slice(format!(" {how} the game\n").as_bytes());
-        let message = &mut self.sim.messages.client.message;
-        message.write_byte(SVC_PRINT);
-        message.write_string(&said);
+        self.broadcast_print(&said);
         let paused = i32::from(self.sim.paused);
         let reliable = &mut self.sim.messages.reliable_datagram;
         reliable.write_byte(SVC_SETPAUSE);
         reliable.write_byte(paused);
     }
 
-    /// `SV_ClientPrintf`: `svc_print` and the text to the client.
-    fn client_printf(&mut self, text: &str) {
-        let message = &mut self.sim.messages.client.message;
-        message.write_byte(SVC_PRINT);
-        message.write_string(text.as_bytes());
+    /// `Host_Say` (NET-7.6): the rest of the text, a leading `"` and the last byte dropped
+    /// when it starts with one, after "^A<name>: ", cut to fit 64 bytes with its line feed,
+    /// printed to every active, spawned client; with `say_team` and `teamplay` set, only to
+    /// those whose `team` is the sender's.
+    fn say(&mut self, ent: usize, words: &Words, to: SayTo) {
+        if words.argv.len() < 2 {
+            return;
+        }
+        let Some(id) = ClientId::of_edict(ent) else {
+            return;
+        };
+        let name = self
+            .sim
+            .messages
+            .clients
+            .get(id)
+            .map_or_default(|slot| slot.name.clone());
+        let mut text = vec![SAY_COLOR];
+        text.extend_from_slice(&name);
+        text.extend_from_slice(b": ");
+        append_said(&mut text, &words.args);
+        let team_only = to == SayTo::Team && self.setting(Setting::Teamplay) != 0.0;
+        let team = self.float(ent, "team");
+        let heard: Vec<ClientId> = self
+            .sim
+            .messages
+            .clients
+            .iter()
+            .filter(|(_, slot)| slot.active && slot.spawned)
+            .map(|(other, _)| other)
+            .collect();
+        for other in heard {
+            // `client->edict->v.team != save->edict->v.team`, compared as floats.
+            #[expect(
+                clippy::float_cmp,
+                reason = "spec NET-7.6: Host_Say compares team exactly"
+            )]
+            let other_team = self.float(other.edict(), "team") != team;
+            if !(team_only && other_team) {
+                self.client_printf(other.edict(), &text);
+            }
+        }
+    }
+
+    /// `Host_Tell_f` (NET-7.6): "<name>: " and the text from the second word on, as `say`
+    /// cuts it, printed to the first active, spawned client whose name is the first word,
+    /// compared with `Q_strcasecmp`.
+    fn tell(&mut self, ent: usize, words: &Words) {
+        if words.argv.len() < TELL_WORDS {
+            return;
+        }
+        let Some(id) = ClientId::of_edict(ent) else {
+            return;
+        };
+        let clients = &self.sim.messages.clients;
+        let mut text = clients.get(id).map_or_default(|slot| slot.name.clone());
+        text.extend_from_slice(b": ");
+        append_said(&mut text, &words.args);
+        let to = words.argv.get(1).cloned().unwrap_or_default();
+        let found = clients
+            .iter()
+            .find(|(_, slot)| slot.active && slot.spawned && slot.name.eq_ignore_ascii_case(&to))
+            .map(|(other, _)| other);
+        if let Some(other) = found {
+            self.client_printf(other.edict(), &text);
+        }
+    }
+
+    /// `Host_Status_f` from a client (NET-7.6): `status_lines`, each printed to the client.
+    fn status(&mut self, ent: usize) {
+        for line in self.status_lines() {
+            self.client_printf(ent, &line);
+        }
+    }
+
+    /// `Host_Status_f`'s lines (PHYS-13.5, NET-7.6): the host's name, the version, the map,
+    /// how many clients are active of how many slots, and for each active one its number, name
+    /// cut to 16, frags and time connected, then its address; a local client's is `LOCAL`, the
+    /// loopback connection's, and a bot's `BOT`, and every one has been connected 0:00:00, as
+    /// the preview host keeps no wall clock (NET-7.6).
+    pub(crate) fn status_lines(&self) -> Vec<Vec<u8>> {
+        let hostname = self
+            .sim
+            .mock
+            .engine()
+            .cvars
+            .text("hostname")
+            .unwrap_or_default()
+            .to_owned();
+        let map = self.string_text(self.global("mapname").as_i32());
+        let clients = &self.sim.messages.clients;
+        let mut lines = vec![
+            format!("host:    {hostname}\n").into_bytes(),
+            format!("version: {VERSION}\n").into_bytes(),
+        ];
+        let mut map_line = b"map:     ".to_vec();
+        map_line.extend_from_slice(&map);
+        map_line.push(b'\n');
+        lines.push(map_line);
+        lines.push(
+            format!(
+                "players: {} active ({} max)\n\n",
+                clients.active_count(),
+                clients.max().get()
+            )
+            .into_bytes(),
+        );
+        for (id, slot) in clients.iter() {
+            if !slot.active {
+                continue;
+            }
+            let name = String::from_utf8_lossy(&slot.name).into_owned();
+            let frags = float_to_int(self.float(id.edict(), "frags"));
+            lines.push(
+                format!(
+                    "#{:<2} {name:<16.16}  {frags:3}   0:00:00\n",
+                    id.slot().saturating_add(1)
+                )
+                .into_bytes(),
+            );
+            let address = match slot.kind {
+                SlotKind::Local => "LOCAL",
+                SlotKind::Bot => "BOT",
+            };
+            lines.push(format!("   {address}\n").into_bytes());
+        }
+        lines
+    }
+
+    /// `Host_Ping_f` (NET-7.6): "Client ping times:", then for each active client the mean of
+    /// its last 16 ping times in milliseconds, truncated, and its name.
+    fn ping(&mut self, ent: usize) {
+        self.client_printf(ent, b"Client ping times:\n");
+        let lines: Vec<Vec<u8>> = self
+            .sim
+            .messages
+            .clients
+            .iter()
+            .filter(|(_, slot)| slot.active)
+            .map(|(_, slot)| {
+                let mut line = format!("{:4} ", slot.mean_ping_ms()).into_bytes();
+                line.extend_from_slice(&slot.name);
+                line.push(b'\n');
+                line
+            })
+            .collect();
+        for line in lines {
+            self.client_printf(ent, &line);
+        }
+    }
+
+    /// `Host_Kick_f` (NET-7.6): from a client, refused in deathmatch, as no client is
+    /// privileged; otherwise the client named, by `# <number>` or by its name compared with
+    /// `Q_strcasecmp`, is told "Kicked by <who>" and the reason when one follows, then
+    /// dropped. A client cannot kick itself; the host's console names no client of its own
+    /// (`host_client` is past the slots when its commands run), so it can kick any, its own
+    /// player too, and `who` is `_cl_name`.
+    pub(crate) fn kick(&mut self, by: KickBy, words: &Words) -> Result<(), RunError> {
+        if matches!(by, KickBy::Client(_)) && self.global("deathmatch").as_f32() != 0.0 {
+            return Ok(());
+        }
+        let clients = &self.sim.messages.clients;
+        let named = if words.argv.len() > 2 && words.argv.get(1).is_some_and(|w| w == b"#") {
+            KickNamed::ByNumber
+        } else {
+            KickNamed::ByName
+        };
+        let target = if named == KickNamed::ByNumber {
+            let n = words.argv.get(2).map_or(0.0, |w| c_atof(w));
+            usize::try_from(float_to_int(n - 1.0))
+                .ok()
+                .and_then(ClientId::new)
+                .filter(|&id| clients.is_active(id))
+        } else {
+            let name = words.argv.get(1).cloned().unwrap_or_default();
+            clients
+                .iter()
+                .find(|(_, slot)| slot.active && slot.name.eq_ignore_ascii_case(&name))
+                .map(|(id, _)| id)
+        };
+        let Some(target) = target else {
+            return Ok(());
+        };
+        let who = match by {
+            // "can't kick yourself!"
+            KickBy::Client(sender) if sender == target => return Ok(()),
+            KickBy::Client(sender) => clients.get(sender).map_or_default(|slot| slot.name.clone()),
+            KickBy::Console => self
+                .sim
+                .mock
+                .engine()
+                .cvars
+                .text("_cl_name")
+                .unwrap_or_default()
+                .as_bytes()
+                .to_vec(),
+        };
+        let mut text = b"Kicked by ".to_vec();
+        text.extend_from_slice(&who);
+        if let Some(reason) = words.kick_reason(named) {
+            text.extend_from_slice(b": ");
+            text.extend_from_slice(&reason);
+        }
+        text.push(b'\n');
+        self.client_printf(target.edict(), &text);
+        self.drop_client(target)
+    }
+
+    /// `SV_ClientPrintf`: `svc_print` and the text to client edict `ent`.
+    pub(crate) fn client_printf(&mut self, ent: usize, text: &[u8]) {
+        if let Some(slot) = self.sim.messages.clients.of_edict_mut(ent) {
+            slot.message.write_byte(SVC_PRINT);
+            slot.message.write_string(text);
+        }
+    }
+}
+
+/// Who a `kick` comes from (NET-7.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum KickBy {
+    /// A client's string command.
+    Client(ClientId),
+    /// The host's console, `cmd_source == src_command`.
+    Console,
+}
+
+/// Who a `say` reaches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SayTo {
+    /// `say`: every client.
+    All,
+    /// `say_team`: with `teamplay` set, the sender's team.
+    Team,
+}
+
+/// `Host_Say`'s and `Host_Tell_f`'s text after its prefix (NET-7.6): `Cmd_Args`, a leading `"`
+/// and the last byte dropped when it starts with one, cut so the text and its line feed fit
+/// 64 bytes with the terminator, then the line feed.
+fn append_said(text: &mut Vec<u8>, args: &[u8]) {
+    let mut said = args;
+    if let Some(rest) = said.strip_prefix(b"\"") {
+        said = rest.split_last().map_or(rest, |(_, kept)| kept);
+    }
+    let room = SAY_BUFFER
+        .saturating_sub(SAY_TAIL)
+        .saturating_sub(text.len());
+    text.extend_from_slice(said.get(..room).unwrap_or(said));
+    text.push(b'\n');
+}
+
+/// How `kick` names its client (NET-7.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KickNamed {
+    /// `kick # <n>`.
+    ByNumber,
+    /// `kick <name>`.
+    ByName,
+}
+
+impl Words {
+    /// `Host_Kick_f`'s reason (NET-7.6): with more than two words, `COM_Parse (Cmd_Args())`'s
+    /// rest past the first word; by number, past the `#`, the spaces after it and the number's
+    /// length too; then the spaces before it. `None` with two words or fewer.
+    fn kick_reason(&self, named: KickNamed) -> Option<Vec<u8>> {
+        if self.argv.len() <= 2 {
+            return None;
+        }
+        let mut parser = Parser::new(&self.args);
+        let _first = parser.next_token();
+        let mut rest = self.args.get(parser.position()..).unwrap_or_default();
+        if named == KickNamed::ByNumber {
+            // `message++`, the `#`; the spaces; the number's length.
+            rest = rest.get(1..).unwrap_or_default();
+            while let Some(after) = rest.strip_prefix(b" ") {
+                rest = after;
+            }
+            let number = self.argv.get(2).map_or(0, Vec::len);
+            rest = rest.get(number..).unwrap_or_default();
+        }
+        while let Some(after) = rest.strip_prefix(b" ") {
+            rest = after;
+        }
+        Some(rest.split(|&c| c == 0).next().unwrap_or_default().to_vec())
     }
 }
 

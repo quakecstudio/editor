@@ -490,7 +490,11 @@ impl Viewer {
         self.serve_bridge(ui);
         // The client reads what the server wrote and advances its clock by the server's
         // frame, as the host does when both run in one process.
-        let packets = self.game.world_mut().take_messages().packets;
+        let packets = self
+            .game
+            .world_mut()
+            .take_messages(qs_sim::ClientId::FIRST)
+            .packets;
         // CLIENT-10.2, CLIENT-10.6: a demo being recorded takes each packet, and one being
         // played is read in their place.
         match self.demos.frame(
@@ -980,7 +984,9 @@ impl Viewer {
         if drift.start {
             self.client.start_pitch_drift();
         }
-        self.game.world_mut().set_command(cmd);
+        self.game
+            .world_mut()
+            .set_command(qs_sim::ClientId::FIRST, cmd);
     }
 
     /// The keys the console takes (CON-4): the backquote toggles it, as id1's `default.cfg`

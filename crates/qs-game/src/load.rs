@@ -648,6 +648,9 @@ impl Args {
             startup,
             // EDICT-1.10, LIMIT-6.3: the game has id's limits.
             room: Room::default(),
+            // NET-7.1: one client, the player's.
+            maxplayers: qs_sim::MaxPlayers::SINGLE,
+            profile: qs_sim::EngineProfile::Id,
         };
         // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
         // it is one for this progs (LNO-4.1).
@@ -699,7 +702,10 @@ impl Args {
         let mut client = Client::new(qs_client::Game::Standard);
         let mut describer = Describer { read: reader()? };
         let mut rand = Rand(1);
-        let packets = game.world_mut().take_messages().packets;
+        let packets = game
+            .world_mut()
+            .take_messages(qs_sim::ClientId::FIRST)
+            .packets;
         // CLIENT-10.2: a demo being recorded takes the connection's messages as they are read.
         let events = match recorder {
             Some(recorder) => {

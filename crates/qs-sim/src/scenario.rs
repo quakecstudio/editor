@@ -11,7 +11,9 @@ use std::fmt;
 use qc_progs::Progs;
 use serde::Serialize;
 
-use crate::{CLIENT_EDICT, EditError, NamedValue, QcValue, State, UserCmd, World, WorldError};
+use crate::{
+    CLIENT_EDICT, ClientId, EditError, NamedValue, QcValue, State, UserCmd, World, WorldError,
+};
 
 /// One server frame's length when a scenario does not say: `Host_FilterTime`'s shortest.
 pub const SCN_FRAMETIME: Seconds = Seconds(1.0 / 72.0);
@@ -507,7 +509,7 @@ impl Scenario {
         for step in &self.steps {
             match step {
                 Step::Move(next) => cmd = *next,
-                Step::Command(text) => world.client_command(text),
+                Step::Command(text) => world.client_command(ClientId::FIRST, text),
                 Step::Console(text) => {
                     world.console(text);
                     world.console("\n");
@@ -530,21 +532,21 @@ impl Scenario {
                         // DIFF-16.1, PHYS-10.7: the client connects in frame 1 and answers each
                         // signon stage in the next frame, as the oracle's client does.
                         match frame {
-                            1 => world.connect_next_frame(),
-                            2 => world.client_command("prespawn"),
+                            1 => world.connect_next_frame(ClientId::FIRST),
+                            2 => world.client_command(ClientId::FIRST, "prespawn"),
                             3 => {
-                                world.client_command("name \"player\"\n");
-                                world.client_command("color 0 0\n");
-                                world.client_command("spawn ");
+                                world.client_command(ClientId::FIRST, "name \"player\"\n");
+                                world.client_command(ClientId::FIRST, "color 0 0\n");
+                                world.client_command(ClientId::FIRST, "spawn ");
                             }
-                            ENTERED => world.client_command("begin"),
+                            ENTERED => world.client_command(ClientId::FIRST, "begin"),
                             _ => {}
                         }
-                        world.set_command(cmd);
+                        world.set_command(ClientId::FIRST, cmd);
                         world
                             .frame(progs, self.frametime.get())
                             .map_err(|error| PlayError::Frame { frame, error })?;
-                        drop(world.take_messages());
+                        drop(world.take_messages(ClientId::FIRST));
                         // An impulse is sent once.
                         cmd.impulse = 0;
                         // SCN-2.1: the start once the player is in the game.

@@ -29,7 +29,8 @@ fn printed(run: &mut Running) -> Vec<String> {
 
 /// The string commands the console sent the server, as text.
 fn sent(run: &mut Running) -> Vec<String> {
-    core::mem::take(&mut run.world.commands)
+    run.world
+        .take_client_commands_sent()
         .iter()
         .map(|text| String::from_utf8_lossy(text).into_owned())
         .collect()
@@ -236,7 +237,7 @@ fn color_sets_both_colours() {
     );
 }
 
-// spec PHYS-13.5: status, version and the signon commands print what id's host prints from
+// spec PHYS-13.10: status, version and the signon commands print what id's host prints from
 // the server's console
 #[test]
 fn status_and_version_print_the_host() {
@@ -579,7 +580,7 @@ fn the_clients_commands_go_to_the_client() {
     }
     // CLIENT-10.10: what the console forwarded to the server can be taken from it unread.
     assert!(console(&mut run, "god\n").is_empty());
-    run.world.client_command("fly");
+    run.world.client_command(crate::ClientId::FIRST, "fly");
     let sent = run.world.take_client_commands_sent();
     assert_eq!(sent.len(), 2, "{sent:?}");
     assert!(sent[0].starts_with(b"god") && sent[1] == b"fly");

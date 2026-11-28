@@ -105,7 +105,7 @@ impl Running {
     }
 
     fn packets(&mut self) -> Vec<Vec<u8>> {
-        self.world.take_messages().packets
+        self.world.take_messages(crate::ClientId::FIRST).packets
     }
 }
 
@@ -250,7 +250,7 @@ fn framed(each: &str, pre: &str) -> Running {
 
 // spec NET-1.2: the datagram is cleared each frame before the moves and the physics
 // spec NET-1.5: a datagram is svc_time, the client data, the entities and then sv.datagram
-// spec NET-1.3: a spawned client is sent its datagram, then its reliable message when it
+// spec NET-1.6: a spawned client is sent its datagram, then its reliable message when it
 // holds anything
 #[test]
 fn a_frame_sends_the_datagram_then_the_reliable_message() {
@@ -348,7 +348,7 @@ fn frags_and_the_reliable_datagram_reach_the_client() {
     assert_eq!(packets[1], [77, 44, 1], "the frags did not change again");
 }
 
-// spec NET-1.3: after the messages are sent every edict loses EF_MUZZLEFLASH, so the flash
+// spec NET-1.6: after the messages are sent every edict loses EF_MUZZLEFLASH, so the flash
 // is sent once
 #[test]
 fn muzzle_flashes_are_sent_once() {
@@ -722,7 +722,8 @@ fn the_client_data_carries_the_player() {
 fn the_ideal_pitch_follows_the_floor() {
     let put = "self.idealpitch = 5; self.angles = '0 0 0'; setorigin(self, '0 0 24');";
     let mut run = player(&ledge(), put, "", "");
-    run.world.set_command(UserCmd::default());
+    run.world
+        .set_command(crate::ClientId::FIRST, UserCmd::default());
     run.frames(2, 0.1).unwrap();
     assert_eq!(run.world.float(1, "idealpitch"), 0.0, "flat ground");
     let put_deep = "self.idealpitch = 5; self.angles = '0 0 0'; setorigin(self, '80 0 24');";
@@ -793,7 +794,11 @@ fn the_builtins_bytes_match_the_mocks_counts() {
         assert_eq!(r.angle(), 0.0);
         assert!(r.done());
         assert!(
-            m.client.message.is_empty(),
+            m.clients
+                .get(crate::ClientId::FIRST)
+                .unwrap()
+                .message
+                .is_empty(),
             "lightstyle while loading writes to no client"
         );
     }
@@ -817,7 +822,12 @@ fn the_builtins_bytes_match_the_mocks_counts() {
         e.buffers.reliable, 0,
         "the MSG_ALL byte the mock counted went out with the reliable datagram (NET-1.4)"
     );
-    let packets = m.outbox.clone();
+    let packets = m
+        .clients
+        .get(crate::ClientId::FIRST)
+        .unwrap()
+        .outbox
+        .clone();
     let (_, _, rest) = datagram(&packets[0]);
     let mut r = Reader::new(&rest);
     assert_eq!(r.byte(), 6, "svc_sound");
@@ -866,7 +876,10 @@ fn the_builtins_bytes_match_the_mocks_counts() {
     assert_eq!(r.short(), 1, "WriteEntity");
     assert_eq!(r.byte(), 9, "the MSG_ALL write, appended last");
     assert!(r.done());
-    assert_eq!(m.client.message.max(), NET_MAX_MSGLEN);
+    assert_eq!(
+        m.clients.get(crate::ClientId::FIRST).unwrap().message.max(),
+        NET_MAX_MSGLEN
+    );
 }
 
 // spec NET-5.1: the mock's byte counts empty with the sim's buffers each frame, so a sound
@@ -903,7 +916,7 @@ fn the_spawn_message_drops_what_put_client_in_server_wrote() {
     );
 }
 
-// spec NET-1.3: an overflowed message is cleared and its flag reset, so the client's later
+// spec NET-1.6: an overflowed message is cleared and its flag reset, so the client's later
 // messages go out
 #[test]
 fn an_overflowed_message_starts_over() {
@@ -924,7 +937,7 @@ fn an_overflowed_message_starts_over() {
     assert_eq!(message.bytes(), [9]);
 }
 
-// spec NET-1.3: SV_CleanupEnts stores `(int)effects & ~EF_MUZZLEFLASH` for every edict, so a
+// spec NET-1.6: SV_CleanupEnts stores `(int)effects & ~EF_MUZZLEFLASH` for every edict, so a
 // fractional effects is truncated whether or not it flashes
 #[test]
 fn cleanup_truncates_every_edicts_effects() {
@@ -1018,7 +1031,14 @@ fn localsound_is_dropped_from_a_full_message() {
         let mut run =
             rerelease_player("localsound(self, \"misc/a.wav\");", BuiltinTable::Rerelease);
         run.packets();
-        let message = &mut run.world.builtins.messages.client.message;
+        let message = &mut run
+            .world
+            .builtins
+            .messages
+            .clients
+            .get_mut(crate::ClientId::FIRST)
+            .unwrap()
+            .message;
         while message.max() - message.len() > free {
             message.write_byte(1);
         }

@@ -28,6 +28,7 @@ use qs_bsp::Bsp;
 
 use crate::builtins::{FL_ONGROUND, SimCall};
 use crate::builtins::{PARM0, PARM1, PARM2, PARM3, PARM4};
+use crate::clients::{ClientId, Clients, MaxPlayers, SlotKind};
 use crate::collision::{CONTENTS_SOLID, MoveKind};
 use crate::physics::MoveType;
 use crate::protocol::{
@@ -122,6 +123,8 @@ const STAT_SECRETS: i32 = 13;
 const STAT_MONSTERS: i32 = 14;
 
 const SVC_UPDATESTAT: i32 = 3;
+/// `svc_disconnect` (`WinQuake/protocol.h`).
+pub(crate) const SVC_DISCONNECT: i32 = 2;
 const SVC_SETVIEW: i32 = 5;
 const SVC_SOUND: i32 = 6;
 const SVC_TIME: i32 = 7;
@@ -132,10 +135,10 @@ const SVC_LOCALSOUND: i32 = 56;
 const SVC_SETANGLE: i32 = 10;
 const SVC_SERVERINFO: i32 = 11;
 const SVC_LIGHTSTYLE: i32 = 12;
-const SVC_UPDATENAME: i32 = 13;
-const SVC_UPDATEFRAGS: i32 = 14;
+pub(crate) const SVC_UPDATENAME: i32 = 13;
+pub(crate) const SVC_UPDATEFRAGS: i32 = 14;
 const SVC_CLIENTDATA: i32 = 15;
-const SVC_UPDATECOLORS: i32 = 17;
+pub(crate) const SVC_UPDATECOLORS: i32 = 17;
 const SVC_PARTICLE: i32 = 18;
 const SVC_DAMAGE: i32 = 19;
 const SVC_SPAWNSTATIC: i32 = 20;
@@ -493,54 +496,20 @@ pub(crate) struct Baseline {
     scale: EntScale,
 }
 
-/// The one client slot, `client_t` (NET-1.3, NET-2).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ClientSlot {
-    pub(crate) active: bool,
-    pub(crate) spawned: bool,
-    sendsignon: bool,
-    /// `host_client->name`, which `spawn` gives its `netname` (PHYS-10.1).
-    pub(crate) name: Vec<u8>,
-    /// `host_client->colors`, `top * 16 + bottom`, whose bottom `spawn` gives its `team`
-    /// (PHYS-10.1).
-    pub(crate) colors: i32,
-    old_frags: i32,
-    /// Its reliable message, which may overflow (BUILTIN-13.4).
-    pub(crate) message: Message,
-}
-
-impl Default for ClientSlot {
-    fn default() -> Self {
-        Self {
-            active: false,
-            spawned: false,
-            sendsignon: false,
-            name: b"player".to_vec(),
-            colors: 0,
-            old_frags: 0,
-            message: Message::new(NET_MAX_MSGLEN, Overflow::Allowed),
-        }
-    }
-}
-
-/// The server's message state: the three shared buffers, the client slot, the baselines,
-/// the fat PVS data and what has been sent (NET-1.2).
+/// The server's message state: the three shared buffers, the client slots, the baselines
+/// and the fat PVS data (NET-1.2).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ServerMessages {
     pub(crate) datagram: Message,
     pub(crate) reliable_datagram: Message,
     pub(crate) signon: Message,
-    pub(crate) client: ClientSlot,
+    pub(crate) clients: Clients,
     pub(crate) baselines: Vec<Baseline>,
     pub(crate) vis: Vis,
     /// `standard_quake`: not `-rogue` or `-hipnotic` (NET-4.4).
     pub(crate) game: GameKind,
     /// The progs CRC the serverinfo names (NET-2.2).
     pub(crate) crc: i32,
-    /// The messages sent, oldest first, each one packet.
-    pub(crate) outbox: Vec<Vec<u8>>,
-    /// The last `svc_setangle`, as the client reads it (NET-4.3).
-    pub(crate) set_angle: Option<[f32; 3]>,
     /// `sv.protocol` and `sv.protocolflags` (NET-6.1).
     pub(crate) protocol: Protocol,
     /// Each edict's `ent->alpha`, QuakeSpasm's byte beside the fields, by edict number
@@ -553,18 +522,16 @@ pub(crate) struct ServerMessages {
 }
 
 impl ServerMessages {
-    pub(crate) fn new(bsp: &Bsp<'_>, crc: i32) -> Self {
+    pub(crate) fn new(bsp: &Bsp<'_>, crc: i32, max: MaxPlayers) -> Self {
         Self {
             datagram: Message::new(NET_MAX_DATAGRAM, Overflow::Fatal),
             reliable_datagram: Message::new(NET_MAX_DATAGRAM, Overflow::Fatal),
             signon: Message::new(NET_SIGNON_SIZE, Overflow::Fatal),
-            client: ClientSlot::default(),
+            clients: Clients::new(max),
             baselines: Vec::new(),
             vis: Vis::new(bsp),
             game: GameKind::Standard,
             crc,
-            outbox: Vec::new(),
-            set_angle: None,
             protocol: Protocol::NETQUAKE,
             alphas: Vec::new(),
             thinks: Vec::new(),
@@ -600,7 +567,16 @@ impl ServerMessages {
         self.datagram = self.message(sizes.datagram, Overflow::Fatal);
         self.reliable_datagram = self.message(sizes.datagram, Overflow::Fatal);
         self.signon = self.message(sizes.signon, Overflow::Fatal);
-        self.client.message = self.message(sizes.msglen, Overflow::Allowed);
+        let message = self.message(sizes.msglen, Overflow::Allowed);
+        for slot in self.clients.iter_mut() {
+            slot.message = message.clone();
+        }
+    }
+
+    /// A client's reliable message at the protocol's size, which may overflow
+    /// (`SV_ConnectClient`'s `allowoverflow = true`).
+    pub(crate) fn new_client_message(&self) -> Message {
+        self.message(self.sizes().msglen, Overflow::Allowed)
     }
 
     /// The sizes of the server's buffers in its protocol (NET-6.1).
@@ -696,7 +672,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     fn maxclients(&self) -> usize {
-        self.sim.mock.engine().clients_active.len()
+        self.sim.messages.clients.max().get()
     }
 
     /// Whether edict number `n` is a client slot, 1 to `maxclients`.
@@ -710,10 +686,17 @@ impl SimCall<'_, '_, '_> {
     /// (BUILTIN-11.1).
     pub(crate) fn mirror_bprint(&mut self) {
         let text = self.joined_text(0);
-        let client = &mut self.sim.messages.client;
-        if client.active && client.spawned {
-            client.message.write_byte(SVC_PRINT);
-            client.message.write_string(&text);
+        self.broadcast_print(&text);
+    }
+
+    /// `SV_BroadcastPrintf`: `svc_print` and `text` to every active, spawned client
+    /// (BUILTIN-11.1, NET-7.6).
+    pub(crate) fn broadcast_print(&mut self, text: &[u8]) {
+        for client in self.sim.messages.clients.iter_mut() {
+            if client.active && client.spawned {
+                client.message.write_byte(SVC_PRINT);
+                client.message.write_string(text);
+            }
         }
     }
 
@@ -722,13 +705,14 @@ impl SimCall<'_, '_, '_> {
     pub(crate) fn mirror_client_print(&mut self, svc: i32) {
         let value = self.context.parm_raw(PARM0);
         let n = self.edict_of(value);
-        if n != 1 || !self.is_client_slot(n) {
+        if !self.is_client_slot(n) {
             return;
         }
         let text = self.joined_text(1);
-        let message = &mut self.sim.messages.client.message;
-        message.write_byte(svc);
-        message.write_string(&text);
+        if let Some(client) = self.sim.messages.clients.of_edict_mut(n) {
+            client.message.write_byte(svc);
+            client.message.write_string(&text);
+        }
     }
 
     /// `localsound (client, sample)`, `PF_localsound` and `SV_LocalSound` (RRE-2.1): to a
@@ -764,7 +748,10 @@ impl SimCall<'_, '_, '_> {
             return Ok(());
         }
         let index = i32::try_from(index).unwrap_or(0);
-        let message = &mut self.sim.messages.client.message;
+        let Some(client) = self.sim.messages.clients.of_edict_mut(n) else {
+            return Ok(());
+        };
+        let message = &mut client.message;
         if message.len() > message.max().saturating_sub(LOCALSOUND_BYTES) {
             return Ok(());
         }
@@ -798,13 +785,12 @@ impl SimCall<'_, '_, '_> {
     /// `stuffcmd`: `svc_stufftext` and PARM1 to the client (BUILTIN-11.4).
     pub(crate) fn mirror_stuffcmd(&mut self) {
         let value = self.context.parm_raw(PARM0);
-        if self.edict_of(value) != 1 {
-            return;
-        }
+        let n = self.edict_of(value);
         let text = self.string_text(self.context.parm_raw(PARM1));
-        let message = &mut self.sim.messages.client.message;
-        message.write_byte(SVC_STUFFTEXT);
-        message.write_string(&text);
+        if let Some(client) = self.sim.messages.clients.of_edict_mut(n) {
+            client.message.write_byte(SVC_STUFFTEXT);
+            client.message.write_string(&text);
+        }
     }
 
     /// `sound`'s bytes to the unreliable datagram (BUILTIN-12.3), once the mock has
@@ -945,11 +931,12 @@ impl SimCall<'_, '_, '_> {
         }
         let style = float_to_int(self.context.parm_float(PARM0));
         let value = self.string_text(self.context.parm_raw(PARM1));
-        let client = &mut self.sim.messages.client;
-        if client.active || client.spawned {
-            client.message.write_byte(SVC_LIGHTSTYLE);
-            client.message.write_byte(style);
-            client.message.write_string(&value);
+        for client in self.sim.messages.clients.iter_mut() {
+            if client.active || client.spawned {
+                client.message.write_byte(SVC_LIGHTSTYLE);
+                client.message.write_byte(style);
+                client.message.write_string(&value);
+            }
         }
     }
 
@@ -1035,15 +1022,18 @@ impl SimCall<'_, '_, '_> {
         self.sim.messages.alpha(ent)
     }
 
-    /// The buffer a `Write*` builtin's PARM0 names (BUILTIN-13.1), `None` for a client
-    /// other than ours.
+    /// The buffer a `Write*` builtin's PARM0 names (BUILTIN-13.1), `None` for an edict that is
+    /// no client slot.
     fn write_dest(&mut self) -> Option<&mut Message> {
         let to = float_to_int(self.context.parm_float(PARM0));
         let msg_entity = self.edict_of(self.global("msg_entity").as_i32());
         let messages = &mut self.sim.messages;
         match to {
             0 => Some(&mut messages.datagram),
-            1 => (msg_entity == 1).then_some(&mut messages.client.message),
+            1 => messages
+                .clients
+                .of_edict_mut(msg_entity)
+                .map(|client| &mut client.message),
             2 => Some(&mut messages.reliable_datagram),
             3 => Some(&mut messages.signon),
             _ => None,
@@ -1181,8 +1171,8 @@ impl SimCall<'_, '_, '_> {
         Ok(())
     }
 
-    /// `SV_SendServerinfo` (NET-2.2), to the client of edict `client`.
-    pub(crate) fn send_serverinfo(&mut self, client: usize) {
+    /// `SV_SendServerinfo` (NET-2.2), to client `client`.
+    pub(crate) fn send_serverinfo(&mut self, client: ClientId) {
         let engine = self.sim.mock.engine();
         let cvar = |name: &str| {
             engine
@@ -1222,7 +1212,9 @@ impl SimCall<'_, '_, '_> {
         let crc = self.sim.messages.crc;
         let message_text = self.string_text(self.entity_raw(0, "message"));
         let track = float_to_int(self.float(0, "sounds"));
-        let slot = &mut self.sim.messages.client;
+        let Some(slot) = self.sim.messages.clients.get_mut(client) else {
+            return;
+        };
         let message = &mut slot.message;
         message.write_byte(SVC_PRINT);
         message.write_string(format!("\x02\nVERSION {NET_VERSION} SERVER ({crc} CRC)").as_bytes());
@@ -1246,7 +1238,7 @@ impl SimCall<'_, '_, '_> {
         message.write_byte(track);
         message.write_byte(track);
         message.write_byte(SVC_SETVIEW);
-        message.write_short(i32::try_from(client).unwrap_or(0));
+        message.write_short(i32::try_from(client.edict()).unwrap_or(0));
         message.write_byte(SVC_SIGNONNUM);
         message.write_byte(1);
         slot.sendsignon = true;
@@ -1254,9 +1246,11 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `Host_PreSpawn_f` (NET-2.3).
-    pub(crate) fn prespawn(&mut self) {
+    pub(crate) fn prespawn(&mut self, client: ClientId) {
         let signon = self.sim.messages.signon.bytes().to_vec();
-        let slot = &mut self.sim.messages.client;
+        let Some(slot) = self.sim.messages.clients.get_mut(client) else {
+            return;
+        };
         slot.message.write_bytes(&signon);
         slot.message.write_byte(SVC_SIGNONNUM);
         slot.message.write_byte(2);
@@ -1265,17 +1259,18 @@ impl SimCall<'_, '_, '_> {
 
     /// A signon stage's message sent, as `SV_SendClientMessages` sends it at the end of the
     /// stage's frame when `sendsignon` is set (NET-1.3).
-    pub(crate) fn flush_signon(&mut self) {
-        let slot = &mut self.sim.messages.client;
+    pub(crate) fn flush_signon(&mut self, client: ClientId) {
+        let Some(slot) = self.sim.messages.clients.get_mut(client) else {
+            return;
+        };
         if slot.sendsignon && !slot.message.is_empty() {
-            let packet = slot.message.take();
-            self.sim.messages.outbox.push(packet);
+            slot.send_message();
         }
         slot.sendsignon = false;
     }
 
     /// `Host_Spawn_f`'s message, after the client has entered (NET-2.4).
-    pub(crate) fn spawn_message(&mut self, client: usize) -> Result<(), RunError> {
+    pub(crate) fn spawn_message(&mut self, client: ClientId) -> Result<(), RunError> {
         let time = double_to_float(self.clock());
         let styles: Vec<Vec<u8>> = (0..MAX_LIGHTSTYLES)
             .map(|i| {
@@ -1295,28 +1290,36 @@ impl SimCall<'_, '_, '_> {
             (STAT_MONSTERS, "killed_monsters"),
         ]
         .map(|(stat, name)| (stat, float_to_int(self.global(name).as_f32())));
-        let angles = self.vector(client, "angles");
-        let maxclients = self.maxclients();
+        let angles = self.vector(client.edict(), "angles");
+        // NET-7.5: every slot's name, frags and colours, the slot's own among them.
+        let scores: Vec<(Vec<u8>, i32, i32)> = self
+            .sim
+            .messages
+            .clients
+            .iter()
+            .map(|(_, slot)| (slot.name.clone(), slot.old_frags, slot.colors))
+            .collect();
         {
-            let slot = &mut self.sim.messages.client;
-            let (name, colors, old_frags) = (slot.name.clone(), slot.colors, slot.old_frags);
+            let Some(slot) = self.sim.messages.clients.get_mut(client) else {
+                return Ok(());
+            };
             let message = &mut slot.message;
             // "send all current names, colors, and frag counts": `SZ_Clear` first, so what
             // `ClientConnect` and `PutClientInServer` wrote to the client is dropped.
             message.clear();
             message.write_byte(SVC_TIME);
             message.write_float(time);
-            for i in 0..maxclients {
+            for (i, (name, old_frags, colors)) in scores.iter().enumerate() {
                 let i = i32::try_from(i).unwrap_or(0);
                 message.write_byte(SVC_UPDATENAME);
                 message.write_byte(i);
-                message.write_string(&name);
+                message.write_string(name);
                 message.write_byte(SVC_UPDATEFRAGS);
                 message.write_byte(i);
-                message.write_short(old_frags);
+                message.write_short(*old_frags);
                 message.write_byte(SVC_UPDATECOLORS);
                 message.write_byte(i);
-                message.write_byte(colors);
+                message.write_byte(*colors);
             }
             for (i, style) in styles.iter().enumerate() {
                 message.write_byte(SVC_LIGHTSTYLE);
@@ -1335,8 +1338,10 @@ impl SimCall<'_, '_, '_> {
         }
         let msglen = self.sim.messages.sizes().msglen;
         let mut data = self.sim.messages.message(msglen, Overflow::Allowed);
-        self.write_clientdata(client, &mut data)?;
-        let slot = &mut self.sim.messages.client;
+        self.write_clientdata(client.edict(), &mut data)?;
+        let Some(slot) = self.sim.messages.clients.get_mut(client) else {
+            return Ok(());
+        };
         slot.message.write_bytes(data.bytes());
         slot.message.write_byte(SVC_SIGNONNUM);
         slot.message.write_byte(SIGNON_BEGIN);
@@ -1347,39 +1352,51 @@ impl SimCall<'_, '_, '_> {
     /// `Host_Begin_f` (NET-2.5), and the signon messages sent as one reliable packet: the
     /// local client answered each stage at once, so the datagrams start with the next
     /// frame.
-    pub(crate) fn begin(&mut self) {
-        let slot = &mut self.sim.messages.client;
+    pub(crate) fn begin(&mut self, client: ClientId) {
+        let Some(slot) = self.sim.messages.clients.get_mut(client) else {
+            return;
+        };
         slot.spawned = true;
         slot.sendsignon = false;
         if !slot.message.is_empty() {
-            let packet = slot.message.take();
-            self.sim.messages.outbox.push(packet);
+            slot.send_message();
         }
     }
 
     // ---- each frame (NET-1, NET-3, NET-4) ----
 
-    /// `SV_SendClientMessages` (NET-1.3) for the one client: the reliable updates, its
-    /// datagram when it is spawned, its message when it holds anything, then the muzzle
-    /// flashes cleared.
+    /// `SV_SendClientMessages` (NET-1.3): the reliable updates, then for each active client
+    /// its datagram when it is spawned, and its message when it holds anything, then the
+    /// muzzle flashes cleared.
     pub(crate) fn send_client_messages(&mut self) -> Result<(), RunError> {
         self.update_to_reliable_messages();
-        let slot = &self.sim.messages.client;
-        if slot.active {
-            if slot.spawned {
-                let datagram = self.client_datagram(1)?;
-                self.sim.messages.outbox.push(datagram);
+        for id in self.sim.messages.clients.max().ids() {
+            let Some(slot) = self.sim.messages.clients.get(id) else {
+                continue;
+            };
+            if !slot.active {
+                continue;
             }
-            let slot = &mut self.sim.messages.client;
+            // NET-7.3: a bot is sent no datagram.
+            if slot.spawned && slot.kind == SlotKind::Local {
+                let datagram = self.client_datagram(id.edict())?;
+                let time = double_to_float(self.clock());
+                if let Some(slot) = self.sim.messages.clients.get_mut(id) {
+                    slot.send_packet(datagram);
+                    slot.last_time = time;
+                }
+            }
+            let Some(slot) = self.sim.messages.clients.get_mut(id) else {
+                continue;
+            };
             if slot.spawned || slot.sendsignon {
                 if slot.message.overflowed() {
-                    // `SV_DropClient` and `overflowed = false`: the one client stays, its
-                    // message starts over.
+                    // `SV_DropClient` and `overflowed = false`: a local client stays, its
+                    // message starts over (NET-1.3).
                     slot.message.clear();
                     slot.message.reset_overflow();
                 } else if !slot.message.is_empty() {
-                    let packet = slot.message.take();
-                    self.sim.messages.outbox.push(packet);
+                    slot.send_message();
                 }
                 slot.sendsignon = false;
             }
@@ -1398,19 +1415,32 @@ impl SimCall<'_, '_, '_> {
         Ok(())
     }
 
-    /// `SV_UpdateToReliableMessages` (NET-1.4).
+    /// `SV_UpdateToReliableMessages` (NET-1.4): each slot whose edict's `frags` changed sends
+    /// `svc_updatefrags` to every active client, then the reliable datagram goes to every
+    /// active client and is cleared.
     pub(crate) fn update_to_reliable_messages(&mut self) {
-        let frags = float_to_int(self.float(1, "frags"));
-        let reliable = self.sim.messages.reliable_datagram.take();
-        let slot = &mut self.sim.messages.client;
-        if slot.old_frags != frags && slot.active {
-            slot.message.write_byte(SVC_UPDATEFRAGS);
-            slot.message.write_byte(0);
-            slot.message.write_short(frags);
+        for id in self.sim.messages.clients.max().ids() {
+            let frags = float_to_int(self.float(id.edict(), "frags"));
+            let clients = &mut self.sim.messages.clients;
+            if !clients.get(id).is_some_and(|slot| slot.old_frags != frags) {
+                continue;
+            }
+            for client in clients.iter_mut() {
+                if client.active {
+                    client.message.write_byte(SVC_UPDATEFRAGS);
+                    client.message.write_byte(id.byte());
+                    client.message.write_short(frags);
+                }
+            }
+            if let Some(slot) = clients.get_mut(id) {
+                slot.old_frags = frags;
+            }
         }
-        slot.old_frags = frags;
-        if slot.active {
-            slot.message.write_bytes(&reliable);
+        let reliable = self.sim.messages.reliable_datagram.take();
+        for client in self.sim.messages.clients.iter_mut() {
+            if client.active {
+                client.message.write_bytes(&reliable);
+            }
         }
     }
 
@@ -1659,7 +1689,9 @@ impl SimCall<'_, '_, '_> {
                 msg.write_angle(angle);
             }
             let protocol = msg.protocol();
-            self.sim.messages.set_angle = Some(angles.map(|a| protocol.wire_angle(a)));
+            if let Some(client) = self.sim.messages.clients.of_edict_mut(ent) {
+                client.set_angle = Some(angles.map(|a| protocol.wire_angle(a)));
+            }
             self.set_float(ent, "fixangle", 0.0);
         }
         // NET-4.4: the bits.

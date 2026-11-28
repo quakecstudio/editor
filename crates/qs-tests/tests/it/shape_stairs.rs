@@ -161,23 +161,26 @@ fn a_player_walks_up_the_default_stairs() {
     world.settle(&progs).unwrap();
     world.connect(&progs).unwrap();
     world.frame(&progs, FRAME).unwrap();
-    let (eye, _) = world.player_view().unwrap();
+    let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
     assert!(
         (eye[2] - (STANDING + EYE)).abs() < 1.0,
         "starts on the floor: {eye:?}"
     );
-    world.set_command(UserCmd {
-        angles: [0.0; 3],
-        forward: 320.0,
-        ..UserCmd::default()
-    });
+    world.set_command(
+        qs_sim::ClientId::FIRST,
+        UserCmd {
+            angles: [0.0; 3],
+            forward: 320.0,
+            ..UserCmd::default()
+        },
+    );
     // At 320 units a second the player is past the stairs, on the landing, within two seconds;
     // the landing runs to x = 640.
     let top = 96.0 + STANDING + EYE;
     let mut landed = None;
     for _ in 0..144 {
         world.frame(&progs, FRAME).unwrap();
-        let (eye, _) = world.player_view().unwrap();
+        let (eye, _) = world.player_view(qs_sim::ClientId::FIRST).unwrap();
         if eye[0] > 240.0 && eye[0] < 600.0 {
             landed = Some(eye);
             break;
