@@ -229,9 +229,6 @@ struct HostWords {
     settings: Vec<(String, String)>,
 }
 
-/// `Host_FindMaxClients`' count for `-listen` with no number after it, or one below 1.
-const LISTEN_DEFAULT: i32 = 8;
-
 impl HostWords {
     /// The slots `-listen` chooses as `Host_FindMaxClients` reads it, `deathmatch` 1 for more
     /// than one (NET-7.1), then each `+<name> <value>` pair as a setting.
@@ -240,8 +237,12 @@ impl HostWords {
         if let Some(at) = words.iter().position(|w| w == "-listen") {
             let count = words
                 .get(at.saturating_add(1))
-                .map_or(LISTEN_DEFAULT, |next| atoi(next.as_bytes()));
-            maxplayers = MaxPlayers::new(if count < 1 { LISTEN_DEFAULT } else { count });
+                .map_or(qs_sim::LISTEN_SLOTS, |next| atoi(next.as_bytes()));
+            maxplayers = MaxPlayers::new(if count < 1 {
+                qs_sim::LISTEN_SLOTS
+            } else {
+                count
+            });
         }
         let mut settings = Vec::new();
         if maxplayers.is_multiplayer() {

@@ -7,7 +7,7 @@
 
 use eframe::egui::{self, RichText, Ui};
 use qs_workbench::engine::BotSkillParam;
-use qs_workbench::{GameMode, GameOptions, MAX_CLIENTS, MAX_LOCAL_PLAYERS};
+use qs_workbench::{GameMode, GameOptions, MAX_LOCAL_PLAYERS, MAX_SCOREBOARD};
 
 use crate::strings::{Text, game_mode, play_plan, play_summary};
 use crate::theme::{Theme, Token};
@@ -76,7 +76,9 @@ fn choices(ui: &mut Ui, theme: &Theme, options: &mut GameOptions) {
                 ui.label(muted(Text::LocalPlayersNote.get()));
                 ui.end_row();
                 ui.label(Text::Bots.get());
-                let room = MAX_CLIENTS.saturating_sub(options.players);
+                let room = u8::try_from(MAX_SCOREBOARD)
+                    .unwrap_or(u8::MAX)
+                    .saturating_sub(options.players);
                 options.bots = options.bots.min(room);
                 let bots = egui::ComboBox::from_id_salt(Text::Bots)
                     .selected_text(bot_name(options.bots))

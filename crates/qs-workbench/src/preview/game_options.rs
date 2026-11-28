@@ -10,14 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::engine::BotSkillParam;
 
-/// The most players on this machine: the first in the Game tab or the docked window, each
-/// other one in a window of its own.
-pub const MAX_LOCAL_PLAYERS: u8 = 4;
-/// The most clients a game has, players and bots together, `MAX_SCOREBOARD` (NET-7.1).
-pub const MAX_CLIENTS: u8 = 16;
-/// The slots a coop or deathmatch game has at least, `-listen`'s 8 (NET-7.1), so a bot can
-/// still be brought in once it plays (`game.add_bot`).
-const LISTEN_SLOTS: u8 = 8;
+pub use qs_sim::{MAX_LOCAL_PLAYERS, MAX_SCOREBOARD};
 
 /// Which game a Play starts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -89,8 +82,8 @@ pub enum GameOptionsError {
     SinglePlayerAlone,
     /// The players on this machine are 1 to [`MAX_LOCAL_PLAYERS`].
     Players(u8),
-    /// Players and bots together are [`MAX_CLIENTS`] at most.
-    Clients(u16),
+    /// Players and bots together are [`MAX_SCOREBOARD`] at most.
+    Clients(usize),
 }
 
 impl core::fmt::Display for GameOptionsError {
@@ -104,7 +97,10 @@ impl core::fmt::Display for GameOptionsError {
                 f,
                 "{n} players on this machine: a game has 1 to {MAX_LOCAL_PLAYERS}"
             ),
-            Self::Clients(n) => write!(f, "{n} players and bots: a game has {MAX_CLIENTS} at most"),
+            Self::Clients(n) => write!(
+                f,
+                "{n} players and bots: a game has {MAX_SCOREBOARD} at most"
+            ),
         }
     }
 }
@@ -123,8 +119,8 @@ impl GameOptions {
         if !(1..=MAX_LOCAL_PLAYERS).contains(&self.players) {
             return Err(GameOptionsError::Players(self.players));
         }
-        let clients = u16::from(self.players).saturating_add(u16::from(self.bots));
-        if clients > u16::from(MAX_CLIENTS) {
+        let clients = usize::from(self.players).saturating_add(usize::from(self.bots));
+        if clients > MAX_SCOREBOARD {
             return Err(GameOptionsError::Clients(clients));
         }
         if !self.mode.is_multiplayer() {
@@ -134,10 +130,12 @@ impl GameOptions {
                 Ok(Vec::new())
             };
         }
-        let slots = clients.max(u16::from(LISTEN_SLOTS));
+        let slots = i32::try_from(clients)
+            .unwrap_or(qs_sim::LISTEN_SLOTS)
+            .max(qs_sim::LISTEN_SLOTS);
         let mut words = vec!["-listen".to_owned(), slots.to_string()];
         if self.mode == GameMode::Coop {
-            words.push("--coop".to_owned());
+            words.extend(["--rules".to_owned(), "coop".to_owned()]);
         }
         if self.players > 1 {
             words.extend(["--players".to_owned(), self.players.to_string()]);

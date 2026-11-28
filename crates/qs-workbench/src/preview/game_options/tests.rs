@@ -5,7 +5,10 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
-use super::{GameMode, GameOptions, GameOptionsError, MAX_CLIENTS, MAX_LOCAL_PLAYERS};
+use super::{GameMode, GameOptions, GameOptionsError, MAX_LOCAL_PLAYERS};
+
+/// Every client slot, players and bots together, as a count of bots.
+const MAX_CLIENTS: u8 = 16;
 use crate::preview::engine::BotSkillParam;
 
 fn words(options: GameOptions) -> Vec<String> {
@@ -45,12 +48,12 @@ fn deathmatch_listens() {
     );
 }
 
-// spec DIFF-3.2: coop is `--coop` beside -listen
+// spec DIFF-3.2: coop is `--rules coop` beside -listen
 #[test]
 fn coop_says_so() {
     assert_eq!(
         words(options(GameMode::Coop, 1, 0)),
-        ["-listen", "8", "--coop"]
+        ["-listen", "8", "--rules", "coop"]
     );
 }
 

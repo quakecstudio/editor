@@ -72,7 +72,7 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::preview::game_options::{
-    GameMode, GameOptions, GameOptionsError, MAX_CLIENTS, MAX_LOCAL_PLAYERS,
+    GameMode, GameOptions, GameOptionsError, MAX_LOCAL_PLAYERS, MAX_SCOREBOARD,
 };
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
