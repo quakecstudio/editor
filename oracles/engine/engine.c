@@ -225,32 +225,39 @@ int Sys_FileTime(char *path) {
 
 void Sys_mkdir(char *path) { (void)path; }
 
-// ---- the network: one local client, whose messages the script gives ----
+// ---- the network: local clients, whose messages the script gives ----
 
-static qsocket_t client_socket;
-static qboolean client_offered;
-// The messages the client sends in the next frame, each one SV_ReadClientMessage reads.
+// The local clients, as many as the script's `players` line says, one by default: each its
+// own connection, whose messages come from the script.
+static qsocket_t client_sockets[MAX_SCOREBOARD];
+static int players = 1;
+static int clients_offered;
+// The messages each client sends in the next frame, each one SV_ReadClientMessage reads.
 #define QS_MAX_MESSAGES 64
-static sizebuf_t outgoing[QS_MAX_MESSAGES];
-static byte outgoing_data[QS_MAX_MESSAGES][MAX_MSGLEN];
-static int outgoing_count;
-static int outgoing_read;
+static sizebuf_t outgoing[MAX_SCOREBOARD][QS_MAX_MESSAGES];
+static byte outgoing_data[MAX_SCOREBOARD][QS_MAX_MESSAGES][MAX_MSGLEN];
+static int outgoing_count[MAX_SCOREBOARD];
+static int outgoing_read[MAX_SCOREBOARD];
 
-// NET_CheckNewConnections: the client connects once, before the first frame's messages.
+// NET_CheckNewConnections: each client connects once, in the first frame, in order; the
+// server's SV_CheckForNewClients takes every one waiting, each in the first free slot.
 qsocket_t *NET_CheckNewConnections(void) {
-    if (client_offered)
+    if (clients_offered >= players)
         return NULL;
-    client_offered = true;
-    strcpy(client_socket.address, "local");
-    return &client_socket;
+    qsocket_t *socket = &client_sockets[clients_offered++];
+    strcpy(socket->address, "local");
+    return socket;
 }
 
-// NET_GetMessage: each queued message once, then "nothing more this frame".
+// The client a connection is, from 0.
+static int client_of(qsocket_t *sock) { return (int)(sock - client_sockets); }
+
+// NET_GetMessage: each message a client queued, once, then "nothing more this frame".
 int NET_GetMessage(qsocket_t *sock) {
-    (void)sock;
-    if (outgoing_read >= outgoing_count)
+    int client = client_of(sock);
+    if (outgoing_read[client] >= outgoing_count[client])
         return 0;
-    sizebuf_t *message = &outgoing[outgoing_read++];
+    sizebuf_t *message = &outgoing[client][outgoing_read[client]++];
     SZ_Clear(&net_message);
     SZ_Write(&net_message, message->data, message->cursize);
     MSG_BeginReading();
@@ -283,24 +290,25 @@ qboolean NET_CanSendMessage(qsocket_t *sock) {
 
 void NET_Close(qsocket_t *sock) { (void)sock; }
 
-static sizebuf_t *new_message(void) {
-    if (outgoing_count >= QS_MAX_MESSAGES) {
+static sizebuf_t *new_message(int client) {
+    if (outgoing_count[client] >= QS_MAX_MESSAGES) {
         fprintf(stderr, "engine-oracle: more than %d messages in one frame\n", QS_MAX_MESSAGES);
         exit(QS_EXIT_REFUSED);
     }
-    sizebuf_t *message = &outgoing[outgoing_count];
-    message->data = outgoing_data[outgoing_count];
+    sizebuf_t *message = &outgoing[client][outgoing_count[client]];
+    message->data = outgoing_data[client][outgoing_count[client]];
     message->maxsize = MAX_MSGLEN;
     message->cursize = 0;
     message->allowoverflow = false;
     message->overflowed = false;
-    outgoing_count++;
+    outgoing_count[client]++;
     return message;
 }
 
-// A clc_stringcmd, as the client sends a console command to the server (CL_ForwardToServer).
-static void send_command(const char *text) {
-    sizebuf_t *message = new_message();
+// A clc_stringcmd, as client `client` sends a console command to the server
+// (CL_ForwardToServer).
+static void send_command(int client, const char *text) {
+    sizebuf_t *message = new_message(client);
     MSG_WriteByte(message, clc_stringcmd);
     MSG_WriteString(message, (char *)text);
 }
@@ -314,8 +322,8 @@ typedef struct {
     int impulse;
 } move_t;
 
-static void send_move(const move_t *move) {
-    sizebuf_t *message = new_message();
+static void send_move(int client, const move_t *move) {
+    sizebuf_t *message = new_message(client);
     MSG_WriteByte(message, clc_move);
     MSG_WriteFloat(message, (float)realtime);
     for (int i = 0; i < 3; i++)
@@ -400,8 +408,13 @@ void qs_emit_string_records(void) {
 
 // ---- the host ----
 
-// Host_InitLocal, without the parts of Host_FindMaxClients for a listen server: one client
-// slot, as single player has, on a dedicated server.
+// host.c's, copied unchanged (the [[extract]] entries of oracles/sources.toml); no header of
+// id's declares it.
+void Host_FindMaxClients(void);
+
+// Host_InitLocal, with id's Host_FindMaxClients: the slots `-listen [n]` gives, one without
+// it, and deathmatch 1 for more than one (NET-7.1). The host then stays a dedicated server, so
+// `map` connects no client of its own (Host_Map_f).
 static void init_local(void) {
     Host_InitCommands();
     Cvar_RegisterVariable(&host_framerate);
@@ -424,10 +437,8 @@ static void init_local(void) {
     Cvar_RegisterVariable(&hostname);
     Cvar_RegisterVariable(&cl_name);
     Cvar_RegisterVariable(&cl_color);
+    Host_FindMaxClients();
     cls.state = ca_dedicated;
-    svs.maxclients = 1;
-    svs.maxclientslimit = 4;
-    svs.clients = Hunk_AllocName(svs.maxclientslimit * sizeof(client_t), "clients");
     // R_InitTextures, which a game with a client runs and a dedicated server does not: the
     // texture a texinfo whose texture is missing is given (Mod_LoadTexinfo), a 16 by 16
     // checkerboard and its mips, its name all zeros. Without it, such a map crashes the server
@@ -444,27 +455,32 @@ static void init_local(void) {
             for (int x = 0; x < (16 >> m); x++)
                 *dest++ = ((y < (8 >> m)) ^ (x < (8 >> m))) ? 0 : 0xff;
     }
-    Cvar_SetValue("deathmatch", 0.0);
     host_time = 1.0;
 }
 
-// CL_SignonReply's answers, each in the frame after the server's signon message that asks for
-// it, as a local client sends them: the client connects in frame 1 (SV_CheckForNewClients),
-// sends prespawn in frame 2, its name and colour (cl_name and cl_color, "player" and 0 by
-// default) and spawn in frame 3, and begin in frame 4. Sent all in one frame, the signon and
-// the spawn messages of a large map overflow the client's message, and the server drops it.
-static void signon_reply(unsigned frame) {
+// CL_SignonReply's answers of client `client`, each in the frame after the server's signon
+// message that asks for it, as a local client sends them: every client connects in frame 1
+// (SV_CheckForNewClients), sends prespawn in frame 2, its name and colour (cl_name and
+// cl_color: "player" and 0 for the first, "player<n>" and 0 for client n after it, NET-7.13)
+// and spawn in frame 3, and begin in frame 4. Sent all in one frame, the signon and the spawn
+// messages of a large map overflow the client's message, and the server drops it.
+static void signon_reply(int client, unsigned frame) {
+    char name[32];
     switch (frame) {
     case 2:
-        send_command("prespawn");
+        send_command(client, "prespawn");
         break;
     case 3:
-        send_command("name \"player\"\n");
-        send_command("color 0 0\n");
-        send_command("spawn ");
+        if (client == 0)
+            snprintf(name, sizeof(name), "name \"player\"\n");
+        else
+            snprintf(name, sizeof(name), "name \"player%d\"\n", client + 1);
+        send_command(client, name);
+        send_command(client, "color 0 0\n");
+        send_command(client, "spawn ");
         break;
     case 4:
-        send_command("begin");
+        send_command(client, "begin");
         break;
     default:
         break;
@@ -541,6 +557,9 @@ static void start(int argc, char **argv, const char *map, const char *trace_path
     host_hunklevel = Hunk_LowMark();
     host_initialized = true;
 
+    // quake.rc's `stuffcmds`: the command line's `+<command>` words, such as `+coop 1`, run
+    // before the map loads.
+    Cbuf_AddText("stuffcmds\n");
     char command[MAX_QPATH + 8];
     snprintf(command, sizeof(command), "map %s\n", map);
     Cbuf_AddText(command);
@@ -556,6 +575,19 @@ static void start(int argc, char **argv, const char *map, const char *trace_path
     // TRACE-4.12: frame 0, the state the map loaded to.
     qs_trace_state(0);
 
+}
+
+// A `#<n>` before a line's rest names local client n, from 1, of the `players` the script
+// has; the first without one. The rest after it.
+static int read_client(char **rest, int line) {
+    if (**rest != '#')
+        return 0;
+    char *end;
+    long n = strtol(*rest + 1, &end, 10);
+    if (end == *rest + 1 || *end != ' ' || n < 1 || n > players)
+        refuse(line, "#<n> names a client from 1 to the script's players");
+    *rest = end + 1;
+    return (int)n - 1;
 }
 
 // `move <pitch> <yaw> <roll> <forward> <side> <up> <buttons> <impulse>`.
@@ -616,8 +648,8 @@ int main(int argc, char **argv) {
     char map[MAX_QPATH] = "";
     double frametime = 1.0 / 72.0;
     qboolean started = false;
-    move_t move;
-    memset(&move, 0, sizeof(move));
+    move_t moves[MAX_SCOREBOARD];
+    memset(moves, 0, sizeof(moves));
     unsigned frame = 0;
     while (fgets(line, sizeof(line), script)) {
         number++;
@@ -628,10 +660,13 @@ int main(int argc, char **argv) {
             continue;
         // The engine's command line, the map and the frame time come before the frames.
         if (strncmp(line, "engine ", 7) == 0 || strncmp(line, "map ", 4) == 0 ||
-            strncmp(line, "frametime ", 10) == 0) {
+            strncmp(line, "frametime ", 10) == 0 || strncmp(line, "players ", 8) == 0) {
             if (started)
-                refuse(number, "engine, map and frametime come before the frames");
-            if (line[0] == 'e') {
+                refuse(number, "engine, map, frametime and players come before the frames");
+            if (line[0] == 'p') {
+                if (!read_integer(line + 8, 1, MAX_SCOREBOARD, &players))
+                    refuse(number, "players is a count from 1 to 16");
+            } else if (line[0] == 'e') {
                 if (engine_argc >= 63)
                     refuse(number, "too many engine words");
                 engine_argv[engine_argc++] = strdup(line + 7);
@@ -649,15 +684,23 @@ int main(int argc, char **argv) {
                 refuse(number, "no map line before the frames");
             start(engine_argc, engine_argv, map, trace_path, number);
             started = true;
+            // More clients than slots would read past svs.clients; id's server stops there with
+            // "Host_CheckForNewClients: no free clients", and the script is refused instead.
+            if (players > svs.maxclients)
+                refuse(number, "players is more than the server's slots (-listen)");
         }
         if (strncmp(line, "cmd ", 4) == 0) {
-            send_command(line + 4);
+            char *rest = line + 4;
+            int client = read_client(&rest, number);
+            send_command(client, rest);
         } else if (strncmp(line, "console ", 8) == 0) {
             // Typed at the server's console: the next frame's Cbuf_Execute runs it.
             Cbuf_AddText(line + 8);
             Cbuf_AddText("\n");
         } else if (strncmp(line, "move ", 5) == 0) {
-            read_move(line + 5, &move, number);
+            char *rest = line + 5;
+            int client = read_client(&rest, number);
+            read_move(rest, &moves[client], number);
         } else if (strncmp(line, "frames ", 7) == 0) {
             int count;
             if (!read_integer(line + 7, 1, 1000000, &count))
@@ -671,15 +714,19 @@ int main(int argc, char **argv) {
                 host_frametime = frametime;
                 realtime += frametime;
                 Cbuf_Execute();
-                signon_reply(frame + 1);
-                if (svs.clients[0].spawned)
-                    send_move(&move);
-                outgoing_read = 0;
+                for (int client = 0; client < players; client++) {
+                    signon_reply(client, frame + 1);
+                    if (svs.clients[client].spawned)
+                        send_move(client, &moves[client]);
+                    outgoing_read[client] = 0;
+                }
                 server_frame();
-                outgoing_count = 0;
+                for (int client = 0; client < players; client++) {
+                    outgoing_count[client] = 0;
+                    // An impulse goes once, as id's client clears in_impulse after sending it.
+                    moves[client].impulse = 0;
+                }
                 host_time += host_frametime;
-                // An impulse goes once, as id's client clears in_impulse after sending it.
-                move.impulse = 0;
                 qs_trace_frame(++frame);
             }
         } else {

@@ -15,9 +15,9 @@ use qs_engine::{
     Client, ClientError, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind, locate_host,
     prepare_run_root,
 };
-use qs_sim::scenario::{Report, Scenario, ScenarioError, Shot};
+use qs_sim::scenario::{HostWords, Report, Scenario, ScenarioError, Shot};
 use qs_sim::spawn::Deathmatch;
-use qs_sim::{LoadOptions, MaxPlayers, World, atoi};
+use qs_sim::{LoadOptions, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 use serde::Serialize;
 
@@ -220,48 +220,6 @@ pub fn play_on_game(words: &[String], scenario: &Scenario) -> Result<Report, Sce
         Bots::new(None)
     };
     Ok(scenario.run(&mut world, &progs, &mut bots))
-}
-
-/// The slots and the settings an engine command line chooses (BOT-9.2).
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct HostWords {
-    maxplayers: MaxPlayers,
-    settings: Vec<(String, String)>,
-}
-
-impl HostWords {
-    /// The slots `-listen` chooses as `Host_FindMaxClients` reads it, `deathmatch` 1 for more
-    /// than one (NET-7.1), then each `+<name> <value>` pair as a setting.
-    fn of(words: &[String]) -> Self {
-        let mut maxplayers = MaxPlayers::SINGLE;
-        if let Some(at) = words.iter().position(|w| w == "-listen") {
-            let count = words
-                .get(at.saturating_add(1))
-                .map_or(qs_sim::LISTEN_SLOTS, |next| atoi(next.as_bytes()));
-            maxplayers = MaxPlayers::new(if count < 1 {
-                qs_sim::LISTEN_SLOTS
-            } else {
-                count
-            });
-        }
-        let mut settings = Vec::new();
-        if maxplayers.is_multiplayer() {
-            settings.push(("deathmatch".to_owned(), "1".to_owned()));
-        }
-        for pair in words.windows(2) {
-            if let [name, value] = pair
-                && let Some(name) = name.strip_prefix('+')
-                && !name.is_empty()
-                && !value.starts_with(['+', '-'])
-            {
-                settings.push((name.to_owned(), value.clone()));
-            }
-        }
-        Self {
-            maxplayers,
-            settings,
-        }
-    }
 }
 
 /// Each of `shots` taken by the headless host: the game paused, the player moved to the

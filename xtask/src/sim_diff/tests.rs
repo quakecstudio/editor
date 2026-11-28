@@ -34,16 +34,19 @@ fn a_route_reads_as_the_oracle_reads_it() {
     assert_eq!(
         route.steps,
         [
-            Step::Move(UserCmd {
-                angles: [0.0, 90.0, 0.0],
-                forward: 200.0,
-                side: -350.0,
-                up: 0.0,
-                buttons: 1,
-                impulse: 2,
-            }),
+            Step::Move(
+                qs_sim::ClientId::FIRST,
+                UserCmd {
+                    angles: [0.0, 90.0, 0.0],
+                    forward: 200.0,
+                    side: -350.0,
+                    up: 0.0,
+                    buttons: 1,
+                    impulse: 2,
+                }
+            ),
             Step::Frames(3),
-            Step::Command("god".to_owned()),
+            Step::Command(qs_sim::ClientId::FIRST, "god".to_owned()),
             Step::Console("alias a \"sv_gravity 1\"; a".to_owned()),
         ]
     );

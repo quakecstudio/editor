@@ -1,0 +1,28 @@
+# Deathmatch with four players on LibreQuake's lqdm11 (L-85, DIFF-16.7): `-listen 4` gives four
+# slots and deathmatch 1, as id's Host_FindMaxClients does; the four players connect in frame 1
+# and enter in frame 4, each at the next info_player_deathmatch. Players 1 and 4 run, turn and
+# fire; player 3 turns to player 2 and fires until player 2 is fragged, player 2 firing back;
+# player 2 then respawns, and player 4 kills itself. In CI (`cargo xtask sim-diff
+# oracles/engine/routes/deathmatch.route -- -basedir "$QS_TEST_ASSETS/librequake-lite"`), where
+# the librequake-deathmatch asset puts lqdm11.bsp beside the lite paks (docs/test-assets.md).
+engine -listen
+engine 4
+map lqdm11
+players 4
+frames 72
+move 0 90 0 200 0 0 1 0
+move #4 10 270 0 200 0 0 1 0
+move #3 -8.0 -8.1 0 0 0 0 1 0
+move #2 8.0 171.9 0 0 0 0 1 0
+frames 144
+move 0 180 0 0 350 0 2 0
+move #4 0 90 0 -200 0 0 1 0
+frames 360
+move #2 0 0 0 0 0 0 0 0
+move #3 0 0 0 0 0 0 0 0
+frames 72
+move #2 0 0 0 0 0 0 1 0
+frames 4
+move #2 0 90 0 200 0 0 0 0
+cmd #4 kill
+frames 144

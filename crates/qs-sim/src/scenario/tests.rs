@@ -65,9 +65,9 @@ fn a_route_is_a_scenario() {
     assert_eq!(scenario.engine, ["-basedir x"]);
     assert_eq!(scenario.frametime, SCN_FRAMETIME);
     assert_eq!(scenario.seed, None);
-    assert!(matches!(&scenario.steps[0], Step::Command(c) if c == "god"));
+    assert!(matches!(&scenario.steps[0], Step::Command(_, c) if c == "god"));
     assert!(matches!(&scenario.steps[1], Step::Console(c) if c == "sv_gravity 100"));
-    let Step::Move(cmd) = scenario.steps[2] else {
+    let Step::Move(_, cmd) = scenario.steps[2] else {
         panic!("not a move");
     };
     assert_eq!(cmd.angles, [1.0, 2.0, 3.0]);
@@ -378,4 +378,127 @@ fn a_vector_fields_components_are_read() {
             (false, "no field health_x"),
         ]
     );
+}
+
+// spec DIFF-16.8: sim-diff reads the engine words as Host_FindMaxClients and stuffcmds do
+// spec BOT-9.2: -listen gives n slots, 8 with no number or one below 1, at most 16, and
+// deathmatch 1 for more than one; each +name value pair after it is a setting
+#[test]
+fn the_engine_words_choose_the_slots_and_settings() {
+    let words = |text: &str| -> Vec<String> { text.split(' ').map(str::to_owned).collect() };
+    let pairs = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(n, v)| ((*n).to_owned(), (*v).to_owned()))
+            .collect()
+    };
+    let single = super::HostWords::of(&words("-basedir /q"));
+    assert_eq!(single.maxplayers, crate::MaxPlayers::SINGLE);
+    assert!(single.settings.is_empty());
+    let four = super::HostWords::of(&words("-listen 4 +deathmatch 0 +coop 1"));
+    assert_eq!(four.maxplayers.get(), 4);
+    assert_eq!(
+        four.settings,
+        pairs(&[("deathmatch", "1"), ("deathmatch", "0"), ("coop", "1")])
+    );
+    assert_eq!(super::HostWords::of(&words("-listen")).maxplayers.get(), 8);
+    assert_eq!(
+        super::HostWords::of(&words("-dedicated 4"))
+            .maxplayers
+            .get(),
+        4
+    );
+    assert_eq!(
+        super::HostWords::of(&words("-dedicated")).maxplayers.get(),
+        8
+    );
+    assert_eq!(
+        super::HostWords::of(&words("-dedicated 4 -listen 3"))
+            .maxplayers
+            .get(),
+        3,
+        "-listen read after -dedicated"
+    );
+    assert_eq!(
+        super::HostWords::of(&words("-listen 0")).maxplayers.get(),
+        8
+    );
+    assert_eq!(
+        super::HostWords::of(&words("-listen 99")).maxplayers.get(),
+        16
+    );
+    assert_eq!(
+        super::HostWords::of(&words("-listen 1 +skill")).settings,
+        Vec::new(),
+        "one slot, and a pair with no value"
+    );
+    assert_eq!(
+        super::HostWords::of(&words("+skill -listen")).settings,
+        pairs(&[("deathmatch", "1")])
+    );
+}
+
+// spec DIFF-16.7: `players <n>` gives n local clients, 1 without it; `#<k>` names client k on a
+// move or cmd line, the first without it; a count past 16 or a client past the players is refused
+#[test]
+fn players_and_their_moves_are_read() {
+    use crate::ClientId;
+    let one = Scenario::parse("map m\nframes 1\n").unwrap();
+    assert_eq!(one.players, 1);
+    let two = Scenario::parse("map m\nplayers 2\ncmd #2 god\nmove #2 0 90 0 0 0 0 0 0\ncmd say\n")
+        .unwrap();
+    assert_eq!(two.players, 2);
+    let second = ClientId::new(1).unwrap();
+    assert!(matches!(&two.steps[0], Step::Command(id, text) if *id == second && text == "god"));
+    let Step::Move(id, cmd) = two.steps[1] else {
+        panic!("a move");
+    };
+    assert_eq!((id, cmd.angles[1]), (second, 90.0));
+    assert!(matches!(&two.steps[2], Step::Command(id, _) if *id == ClientId::FIRST));
+    for bad in [
+        "map m\nplayers 0\n",
+        "map m\nplayers 17\n",
+        "map m\ncmd #0 god\n",
+        "map m\ncmd #x god\n",
+        "map m\ncmd #2\n",
+        "map m\nmove #17 0 0 0 0 0 0 0 0\n",
+    ] {
+        assert!(Scenario::parse(bad).is_err(), "{bad:?}");
+    }
+    let past = Scenario::parse("map m\nplayers 2\ncmd #3 god\n").unwrap_err();
+    assert!(
+        past.message
+            .contains("#3 names a client past the 2 players"),
+        "{past}"
+    );
+}
+
+// spec DIFF-16.7: each local client connects in frame 1 and enters in frame 4, the first named
+// player and client k after it player<k>; each client's move is its own
+#[test]
+fn every_local_client_enters_with_its_own_name_and_move() {
+    use crate::{ClientId, MaxPlayers};
+    let scenario = Scenario::parse(
+        "map m\nplayers 3\nmove #3 0 90 0 0 0 0 0 0\nmove 0 45 0 0 0 0 0 0\nframes 20\n\
+         expect field 1 netname == \"player\"\n\
+         expect field 2 netname == \"player2\"\n\
+         expect field 3 netname == \"player3\"\n\
+         expect field 1 v_angle_y == 45\n\
+         expect field 2 v_angle_y == 0\n\
+         expect field 3 v_angle_y == 90\n",
+    )
+    .unwrap();
+    let mut run = world(
+        LoadOptions {
+            maxplayers: MaxPlayers::new(3),
+            ..LoadOptions::default()
+        },
+        0,
+    );
+    let progs = Progs::read(&run.progs).unwrap();
+    let report = scenario.run(&mut run.world, &progs, &mut super::NoDriver);
+    assert!(report.passed, "{report:?}");
+    for slot in 0..3 {
+        assert!(run.world.is_spawned(ClientId::new(slot).unwrap()), "{slot}");
+    }
 }

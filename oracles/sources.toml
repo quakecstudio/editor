@@ -238,7 +238,7 @@ oracle = "engine"
 file = "WinQuake/host.c"
 functions = [
   "SV_ClientPrintf", "SV_BroadcastPrintf", "Host_ClientCommands", "SV_DropClient",
-  "Host_ShutdownServer", "Host_ClearMemory",
+  "Host_ShutdownServer", "Host_ClearMemory", "Host_FindMaxClients",
 ]
 
 [[extract]]

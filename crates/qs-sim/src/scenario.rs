@@ -11,8 +11,10 @@ use std::fmt;
 use qc_progs::Progs;
 use serde::Serialize;
 
+use crate::console::ConsoleName;
 use crate::{
-    CLIENT_EDICT, ClientId, EditError, NamedValue, QcValue, State, UserCmd, World, WorldError,
+    CLIENT_EDICT, ClientId, EditError, LISTEN_SLOTS, MAX_SCOREBOARD, MaxPlayers, NamedValue,
+    QcValue, State, UserCmd, World, WorldError, atoi,
 };
 
 /// One server frame's length when a scenario does not say: `Host_FilterTime`'s shortest.
@@ -69,6 +71,8 @@ pub struct Scenario {
     pub frametime: Seconds,
     /// The state the server's random source starts at, `None` for MOVE-6.1's 1 (SCN-1.3).
     pub seed: Option<u32>,
+    /// The local clients, 1 to 16, each connecting in frame 1 (DIFF-16.7).
+    pub players: usize,
     /// Where the player is put once it has entered the game (SCN-1.4).
     pub start: Option<Start>,
     /// The steps, in order.
@@ -87,12 +91,12 @@ pub struct Start {
 /// One step of a scenario.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Step {
-    /// A client string command, read in the next frame.
-    Command(String),
+    /// A client string command of a client, read in the next frame (DIFF-16.7).
+    Command(ClientId, String),
     /// A line typed at the server's console, run in the next frame (DIFF-16.6).
     Console(String),
-    /// The move sent each frame from now on.
-    Move(UserCmd),
+    /// The move a client sends each frame from now on (DIFF-16.7).
+    Move(ClientId, UserCmd),
     /// Frames to run.
     Frames(u32),
     /// An assertion, checked here (SCN-1.5).
@@ -237,6 +241,7 @@ impl Scenario {
             map: String::new(),
             frametime: SCN_FRAMETIME,
             seed: None,
+            players: 1,
             start: None,
             steps: Vec::new(),
         };
@@ -262,13 +267,34 @@ impl Scenario {
                         .map(Seconds::new)
                         .ok_or_else(|| error("frametime is above 0, at most 1"))?;
                 }
-                "cmd" => scenario.steps.push(Step::Command(rest.to_owned())),
+                "players" => {
+                    if !scenario.steps.is_empty() {
+                        return Err(error("players comes before the frames"));
+                    }
+                    scenario.players = rest
+                        .parse()
+                        .ok()
+                        .filter(|n| (1..=MAX_SCOREBOARD).contains(n))
+                        .ok_or_else(|| error("players is a count from 1 to 16"))?;
+                }
+                "cmd" => {
+                    let (client, rest) = client_of(rest).ok_or_else(|| error(CLIENT))?;
+                    if client.slot() >= scenario.players {
+                        return Err(error(&client.past_players(scenario.players)));
+                    }
+                    scenario.steps.push(Step::Command(client, rest.to_owned()));
+                }
                 "console" => scenario.steps.push(Step::Console(rest.to_owned())),
-                "move" => scenario
-                    .steps
-                    .push(Step::Move(parse_move(rest).ok_or_else(|| {
+                "move" => {
+                    let (client, rest) = client_of(rest).ok_or_else(|| error(CLIENT))?;
+                    if client.slot() >= scenario.players {
+                        return Err(error(&client.past_players(scenario.players)));
+                    }
+                    let cmd = parse_move(rest).ok_or_else(|| {
                         error("move is pitch yaw roll forward side up buttons impulse")
-                    })?)),
+                    })?;
+                    scenario.steps.push(Step::Move(client, cmd));
+                }
                 "frames" => scenario.steps.push(Step::Frames(
                     rest.parse()
                         .ok()
@@ -321,6 +347,42 @@ impl Scenario {
         }
         Ok(scenario)
     }
+}
+
+impl ClientId {
+    /// The `name` command a local client of a route sends as it enters the game (DIFF-16.7,
+    /// NET-7.13): `player` for the first, `player<n>` for client n after it.
+    fn signon_name(self) -> String {
+        if self == Self::FIRST {
+            "name \"player\"\n".to_owned()
+        } else {
+            format!("name \"player{}\"\n", self.slot().saturating_add(1))
+        }
+    }
+}
+
+impl ClientId {
+    /// What a scenario line naming this client past its `players` is told (DIFF-16.7).
+    fn past_players(self, players: usize) -> String {
+        format!(
+            "#{} names a client past the {players} players",
+            self.slot().saturating_add(1)
+        )
+    }
+}
+
+/// What a `cmd` or `move` line with a bad `#<n>` is told.
+const CLIENT: &str = "#<n> names a local client from 1 to 16";
+
+/// The client a `cmd` or `move` line's rest names with `#<n>`, from 1, and the rest after it;
+/// the first client with none (DIFF-16.7).
+fn client_of(text: &str) -> Option<(ClientId, &str)> {
+    let Some(named) = text.strip_prefix('#') else {
+        return Some((ClientId::FIRST, text));
+    };
+    let (number, rest) = named.split_once(' ')?;
+    let slot = number.parse::<usize>().ok()?.checked_sub(1)?;
+    Some((ClientId::new(slot)?, rest))
 }
 
 /// Whitespace-separated numbers.
@@ -447,6 +509,68 @@ fn parse_value(text: &str) -> Option<Expected> {
     text.parse().ok().map(Expected::Float)
 }
 
+/// The slots and the settings an engine command line chooses (BOT-9.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostWords {
+    /// The server's slots.
+    pub maxplayers: MaxPlayers,
+    /// The settings, each a name and a value, in order.
+    pub settings: Vec<(String, String)>,
+}
+
+impl HostWords {
+    /// The first `+` word that is not a setting's name followed by its value: one naming a
+    /// console command, such as `+exec dm.cfg` or `+god`, or with no value after it, which id's
+    /// `stuffcmds` runs as a command and these words do not read (DIFF-16.8).
+    #[must_use]
+    pub fn unread(words: &[String]) -> Option<&str> {
+        words.iter().enumerate().find_map(|(at, word)| {
+            let name = word.strip_prefix('+')?;
+            let value = words.get(at.saturating_add(1));
+            let command = ConsoleName::all()
+                .iter()
+                .any(|known| matches!(known, ConsoleName::Command(c) if c == name));
+            let setting = !name.is_empty()
+                && !command
+                && value.is_some_and(|value| !value.starts_with(['+', '-']));
+            (!setting).then_some(word.as_str())
+        })
+    }
+
+    /// The slots `-dedicated [n]` and then `-listen [n]` choose as `Host_FindMaxClients` reads
+    /// them, the first of each word, `deathmatch` 1 for more than one (NET-7.1), then each
+    /// `+<name> <value>` pair as a setting.
+    #[must_use]
+    pub fn of(words: &[String]) -> Self {
+        let mut maxplayers = MaxPlayers::SINGLE;
+        for option in ["-dedicated", "-listen"] {
+            if let Some(at) = words.iter().position(|w| w == option) {
+                let count = words
+                    .get(at.saturating_add(1))
+                    .map_or(LISTEN_SLOTS, |next| atoi(next.as_bytes()));
+                maxplayers = MaxPlayers::new(if count < 1 { LISTEN_SLOTS } else { count });
+            }
+        }
+        let mut settings = Vec::new();
+        if maxplayers.is_multiplayer() {
+            settings.push(("deathmatch".to_owned(), "1".to_owned()));
+        }
+        for pair in words.windows(2) {
+            if let [name, value] = pair
+                && let Some(name) = name.strip_prefix('+')
+                && !name.is_empty()
+                && !value.starts_with(['+', '-'])
+            {
+                settings.push((name.to_owned(), value.clone()));
+            }
+        }
+        Self {
+            maxplayers,
+            settings,
+        }
+    }
+}
+
 /// What runs before each of a scenario's server frames, as a host's bots set their moves
 /// (BOT-9.1).
 pub trait Driver {
@@ -498,6 +622,14 @@ pub enum PlayError<E> {
     Start(EditError),
     /// The visitor stopped the play.
     Visit(E),
+    /// The scenario has more players than the world has slots, where id's server stops with
+    /// "Host_CheckForNewClients: no free clients" (DIFF-16.7).
+    Players {
+        /// The scenario's players.
+        players: usize,
+        /// The world's slots.
+        slots: usize,
+    },
 }
 
 impl<E: fmt::Display> fmt::Display for PlayError<E> {
@@ -506,6 +638,10 @@ impl<E: fmt::Display> fmt::Display for PlayError<E> {
             Self::Frame { frame, error } => write!(f, "frame {frame}: {error}"),
             Self::Start(error) => write!(f, "the player's start: {error}"),
             Self::Visit(error) => error.fmt(f),
+            Self::Players { players, slots } => write!(
+                f,
+                "{players} players but {slots} slots: give the server more with -listen"
+            ),
         }
     }
 }
@@ -529,15 +665,27 @@ impl Scenario {
         driver: &mut dyn Driver,
         mut visit: impl FnMut(Moment<'_>, usize, &World) -> Result<bool, E>,
     ) -> Result<usize, PlayError<E>> {
+        let slots = world.maxplayers().get();
+        if self.players > slots {
+            return Err(PlayError::Players {
+                players: self.players,
+                slots,
+            });
+        }
         let mut frame = 0_usize;
         if !visit(Moment::Frame, frame, world).map_err(PlayError::Visit)? {
             return Ok(frame);
         }
-        let mut cmd = UserCmd::default();
+        let clients: Vec<ClientId> = (0..self.players).filter_map(ClientId::new).collect();
+        let mut cmds = vec![UserCmd::default(); clients.len()];
         for step in &self.steps {
             match step {
-                Step::Move(next) => cmd = *next,
-                Step::Command(text) => world.client_command(ClientId::FIRST, text),
+                Step::Move(client, next) => {
+                    if let Some(cmd) = cmds.get_mut(client.slot()) {
+                        *cmd = *next;
+                    }
+                }
+                Step::Command(client, text) => world.client_command(*client, text),
                 Step::Console(text) => {
                     world.console(text);
                     world.console("\n");
@@ -557,29 +705,33 @@ impl Scenario {
                 Step::Frames(count) => {
                     for _ in 0..*count {
                         frame = frame.saturating_add(1);
-                        // DIFF-16.1, PHYS-10.7: the client connects in frame 1 and answers each
-                        // signon stage in the next frame, as the oracle's client does.
-                        match frame {
-                            1 => world.connect_next_frame(ClientId::FIRST),
-                            2 => world.client_command(ClientId::FIRST, "prespawn"),
-                            3 => {
-                                world.client_command(ClientId::FIRST, "name \"player\"\n");
-                                world.client_command(ClientId::FIRST, "color 0 0\n");
-                                world.client_command(ClientId::FIRST, "spawn ");
+                        // DIFF-16.1, DIFF-16.7, PHYS-10.7: each client connects in frame 1 and
+                        // answers each signon stage in the next frame, as the oracle's do.
+                        for (&client, cmd) in clients.iter().zip(&cmds) {
+                            match frame {
+                                1 => world.connect_next_frame(client),
+                                2 => world.client_command(client, "prespawn"),
+                                3 => {
+                                    world.client_command(client, &client.signon_name());
+                                    world.client_command(client, "color 0 0\n");
+                                    world.client_command(client, "spawn ");
+                                }
+                                ENTERED => world.client_command(client, "begin"),
+                                _ => {}
                             }
-                            ENTERED => world.client_command(ClientId::FIRST, "begin"),
-                            _ => {}
+                            world.set_command(client, *cmd);
                         }
-                        world.set_command(ClientId::FIRST, cmd);
                         driver
                             .before_frame(world, progs, self.frametime.get())
                             .map_err(|error| PlayError::Frame { frame, error })?;
                         world
                             .frame(progs, self.frametime.get())
                             .map_err(|error| PlayError::Frame { frame, error })?;
-                        drop(world.take_messages(ClientId::FIRST));
-                        // An impulse is sent once.
-                        cmd.impulse = 0;
+                        for (&client, cmd) in clients.iter().zip(&mut cmds) {
+                            drop(world.take_messages(client));
+                            // An impulse is sent once.
+                            cmd.impulse = 0;
+                        }
                         // SCN-2.1: the start once the player is in the game.
                         if frame == ENTERED
                             && let Some(start) = self.start
@@ -620,6 +772,7 @@ impl Scenario {
                 (frame, Some(format!("frame {frame}: {error}")))
             }
             Err(PlayError::Start(error)) => (ENTERED, Some(format!("the player's start: {error}"))),
+            Err(error @ PlayError::Players { .. }) => (0, Some(error.to_string())),
             Err(PlayError::Visit(never)) => match never {},
         };
         Report {
