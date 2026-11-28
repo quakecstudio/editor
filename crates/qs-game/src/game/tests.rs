@@ -33,7 +33,8 @@ use serde_json::{Value, json};
 use super::{Eye, Game, HeldSpawn, HostAction, NextLevel, Placement, Reporting, Screen};
 use crate::load::Rand;
 use crate::screenshot::Frame;
-use crate::seats::Loopback;
+use crate::seats::{Loopback, Seat};
+use qs_sim::ClientCommand;
 use qs_sim::input::Button;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -2051,12 +2052,17 @@ fn a_run_error_pause_answers_its_stack() {
 
 /// The game of the test progs on the floor with three client slots, its player in the game.
 fn game_with_room_for_bots() -> Game {
+    game_with_slots(3)
+}
+
+/// The game of the test progs on the floor with `slots` client slots, its first player in.
+fn game_with_slots(slots: i32) -> Game {
     let (bytes, _) = progs_with_lines();
     let progs = Progs::read(&bytes).unwrap();
     let lump = "{\n\"classname\" \"worldspawn\"\n}\n".to_owned();
     let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
     let options = LoadOptions {
-        maxplayers: qs_sim::MaxPlayers::new(3),
+        maxplayers: qs_sim::MaxPlayers::new(slots),
         ..LoadOptions::default()
     };
     let mut world = World::load(&progs, "test", &map, Rc::new(|_| None), options).unwrap();
@@ -2229,12 +2235,13 @@ fn two_local_players_each_read_their_own_messages() {
         &mut first,
         (&mut describer, &mut rand),
     );
-    let mut seat = game
-        .join_seat(2, (&mut describer, &mut rand))
-        .unwrap()
-        .expect("a free slot");
-    assert_eq!(seat.number(), 2);
-    assert_eq!(seat.loopback().id().slot(), 1, "the slot after the first");
+    let player = game.join_local_player(2).unwrap().expect("a free slot");
+    assert_eq!(player.number, 2);
+    assert_eq!(player.loopback.id().slot(), 1, "the slot after the first");
+    assert_eq!(game.local_players(), [player]);
+    let mut seat = Seat::new(player);
+    seat.read(game.world_mut(), 0.0, (&mut describer, &mut rand))
+        .unwrap();
     assert_eq!(first.viewentity(), 1);
     assert_eq!(seat.client().viewentity(), 2, "its own slot's edict");
     game.frame(1.0 / 72.0);
@@ -2247,12 +2254,11 @@ fn two_local_players_each_read_their_own_messages() {
     seat.read(game.world_mut(), 0.0, (&mut describer, &mut rand))
         .unwrap();
     assert_eq!(
-        game.world().client_name(seat.loopback().id()),
+        game.world().client_name(player.loopback.id()),
         Some(b"player2".to_vec()),
         "it sent its own name"
     );
-    let commands = game.type_console_as(seat.loopback(), b"tell player psst");
-    assert!(commands.is_empty());
+    game.type_console_as(player.loopback, b"tell player psst");
     game.frame(1.0 / 72.0);
     let to_first = printed_to(
         &mut game,
@@ -2262,7 +2268,7 @@ fn two_local_players_each_read_their_own_messages() {
     );
     // `Host_Tell_f`'s text is `Cmd_Args`, the name too (NET-7.6).
     assert!(holds(&to_first, b"player2: player psst"), "{to_first:?}");
-    let packets = seat.loopback().receive(game.world_mut());
+    let packets = player.loopback.receive(game.world_mut());
     assert!(
         !holds(&packets.concat(), b"psst"),
         "the second player's slot was not sent it"
@@ -2273,45 +2279,124 @@ fn two_local_players_each_read_their_own_messages() {
 #[test]
 fn a_local_players_binding_holds_its_own_button() {
     let mut game = game_with_room_for_bots();
-    let mut describer = AnyModel;
-    let mut rand = Rand::new();
-    let seat = game
-        .join_seat(2, (&mut describer, &mut rand))
-        .unwrap()
-        .unwrap();
-    let commands = game.type_console_as(seat.loopback(), b"+forward 119");
+    let player = game.join_local_player(2).unwrap().unwrap();
+    game.type_console_as(player.loopback, b"+forward 119");
     assert_eq!(
-        commands,
-        vec![qs_sim::ClientCommand::Press(Button::Forward, Some(119))]
+        game.take_client_commands_of(player.loopback),
+        vec![ClientCommand::Press(Button::Forward, Some(119))]
+    );
+    assert!(
+        game.world_mut().take_client_commands().is_empty(),
+        "not the first player's"
     );
 }
 
-// spec NET-7.9: a local player leaving frees its slot for the next to join
+// spec NET-7.9, NET-7.13: a local player leaving frees its slot for the next to join, and the
+// game no longer has it
 #[test]
 fn a_local_player_leaving_frees_its_slot() {
     let mut game = game_with_room_for_bots();
-    let mut describer = AnyModel;
-    let mut rand = Rand::new();
-    let seat = game
-        .join_seat(2, (&mut describer, &mut rand))
-        .unwrap()
-        .unwrap();
-    let third = game
-        .join_seat(3, (&mut describer, &mut rand))
-        .unwrap()
-        .unwrap();
-    assert_eq!(third.loopback().id().slot(), 2);
+    let second = game.join_local_player(2).unwrap().unwrap();
+    let third = game.join_local_player(3).unwrap().unwrap();
+    assert_eq!(third.loopback.id().slot(), 2);
     assert!(
-        game.join_seat(4, (&mut describer, &mut rand))
-            .unwrap()
-            .is_none(),
+        game.join_local_player(4).unwrap().is_none(),
         "every slot active"
     );
-    game.leave(seat.loopback());
-    assert!(!game.world().is_spawned(seat.loopback().id()));
-    let again = game
-        .join_seat(4, (&mut describer, &mut rand))
+    assert_eq!(
+        game.local_players(),
+        [second, third],
+        "a full game keeps none"
+    );
+    game.leave(second.loopback);
+    assert!(!game.world().is_spawned(second.loopback.id()));
+    assert_eq!(game.local_players(), [third]);
+    let again = game.join_local_player(4).unwrap().unwrap();
+    assert_eq!(again.loopback, second.loopback);
+}
+
+// spec NET-7.13: on the next level each local player comes back to the slot it had, before the
+// bots come back to theirs, so a bot brought in where a player left keeps its own slot
+#[test]
+fn local_players_keep_their_slots_on_the_next_level() {
+    let mut game = game_with_slots(4);
+    let second = game.join_local_player(2).unwrap().unwrap();
+    let third = game.join_local_player(3).unwrap().unwrap();
+    game.leave(second.loopback);
+    game.world_mut().console("addbot 1 Moss\n");
+    game.frame(1.0 / 72.0);
+    let slot = |n| qs_sim::ClientId::new(n).unwrap();
+    assert_eq!(
+        game.world().host_bots(),
+        vec![slot(1)],
+        "the bot took the freed slot"
+    );
+    let mut next = game_with_slots(4);
+    next.carry_from(game);
+    assert_eq!(next.local_players(), [third], "the player who left is gone");
+    assert!(
+        next.world().is_spawned(third.loopback.id()),
+        "in its own slot"
+    );
+    assert_eq!(
+        next.world().host_bots(),
+        vec![slot(1)],
+        "the bot kept its slot"
+    );
+    assert_eq!(next.world().client_name(slot(1)), Some(b"Moss".to_vec()));
+    next.frame(1.0 / 72.0);
+    assert_eq!(
+        next.world().client_name(third.loopback.id()),
+        Some(b"player3".to_vec()),
+        "it sent its name again"
+    );
+}
+
+// spec NET-7.13, WORLD-9.7: a level whose load a breakpoint stopped brings the last level's local
+// players in only once it is loaded again to its end
+#[test]
+fn local_players_wait_for_a_held_load() {
+    let dog = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
+    let (mut stopping, mut session) = game_with(dog);
+    let line = source_line("void() monster_dog = {");
+    call(
+        &mut stopping,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": line }),
+    )
+    .unwrap();
+    let debugger = stopping.level_debugger().unwrap();
+    let mut game = game_with_room_for_bots();
+    let player = game.join_local_player(2).unwrap().unwrap();
+    let (bytes, _) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{dog}");
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let options = LoadOptions {
+        maxplayers: qs_sim::MaxPlayers::new(3),
+        ..LoadOptions::default()
+    };
+    let mut world = World::prepare(&progs, "test", &map, Rc::new(|_| None), options).unwrap();
+    let held = HeldSpawn::spawn(&mut world, &progs, debugger)
         .unwrap()
         .unwrap();
-    assert_eq!(again.loopback().id(), seat.loopback().id());
+    let level = NextLevel {
+        map: "test".to_owned(),
+        carried: None,
+        host: world.host_state(),
+        connection: Connection::New,
+    };
+    let mut next = Game::new(world, bytes.clone(), Reporting::Off);
+    next.hold_load(held, level);
+    next.carry_from(game);
+    assert!(
+        next.local_players().is_empty(),
+        "not in the half-spawned world"
+    );
+    assert!(!next.world().is_spawned(player.loopback.id()));
+    let mut loaded = game_with_room_for_bots();
+    loaded.carry_from(next);
+    assert_eq!(loaded.local_players(), [player]);
+    assert!(loaded.world().is_spawned(player.loopback.id()));
 }

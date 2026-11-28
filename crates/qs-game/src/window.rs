@@ -43,7 +43,7 @@ use crate::keys::{
 use crate::load::{Acted, Describer, Loaded, Rand, Startup, map_mesh};
 use crate::map_bsp::MapBsp;
 use crate::screenshot::Drawer;
-use crate::seats::Loopback;
+use crate::seats::{Loopback, Seat};
 use crate::settings::HostSettings;
 
 mod seat;
@@ -206,16 +206,11 @@ impl Viewer {
             rand,
             printed,
             demos,
-            seats,
         } = loaded;
         // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
         // map's first frame printed (CLIENT-1.7).
         // CON-5.6: QuakeSpasm's text size in its look, whose console is as wide as the window.
-        let mut console = Console::with_text_size(if mesh.look.native_2d() {
-            CON_TEXTSIZE_QUAKESPASM
-        } else {
-            CON_TEXTSIZE
-        });
+        let mut console = Console::with_text_size(text_size(mesh.look));
         let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
         console.print(banner.as_bytes(), 0.0);
         for text in &printed {
@@ -247,7 +242,7 @@ impl Viewer {
             state.clone(),
             wgpu::TextureFormat::Depth32Float,
         )));
-        Self {
+        let mut viewer = Self {
             state: state.clone(),
             shell,
             panel: None,
@@ -289,8 +284,10 @@ impl Viewer {
             motion: [0.0; 2],
             modifiers: egui::Modifiers::NONE,
             config_file: config_path(),
-            seats: seats.into_iter().map(SeatView::new).collect(),
-        }
+            seats: Vec::new(),
+        };
+        viewer.seat_players();
+        viewer
     }
 }
 
@@ -490,6 +487,8 @@ impl Viewer {
             {
                 Acted::Load(loaded) => {
                     self.change_level(*loaded);
+                    // The other players' windows are shown each frame, or they close.
+                    self.show_seats(ui.ctx(), seconds);
                     return;
                 }
                 Acted::Quit => self.closed = true,
@@ -713,20 +712,7 @@ impl Viewer {
             printed,
             // The host keeps the demos it had: one may be recording or playing.
             demos: _,
-            seats,
         } = loaded;
-        // Each local player plays on in the next level in its own window.
-        let mut views = core::mem::take(&mut self.seats).into_iter();
-        self.seats = seats
-            .into_iter()
-            .map(|seat| match views.next() {
-                Some(mut view) => {
-                    view.rejoined(seat);
-                    view
-                }
-                None => SeatView::new(seat),
-            })
-            .collect();
         let realtime = self.started.elapsed().as_secs_f64();
         for text in &printed {
             self.console.print(text, realtime);
@@ -753,6 +739,8 @@ impl Viewer {
         self.camera = camera;
         let old = core::mem::replace(&mut self.game, game);
         self.game.carry_from(old);
+        // NET-7.13: each local player plays on in the next level in its own window.
+        self.seat_players();
         self.audio = audio;
         self.client = client;
         self.bsp = bsp;
@@ -1335,15 +1323,52 @@ impl Viewer {
             |view| match view.show(ctx, &mut shared, seconds, realtime) {
                 SeatWindow::Open => true,
                 SeatWindow::Closed => {
-                    left.push(view.seat().loopback());
+                    left.push(view.seat().player().loopback);
                     false
                 }
             },
         );
         for loopback in left {
             self.game.leave(loopback);
-            self.args.players = self.args.players.saturating_sub(1).max(1);
         }
+    }
+
+    /// A window for each local player after the first the game has (NET-7.13): a player's
+    /// window kept from the last level by its number, with a new client for the new level's
+    /// signon. While a spawn function holds the load, the windows of the players waiting for
+    /// it stay open.
+    fn seat_players(&mut self) {
+        let text_size = text_size(self.mesh.look);
+        let mut views = core::mem::take(&mut self.seats);
+        let mut seated = Vec::new();
+        for player in self.game.local_players() {
+            let seat = Seat::new(*player);
+            match views
+                .iter()
+                .position(|view| view.seat().player().number == player.number)
+            {
+                Some(at) => {
+                    let mut view = views.swap_remove(at);
+                    view.rejoined(seat);
+                    seated.push(view);
+                }
+                None => seated.push(SeatView::new(seat, text_size)),
+            }
+        }
+        if self.game.holds_load() {
+            seated.extend(views);
+        }
+        self.seats = seated;
+    }
+}
+
+/// The console's text size for `look` (CON-5.6): QuakeSpasm's, whose console is as wide as the
+/// window, in its look.
+const fn text_size(look: qs_render::Look) -> usize {
+    if look.native_2d() {
+        CON_TEXTSIZE_QUAKESPASM
+    } else {
+        CON_TEXTSIZE
     }
 }
 
@@ -1514,6 +1539,12 @@ impl GameView {
     pub fn serve(&mut self) -> Running {
         self.viewer.serve_between_frames();
         self.running()
+    }
+
+    /// Shows the other local players' windows on a frame the app does not draw the game's
+    /// panel (L-86): the game stands still, and their windows stay open with its last frame.
+    pub fn show_players(&mut self, ctx: &egui::Context) {
+        self.viewer.show_seats(ctx, 0.0);
     }
 
     /// Whether the game's panel has the keyboard, so the keys pressed are the game's and the

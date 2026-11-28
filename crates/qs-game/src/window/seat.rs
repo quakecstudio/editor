@@ -62,21 +62,22 @@ pub(super) struct SeatView {
 }
 
 impl SeatView {
-    /// The window of `seat`, not yet holding the mouse.
-    pub(super) fn new(seat: Seat) -> Self {
+    /// The window of `seat`, not yet holding the mouse, its notify lines laid out with the
+    /// first player's console's text size (CON-5.6).
+    pub(super) fn new(seat: Seat, text_size: usize) -> Self {
         Self {
             seat,
             input: Input::new(),
             motion: [0.0; 2],
             pointer: Pointer::Free,
             modifiers: egui::Modifiers::NONE,
-            console: Console::new(),
+            console: Console::with_text_size(text_size),
             eye: [0.0; AXES],
         }
     }
 
-    /// The player's seat on the next level, the buttons it holds kept as the first player's
-    /// are.
+    /// The player's seat on the next level, a new client for its new signon; the buttons it
+    /// holds are kept as the first player's are.
     pub(super) fn rejoined(&mut self, seat: Seat) {
         self.seat = seat;
     }
@@ -103,7 +104,7 @@ impl SeatView {
                     }
                 }
             }
-            Err(error) => tracing::warn!(%error, player = self.seat.number(), "client"),
+            Err(error) => tracing::warn!(%error, player = self.seat.player().number, "client"),
         }
     }
 
@@ -116,7 +117,7 @@ impl SeatView {
         seconds: f32,
         realtime: f64,
     ) -> SeatWindow {
-        let number = self.seat.number();
+        let number = self.seat.player().number;
         let id = egui::ViewportId::from_hash_of(("player", number));
         let builder = egui::ViewportBuilder::default()
             .with_title(format!("QuakeC Studio preview: player {number}"))
@@ -232,10 +233,14 @@ impl SeatView {
                 continue;
             };
             let line = text.strip_suffix(b"\n").unwrap_or(&text);
-            let loopback = self.seat.loopback();
-            for command in shared.game.type_console_as(loopback, line) {
-                self.client_command(shared.game, &command);
-            }
+            shared
+                .game
+                .type_console_as(self.seat.player().loopback, line);
+        }
+        // NET-7.12: what its console met, these keys' lines and what a `wait` left of them.
+        let loopback = self.seat.player().loopback;
+        for command in shared.game.take_client_commands_of(loopback) {
+            self.client_command(shared.game, &command);
         }
     }
 
@@ -294,7 +299,7 @@ impl SeatView {
         if drift.start {
             client.start_pitch_drift();
         }
-        self.seat.loopback().send(game.world_mut(), cmd);
+        self.seat.player().loopback.send(game.world_mut(), cmd);
     }
 
     /// Its client's view in `rect`, with its status bar and its notify lines at `realtime`.
@@ -313,7 +318,8 @@ impl SeatView {
         let scene = client.scene();
         self.eye = scene.view.origin;
         let screen = layer_size(shared.mesh.look, rect);
-        shared.play.screen = screen;
+        // The 2D layer is this window's while it draws, and the first player's again after.
+        let first_screen = core::mem::replace(&mut shared.play.screen, screen);
         client.set_screen(screen[0], screen[1]);
         let mut hud = client.hud();
         self.console.resize(screen[0]);
@@ -321,6 +327,7 @@ impl SeatView {
         let callback = shared
             .play
             .frame(&scene, &hud, shared.bsp.bsp(), shared.mesh, aspect);
+        shared.play.screen = first_screen;
         ui.painter().add(shared.shell.paint(rect, callback));
     }
 }

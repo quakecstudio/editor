@@ -142,7 +142,7 @@ fn the_default_is_single_player_with_no_bots() {
     let args = parse(&["e1m1"]).unwrap();
     assert_eq!(args.players, 1);
     assert_eq!(args.bots, 0);
-    assert!(!args.coop);
+    assert_eq!(args.rules, None);
     assert_eq!(args.maxplayers(), qs_sim::MaxPlayers::SINGLE);
     assert!(args.new_game_settings(args.maxplayers()).is_empty());
     assert!(args.bot_lines().is_empty());
@@ -154,16 +154,21 @@ fn the_default_is_single_player_with_no_bots() {
     assert_eq!(parse(&["-listen", "0"]).unwrap().maxplayers().get(), 8);
 }
 
-// spec DIFF-3.2: `--coop` sets coop 1 and deathmatch 0, the last word on deathmatch
+// spec DIFF-3.2: `--rules coop` sets coop 1 and deathmatch 0, the last word on deathmatch;
+// `--rules deathmatch` sets deathmatch 1 even with one slot
 #[test]
 fn coop_sets_coop_and_not_deathmatch() {
-    let args = parse(&["-listen", "4", "--coop"]).unwrap();
+    let args = parse(&["-listen", "4", "--rules", "coop"]).unwrap();
     let settings = args.new_game_settings(args.maxplayers());
     assert_eq!(setting(&settings, "coop"), Some("1"));
     assert_eq!(setting(&settings, "deathmatch"), Some("0"));
-    let alone = parse(&["--coop"]).unwrap();
+    let alone = parse(&["--rules", "coop"]).unwrap();
     let settings = alone.new_game_settings(alone.maxplayers());
     assert_eq!(setting(&settings, "coop"), Some("1"));
+    let deathmatch = parse(&["--rules", "deathmatch"]).unwrap();
+    let settings = deathmatch.new_game_settings(deathmatch.maxplayers());
+    assert_eq!(setting(&settings, "deathmatch"), Some("1"));
+    assert!(parse(&["--rules", "ctf"]).is_err());
 }
 
 // spec BOT-9.3: `--bots n` types `addbot` n times, with `--bot-skill` when given

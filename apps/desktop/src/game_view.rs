@@ -89,7 +89,7 @@ impl GameSlot {
 
     /// Follows the window: its context is kept, and while `tab`, the centre's, is not the Game
     /// tab and the game is not popped out, a game that holds the mouse gives it back, since
-    /// nothing there would free it.
+    /// nothing there would free it, and its other players' windows stay open (L-86).
     pub(crate) fn follow(&self, ctx: &Context, tab: CentreTab) {
         if self.ctx.borrow().is_none() {
             *self.ctx.borrow_mut() = Some(ctx.clone());
@@ -100,6 +100,7 @@ impl GameSlot {
             && let Some(game) = slot.as_mut()
         {
             game.release_pointer(ctx);
+            game.show_players(ctx);
         }
     }
 

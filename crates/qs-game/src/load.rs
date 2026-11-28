@@ -31,7 +31,7 @@ use crate::demos::{Connection, Demos, Level};
 use crate::game::{Game, HeldSpawn, HostAction, NextLevel, Reporting};
 use crate::keys::{STARTUP, config_path, host_files};
 use crate::map_bsp::MapBsp;
-use crate::seats::{Loopback, Seat};
+use crate::seats::Loopback;
 
 /// `rand ()`'s linear congruential step, `next = next * 1103515245 + 12345`.
 const RAND_MULTIPLIER: u32 = 1_103_515_245;
@@ -129,8 +129,6 @@ pub(crate) struct Loaded {
     /// its connection, so `record` can start after it (CLIENT-10.2). A host that came here
     /// from another level keeps the demos it had.
     pub(crate) demos: Demos,
-    /// The local players after the first (L-86), each joined in its own slot.
-    pub(crate) seats: Vec<Seat>,
 }
 
 /// A file of the install by name, `None` when it is not on the search path.
@@ -544,6 +542,15 @@ impl Args {
             Some(demos.recorder()),
         )?;
         loaded.demos = demos;
+        // NET-7.13: the other local players join after the first, each in the next free slot;
+        // the game brings them into each later level itself.
+        for number in 2..=self.players {
+            loaded
+                .game
+                .join_local_player(number)
+                .map_err(|error| Error::Load(error.to_string()))?
+                .ok_or_else(|| Error::Load(format!("no free slot for player {number}")))?;
+        }
         // BOT-9.3: the bots the command line asks for, brought in by the first frame's
         // `Cbuf_Execute`.
         for line in self.bot_lines() {
@@ -727,18 +734,6 @@ impl Args {
         let mut client = Client::new(qs_client::Game::Standard);
         let mut describer = Describer { read: reader()? };
         let mut rand = Rand::new();
-        // L-86: the other local players join after the first, each in the next slot, before
-        // the bots the last level carried take theirs.
-        let mut seats = Vec::new();
-        if !game.holds_load() {
-            for number in 2..=self.players {
-                let seat = game
-                    .join_seat(number, (&mut describer, &mut rand))
-                    .map_err(|error| Error::Load(error.to_string()))?
-                    .ok_or_else(|| Error::Load(format!("no free slot for player {number}")))?;
-                seats.push(seat);
-            }
-        }
         let packets = Loopback::FIRST.receive(game.world_mut());
         // CLIENT-10.2: a demo being recorded takes the connection's messages as they are read.
         let events = match recorder {
@@ -834,7 +829,6 @@ impl Args {
             camera,
             printed,
             demos: Demos::new(),
-            seats,
         })
     }
 

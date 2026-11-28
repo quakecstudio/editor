@@ -60,6 +60,7 @@ impl Args {
             }
         };
         let mut world = Headless::new(loaded, offscreen.as_ref());
+        world.seat_players();
         let frame = Duration::from_secs_f64(FRAME);
         let started = Instant::now();
         let mut next = started;
@@ -93,6 +94,7 @@ impl Args {
                         let next = Headless::new(*loaded, offscreen.as_ref());
                         let old = core::mem::replace(&mut world, next);
                         world.game.carry_from(old.game);
+                        world.seat_players();
                         // A button held stays held into the next level, as the window's,
                         // and so does a demo being recorded or played.
                         world.input = old.input;
@@ -420,7 +422,6 @@ impl Headless {
             audio,
             printed,
             demos,
-            seats,
         } = loaded;
         match drawer {
             Some(drawer) => {
@@ -451,8 +452,20 @@ impl Headless {
             printed,
             input: Input::new(),
             demos,
-            seats,
+            seats: Vec::new(),
         }
+    }
+
+    /// A seat for each local player after the first the game has (NET-7.13), each a new client
+    /// for the level's signon.
+    fn seat_players(&mut self) {
+        self.seats = self
+            .game
+            .local_players()
+            .iter()
+            .copied()
+            .map(Seat::new)
+            .collect();
     }
 
     /// The player for a frame of `seconds` (INPUT-2), as the window steers it with no key
@@ -660,7 +673,7 @@ impl Headless {
                 seconds,
                 (&mut self.describer, &mut self.rand),
             ) {
-                tracing::warn!(%error, player = seat.number(), "client");
+                tracing::warn!(%error, player = seat.player().number, "client");
             }
         }
         let view = self.client.scene().view;

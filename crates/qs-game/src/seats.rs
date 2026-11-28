@@ -3,15 +3,13 @@
 //! The local players (ADR-0031, L-86): each a client joined to its server slot through a
 //! loopback connection in the host's process, as id's `net_loop.c` joins its one local client
 //! (NET-7.3), so a network connection could later join a slot beside them with no change to
-//! the server. The first player is the window's or the Game tab's; each other one is a seat,
-//! with a client of its own that reads only what its slot was sent.
+//! the server. The first player is the window's or the Game tab's; the game keeps each other
+//! one, by its number and slot, from level to level (NET-7.13), and the window gives each a
+//! seat: a client of its own that reads only what its slot was sent.
 
 use qc_progs::Progs;
 use qs_client::{Client, Event, Models, Random};
 use qs_sim::{ClientId, UserCmd, World, WorldError};
-
-/// The most local players a game takes: the first and three more, each in a window of its own.
-pub(crate) const MAX_LOCAL_PLAYERS: u8 = 4;
 
 /// A local client's connection to its server slot (NET-7.3): the moves it sends are its slot's
 /// moves, and the messages it reads are the ones its slot was sent.
@@ -30,6 +28,20 @@ impl Loopback {
     /// [`WorldError::Frame`] when `ClientConnect` or `PutClientInServer` fails.
     pub(crate) fn join(world: &mut World, progs: &Progs<'_>) -> Result<Option<Self>, WorldError> {
         Ok(world.connect(progs)?.map(Self))
+    }
+
+    /// The local client of this slot again, on a new level (NET-7.13); `None` when the slot
+    /// is taken.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when `ClientConnect` or `PutClientInServer` fails.
+    pub(crate) fn rejoin(
+        self,
+        world: &mut World,
+        progs: &Progs<'_>,
+    ) -> Result<Option<Self>, WorldError> {
+        Ok(world.connect_in(progs, self.0)?.then_some(self))
     }
 
     /// The slot it joins.
@@ -56,6 +68,23 @@ impl Loopback {
     }
 }
 
+/// A local player after the first: its place among the local players, the first being 1, and
+/// its connection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LocalPlayer {
+    /// Its number: player 2 is the first after the first.
+    pub(crate) number: u8,
+    /// Its connection to its slot.
+    pub(crate) loopback: Loopback,
+}
+
+impl LocalPlayer {
+    /// `name "player<n>"`, the name it sends as it joins (NET-7.13).
+    pub(crate) fn name_line(self) -> String {
+        format!("name \"player{}\"\n", self.number)
+    }
+}
+
 /// Why a local player did not join.
 #[derive(Debug)]
 pub(crate) enum SeatError {
@@ -63,8 +92,6 @@ pub(crate) enum SeatError {
     Progs(String),
     /// Its `ClientConnect` or `PutClientInServer` stopped with a run error.
     Spawn(WorldError),
-    /// Its client could not read what its signon wrote: the player's number, and why.
-    Client(u8, qs_client::ParseError),
 }
 
 impl core::fmt::Display for SeatError {
@@ -72,46 +99,24 @@ impl core::fmt::Display for SeatError {
         match self {
             Self::Progs(why) => write!(f, "the progs did not read: {why}"),
             Self::Spawn(error) => write!(f, "{error}"),
-            Self::Client(number, error) => write!(f, "player {number}'s client: {error}"),
         }
     }
 }
 
-/// A local player after the first: its connection and the client that reads its slot's
-/// messages.
+/// A local player after the first, and the client that reads its slot's messages: a new one on
+/// each level, which reads the serverinfo and the signon its slot was sent first.
 pub(crate) struct Seat {
-    loopback: Loopback,
+    player: LocalPlayer,
     client: Client,
-    /// Its place among the local players, the first being 1: player 2 is the first seat.
-    number: u8,
 }
 
 impl Seat {
-    /// Local player `number` joined in the first free slot, its name `player<number>` sent as
-    /// a client sends its own (NET-7.4), and its client given what the signon wrote; `None`
-    /// when every slot is active.
-    ///
-    /// # Errors
-    ///
-    /// [`SeatError`]: a run error in its spawn, or a message its client could not read.
-    pub(crate) fn join(
-        world: &mut World,
-        progs: &Progs<'_>,
-        number: u8,
-        (models, rand): (&mut dyn Models, &mut dyn Random),
-    ) -> Result<Option<Self>, SeatError> {
-        let Some(loopback) = Loopback::join(world, progs).map_err(SeatError::Spawn)? else {
-            return Ok(None);
-        };
-        world.client_command(loopback.id(), &format!("name \"player{number}\"\n"));
-        let mut seat = Self {
-            loopback,
+    /// A client for `player`, which has read nothing yet.
+    pub(crate) fn new(player: LocalPlayer) -> Self {
+        Self {
+            player,
             client: Client::new(qs_client::Game::Standard),
-            number,
-        };
-        seat.read(world, 0.0, (models, rand))
-            .map_err(|error| SeatError::Client(number, error))?;
-        Ok(Some(seat))
+        }
     }
 
     /// The client's frame of `frametime` seconds: it reads what its slot was sent; the events
@@ -126,13 +131,13 @@ impl Seat {
         frametime: f32,
         (models, rand): (&mut dyn Models, &mut dyn Random),
     ) -> Result<Vec<Event>, qs_client::ParseError> {
-        let packets = self.loopback.receive(world);
+        let packets = self.player.loopback.receive(world);
         self.client.frame(frametime, &packets, models, rand)
     }
 
-    /// Its connection.
-    pub(crate) const fn loopback(&self) -> Loopback {
-        self.loopback
+    /// Its player.
+    pub(crate) const fn player(&self) -> LocalPlayer {
+        self.player
     }
 
     /// Its client.
@@ -144,10 +149,5 @@ impl Seat {
     /// Its client, to steer and to draw.
     pub(crate) const fn client_mut(&mut self) -> &mut Client {
         &mut self.client
-    }
-
-    /// Its place among the local players, the first being 1.
-    pub(crate) const fn number(&self) -> u8 {
-        self.number
     }
 }

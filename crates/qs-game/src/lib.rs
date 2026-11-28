@@ -25,7 +25,7 @@ mod window;
 
 use load::{Start, Startup};
 
-pub use args::{Args, LookArg, Show};
+pub use args::{Args, BotSkillArg, LookArg, Rules, Show};
 pub use error::Error;
 pub use window::{GameView, Running};
 

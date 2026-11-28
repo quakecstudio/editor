@@ -6,13 +6,9 @@
 use std::path::PathBuf;
 
 use crate::Error;
-use crate::seats::MAX_LOCAL_PLAYERS;
 use qs_render::Look;
-use qs_sim::MaxPlayers;
 use qs_sim::protocol::ProtocolVersion;
-
-/// `Host_FindMaxClients`' slots for a `-listen` with no number, or one below 1 (NET-7.1).
-const LISTEN_DEFAULT: i32 = 8;
+use qs_sim::{BotSkill, LISTEN_SLOTS, MAX_LOCAL_PLAYERS, MaxPlayers};
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
@@ -67,10 +63,11 @@ pub struct Args {
     /// 1, at most 16, and `deathmatch` 1 (NET-7.1), with room for bots (`addbot`, BOT-1.2).
     #[arg(long, num_args = 0..=1, default_missing_value = "8", allow_negative_numbers = true)]
     pub listen: Option<i32>,
-    /// Coop: `coop` 1 and `deathmatch` 0 for a new game, as the console's `coop 1` before a
-    /// `map` sets them; with `-listen`, in place of its `deathmatch` 1.
-    #[arg(long)]
-    pub coop: bool,
+    /// The rules of a new game: coop sets `coop` 1 and `deathmatch` 0, as the console's
+    /// `coop 1` before a `map` does, in place of `-listen`'s `deathmatch` 1; deathmatch sets
+    /// `deathmatch` 1.
+    #[arg(long, value_enum)]
+    pub rules: Option<Rules>,
     /// The local players, 1 to 4 (L-86): the first in the window or the Game tab, each other
     /// one in a window of its own, joined after the first; it needs as many slots
     /// (`-listen`).
@@ -81,8 +78,8 @@ pub struct Args {
     #[arg(long, default_value_t = 0)]
     pub bots: u8,
     /// How well those bots play, 0 to 3 (BOT-1.4); the game's `skill` setting without it.
-    #[arg(long, value_parser = clap::value_parser!(u8).range(0..=3))]
-    pub bot_skill: Option<u8>,
+    #[arg(long, value_enum)]
+    pub bot_skill: Option<BotSkillArg>,
     /// Where a free camera starts: x, y, z and yaw.
     #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
     pub at: Option<Vec<f32>>,
@@ -194,6 +191,44 @@ impl ProtocolArg {
     }
 }
 
+/// What `--rules` names.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rules {
+    /// Coop: `coop` 1, `deathmatch` 0.
+    Coop,
+    /// Deathmatch: `deathmatch` 1.
+    Deathmatch,
+}
+
+/// What `--bot-skill` takes (BOT-1.4).
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BotSkillArg {
+    /// Skill 0.
+    #[value(name = "0")]
+    Easy,
+    /// Skill 1.
+    #[value(name = "1")]
+    Normal,
+    /// Skill 2.
+    #[value(name = "2")]
+    Hard,
+    /// Skill 3.
+    #[value(name = "3")]
+    Nightmare,
+}
+
+impl BotSkillArg {
+    /// The skill it names.
+    pub const fn skill(self) -> BotSkill {
+        match self {
+            Self::Easy => BotSkill::Easy,
+            Self::Normal => BotSkill::Normal,
+            Self::Hard => BotSkill::Hard,
+            Self::Nightmare => BotSkill::Nightmare,
+        }
+    }
+}
+
 /// What `--show` starts at.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Show {
@@ -244,7 +279,7 @@ impl Args {
     /// fewer than 1, else one.
     pub fn maxplayers(&self) -> MaxPlayers {
         self.listen.map_or(MaxPlayers::SINGLE, |n| {
-            MaxPlayers::new(if n < 1 { LISTEN_DEFAULT } else { n })
+            MaxPlayers::new(if n < 1 { LISTEN_SLOTS } else { n })
         })
     }
 
@@ -264,15 +299,17 @@ impl Args {
     }
 
     /// The settings a new game of `maxplayers` slots starts with: `deathmatch` 1 for more
-    /// than one (NET-7.1), and with `--coop`, `coop` 1 and `deathmatch` 0 (DIFF-3.2).
+    /// than one (NET-7.1), then what `--rules` sets (DIFF-3.2).
     pub fn new_game_settings(&self, maxplayers: MaxPlayers) -> Vec<(String, String)> {
         let mut settings = Vec::new();
         if maxplayers.is_multiplayer() {
             settings.push(("deathmatch".to_owned(), "1".to_owned()));
         }
-        if self.coop {
-            settings.push(("coop".to_owned(), "1".to_owned()));
-            settings.push(("deathmatch".to_owned(), "0".to_owned()));
+        let set = |name: &str, value: &str| (name.to_owned(), value.to_owned());
+        match self.rules {
+            Some(Rules::Coop) => settings.extend([set("coop", "1"), set("deathmatch", "0")]),
+            Some(Rules::Deathmatch) => settings.push(set("deathmatch", "1")),
+            None => {}
         }
         settings
     }
@@ -282,7 +319,7 @@ impl Args {
     pub fn bot_lines(&self) -> Vec<String> {
         let skill = self
             .bot_skill
-            .map_or_else(String::new, |skill| format!(" {skill}"));
+            .map_or_else(String::new, |skill| format!(" {}", skill.skill().level()));
         (0..self.bots).map(|_| format!("addbot{skill}\n")).collect()
     }
 
