@@ -58,7 +58,7 @@ use qs_workbench::{
 };
 use qs_workbench::{CandidateKind, FileText, READ_FILE};
 use qs_workbench::{FieldSet, SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
-use qs_workbench::{SET_GAME, SetGameParams};
+use qs_workbench::{GameOptions, SET_GAME, SetGameParams};
 
 use crate::about::{self, AboutWindow};
 use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
@@ -1837,12 +1837,8 @@ impl Shell {
                 });
             });
         // L-86, L-88: the game Play and Play from here play, and the map's issues check for.
-        if play_changed
-            && let Err(error) = serde_json::to_value(SetGameParams { game: play })
-                .map_err(ShellError::from)
-                .and_then(|params| Ok(self.session.execute(SET_GAME, params)?))
-        {
-            tracing::warn!(%error, "the play options were not kept");
+        if play_changed {
+            self.choose_game(play);
         }
         if let Some(panel) = toggled
             && let Err(error) = self.toggle(panel)
@@ -1863,6 +1859,23 @@ impl Shell {
         }
         if let Some(id) = layout_command {
             self.run_chosen(id);
+        }
+    }
+
+    /// Keeps `game` as the one Play and Play from here play (L-86), and checks the open map's
+    /// starts again for it (START-3).
+    fn choose_game(&mut self, game: GameOptions) {
+        let set = serde_json::to_value(SetGameParams { game })
+            .map_err(ShellError::from)
+            .and_then(|params| Ok(self.session.execute(SET_GAME, params)?));
+        match set {
+            Ok(_) if self.session.context().workbench.map().is_some() => {
+                if let Err(error) = self.with_map(MapFeature::check_map_issues) {
+                    tracing::warn!(%error, "the map's issues were not checked again");
+                }
+            }
+            Ok(_) => {}
+            Err(error) => tracing::warn!(%error, "the play options were not kept"),
         }
     }
 
