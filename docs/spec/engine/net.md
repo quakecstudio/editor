@@ -477,4 +477,3 @@ deathmatch with its players on one machine and with bots (ADR-0031).
 | `MAX_SCOREBOARD` | 16 | `quakedef.h` |
 | `NUM_PING_TIMES` | 16 | `server.h` |
 | `svc_disconnect` | 2 | `protocol.h` |
-
