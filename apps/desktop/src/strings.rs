@@ -9,6 +9,7 @@ use qs_map_edit::uv::FaceRef;
 use qs_map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_map_edit::{HunkSide, MapHunk};
 use qs_workbench::map_logic::{CallbackKind, FireEnd, Fired, FiredEvent, MapFired};
+use qs_workbench::{GameMode, GameOptions};
 
 /// One string the app shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -51,6 +52,24 @@ pub enum Text {
     FullScreen,
     /// What Full Screen does.
     FullScreenHint,
+    /// The toolbar's play options, beside Play (L-86).
+    PlayOptions,
+    /// What the play options choose.
+    PlayOptionsHint,
+    /// How many players play on this computer.
+    LocalPlayers,
+    /// Where the other players play.
+    LocalPlayersNote,
+    /// How many bots play.
+    Bots,
+    /// No bots.
+    BotsNone,
+    /// What the bots play.
+    BotsNote,
+    /// How well the bots play.
+    BotSkill,
+    /// The bots play at the game's skill.
+    BotSkillGame,
     /// The Game tab while the game is popped out.
     GamePoppedOut,
     /// The popped-out game's window title.
@@ -1272,7 +1291,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 626] = [
+    pub const ALL: [Self; 635] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1292,6 +1311,15 @@ impl Text {
         Self::PopOutHint,
         Self::FullScreen,
         Self::FullScreenHint,
+        Self::PlayOptions,
+        Self::PlayOptionsHint,
+        Self::LocalPlayers,
+        Self::LocalPlayersNote,
+        Self::Bots,
+        Self::BotsNone,
+        Self::BotsNote,
+        Self::BotSkill,
+        Self::BotSkillGame,
         Self::GamePoppedOut,
         Self::PoppedGameTitle,
         Self::SearchCommands,
@@ -1935,6 +1963,17 @@ impl Text {
             Self::PopOutHint => "Play the game in a window of its own, or back in the Game tab",
             Self::FullScreen => "Full Screen",
             Self::FullScreenHint => "Fill the screen with the game; again for a window",
+            Self::PlayOptions => "Play options",
+            Self::PlayOptionsHint => {
+                "Single player, coop or deathmatch, with players on this computer and bots"
+            }
+            Self::LocalPlayers => "Players on this computer",
+            Self::LocalPlayersNote => "Each player after the first plays in a window of its own.",
+            Self::Bots => "Bots",
+            Self::BotsNone => "None",
+            Self::BotsNote => "Bots play any mod through its own QuakeC.",
+            Self::BotSkill => "Bot skill",
+            Self::BotSkillGame => "The game's skill",
             Self::GamePoppedOut => "The game is in its own window. Pop In brings it back here.",
             Self::PoppedGameTitle => "QuakeC Studio game",
             Self::SearchCommands => "Search commands",
@@ -2992,6 +3031,66 @@ pub fn selection_size([x, y, z]: [f64; 3]) -> String {
 pub fn prefab_count(prefabs: usize) -> String {
     let noun = if prefabs == 1 { "prefab" } else { "prefabs" };
     format!("{prefabs} {noun}")
+}
+
+/// The name of `mode`, as the play options show it (L-86).
+#[must_use]
+pub const fn game_mode(mode: GameMode) -> Text {
+    match mode {
+        GameMode::Single => Text::MapSingle,
+        GameMode::Coop => Text::MapCoop,
+        GameMode::Deathmatch => Text::MapDeathmatch,
+    }
+}
+
+/// "3 bots", "1 bot" or "no bots" (L-86).
+fn bot_count(bots: u8) -> String {
+    match bots {
+        0 => "no bots".to_owned(),
+        1 => "1 bot".to_owned(),
+        n => format!("{n} bots"),
+    }
+}
+
+/// "player" or "players", for `players` of them.
+const fn player_noun(players: u8) -> &'static str {
+    if players == 1 { "player" } else { "players" }
+}
+
+/// "2 players, 3 bots": the players on this computer and the bots (L-86).
+fn players_and_bots(players: u8, bots: u8) -> String {
+    format!("{players} {}, {}", player_noun(players), bot_count(bots))
+}
+
+/// The play options' button (L-86): "Single player", or for coop and deathmatch the game, the
+/// players on this computer and the bots, as "Coop \u{b7} 1 player, 2 bots".
+#[must_use]
+pub fn play_summary(options: GameOptions) -> String {
+    let name = game_mode(options.mode).get();
+    if options.mode.is_multiplayer() {
+        format!(
+            "{name} \u{b7} {}",
+            players_and_bots(options.players, options.bots)
+        )
+    } else {
+        name.to_owned()
+    }
+}
+
+/// What Play starts with the play options chosen (L-86).
+#[must_use]
+pub fn play_plan(options: GameOptions) -> String {
+    let game = match options.mode {
+        GameMode::Single => return "Play starts a single player game.".to_owned(),
+        GameMode::Coop => "a coop game",
+        GameMode::Deathmatch => "a deathmatch",
+    };
+    format!(
+        "Play starts {game} with {} {} on this computer and {}.",
+        options.players,
+        player_noun(options.players),
+        bot_count(options.bots)
+    )
 }
 
 /// How many issues the map has and how many of them have a quick fix (P6-19).

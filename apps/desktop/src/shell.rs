@@ -34,6 +34,7 @@ use qs_map_edit::{
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::GitHub;
+use qs_workbench::GameOptions;
 use qs_workbench::TASK_LIST;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
@@ -90,6 +91,7 @@ use crate::multibuffer::{MultiAction, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
 use crate::pick::Answer;
 use crate::picker::{PickerKind, PickerRow};
+use crate::play_options;
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation, explain_task, panel_button, review_waiting};
@@ -328,6 +330,9 @@ pub struct Shell {
     preview_error: Option<String>,
     /// What the last Play played: the open map, or the project (L-52).
     played: Played,
+    /// The game Play plays, as the toolbar's play options chose it (L-86); Play from here in
+    /// the map editor plays it too.
+    play: GameOptions,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
     /// Each feature's state (P6-41).
@@ -399,6 +404,7 @@ impl Shell {
             review_seen: 0,
             preview_error: None,
             played: Played::Project,
+            play: GameOptions::default(),
             menu: MenuPlace::default(),
             settings_file: None,
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
@@ -1717,6 +1723,7 @@ impl Shell {
         let mut export_asked = false;
         let mut control = None;
         let mut layout_command = None;
+        let mut play = self.play;
         let preview = &self.session.context().preview;
         let state = preview.state();
         let place = self.session.context().layout.game_place;
@@ -1743,6 +1750,7 @@ impl Shell {
                 name_area(ui, accesskit::Role::Toolbar, Text::Toolbar);
                 ui.horizontal_centered(|ui| {
                     control = play_controls(ui, theme, state);
+                    play_options::button(ui, theme, &mut play);
                     help::button(ui, theme, Topic::Toolbar);
                     ui.separator();
                     ui.label(Text::PreviewHost.get());
@@ -1831,6 +1839,7 @@ impl Shell {
                     });
                 });
             });
+        self.play = play;
         if let Some(panel) = toggled
             && let Err(error) = self.toggle(panel)
         {
@@ -1878,12 +1887,17 @@ impl Shell {
                 angles: None,
                 region: None,
                 start: qs_workbench::GameStart::Running,
+                game: self.play,
             };
             serde_json::to_value(params)
                 .map_err(ShellError::from)
                 .and_then(|params| Ok(self.session.execute(MAP_PLAY_FROM_HERE, params)?))
         } else if id == PLAY {
-            serde_json::to_value(PlayParams::default())
+            let params = PlayParams {
+                map: None,
+                game: self.play,
+            };
+            serde_json::to_value(params)
                 .map_err(ShellError::from)
                 .and_then(|params| Ok(self.session.execute(id, params)?))
         } else {
@@ -2612,6 +2626,8 @@ impl Shell {
     /// Runs `call` on the map's feature with the commands, then carries out what it asked of
     /// the window, in order.
     fn with_map<R>(&mut self, call: impl FnOnce(&mut MapFeature, &mut Commands<'_>) -> R) -> R {
+        // L-86: Play from here plays the game the toolbar's play options chose.
+        self.features.map.play = self.play;
         let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
         let out = call(&mut self.features.map, &mut commands);
         for request in self.features.map.take_requests() {
