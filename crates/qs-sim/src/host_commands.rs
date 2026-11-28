@@ -456,7 +456,7 @@ impl SimCall<'_, '_, '_> {
         }
     }
 
-    /// `Host_Status_f`'s lines (PHYS-13.5, NET-7.6): the host's name, the version, the map,
+    /// `Host_Status_f`'s lines (PHYS-13.10, NET-7.6): the host's name, the version, the map,
     /// how many clients are active of how many slots, and for each active one its number, name
     /// cut to 16, frags and time connected, then its address; a local client's is `LOCAL`, the
     /// loopback connection's, and a bot's `BOT`, and every one has been connected 0:00:00, as

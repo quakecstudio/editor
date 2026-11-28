@@ -144,6 +144,8 @@ pub struct SimBuiltins {
     pub(crate) files: ModelFiles,
     /// What the host's console printed since it was taken, `Con_Printf` (PHYS-13).
     pub(crate) console_out: Vec<u8>,
+    /// Whether a saved game was read into the world, `sv.loadgame` (PHYS-10.5).
+    pub(crate) loaded: bool,
 }
 
 impl SimBuiltins {
@@ -176,6 +178,7 @@ impl SimBuiltins {
             checkpvs: Vec::new(),
             files,
             console_out: Vec::new(),
+            loaded: false,
         }
     }
 

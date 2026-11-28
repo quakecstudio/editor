@@ -673,7 +673,7 @@ impl World {
         }
     }
 
-    /// `Host_Status_f` on the server's console (PHYS-13.5, NET-7.6).
+    /// `Host_Status_f` on the server's console (PHYS-13.10, NET-7.6).
     fn status(&mut self, progs: &Progs<'_>) {
         for line in self.status_lines(progs) {
             self.print(line);

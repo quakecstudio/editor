@@ -162,8 +162,6 @@ pub struct World {
     /// The spawn parms the level the clients left kept, each used in place of
     /// `SetNewParms`' (PHYS-10.4).
     carried: Option<SpawnParms>,
-    /// Whether a saved game was read into this world, `sv.loadgame` (PHYS-10.5).
-    loaded: bool,
     /// The map's name, `sv.name`.
     map: String,
     /// The edict each of the map's entities became, for the editor's live edits (MAP-12).
@@ -493,7 +491,6 @@ impl World {
             aliases,
             search_path: options.search_path,
             carried: options.carried.clone(),
-            loaded: false,
             map: map.to_owned(),
             map_entities: map_entities::MapEntities::default(),
             pending_spawn: None,
@@ -637,7 +634,7 @@ impl World {
         self.builtins.messages.game = game;
     }
 
-    /// The messages sent to client `id` since the last call (NET-1.3): each packet a
+    /// The messages sent to client `id` since the last call (NET-1.6): each packet a
     /// reliable message or a datagram, in sending order; none for a bot or a slot past the
     /// last (NET-7.3).
     pub fn take_messages(&mut self, id: ClientId) -> ClientMessages {
@@ -764,6 +761,11 @@ impl World {
             .get_mut(id)
             .map_or_default(|slot| core::mem::take(&mut slot.commands));
         for text in commands {
+            // `SV_ReadClientMessage`'s "`if (!host_client->active) return false;`": a client a
+            // command dropped reads nothing more (NET-7.7).
+            if !self.builtins.messages.clients.is_active(id) {
+                return Ok(());
+            }
             let stage = if self.is_spawned(id) {
                 ClientStage::Spawned
             } else {
@@ -779,7 +781,13 @@ impl World {
                 None => {}
             }
         }
-        let Some(slot) = self.builtins.messages.clients.get_mut(id) else {
+        let Some(slot) = self
+            .builtins
+            .messages
+            .clients
+            .get_mut(id)
+            .filter(|slot| slot.active)
+        else {
             return Ok(());
         };
         if !slot.spawned {
@@ -795,7 +803,7 @@ impl World {
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let cmd = match kind {
             SlotKind::Local => {
-                let now = double_to_float(call.clock());
+                let now = call.clock();
                 if let Some(slot) = call.sim.messages.clients.get_mut(id) {
                     slot.record_ping(now);
                 }
@@ -954,7 +962,7 @@ impl World {
     /// carries from the last level, the saved ones in a loaded game, else `SetNewParms`'.
     fn signon_connect(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
         // PHYS-10.5: a saved game's world keeps the parms it saved.
-        let parms = if self.loaded {
+        let parms = if self.builtins.loaded {
             ConnectParms::Saved
         } else {
             match self.carried.as_ref().and_then(|c| c.slots(id)) {
@@ -962,8 +970,12 @@ impl World {
                 None => ConnectParms::New,
             }
         };
-        SimCall::frame(&mut self.machine, progs, &mut self.builtins)
-            .connect_client(id, SlotKind::Local, parms)
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        // NET-2.1: a host that did not settle the world has its baselines made now.
+        if call.sim.messages.baselines.is_empty() {
+            call.create_baselines().map_err(WorldError::Frame)?;
+        }
+        call.connect_client(id, SlotKind::Local, parms)
             .map_err(WorldError::Frame)
     }
 
@@ -975,7 +987,7 @@ impl World {
         };
         let (name, colors, parms) = (slot.name.clone(), slot.colors, slot.spawn_parms);
         let name = self.make_string(name);
-        let loaded = self.loaded;
+        let loaded = self.builtins.loaded;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         // PHYS-10.5: a saved game's world is "fully inited allready": no spawn functions.
         if loaded {
@@ -996,7 +1008,7 @@ impl World {
         call.spawn_message(id).map_err(WorldError::Frame)
     }
 
-    /// `Host_Status_f`'s lines (PHYS-13.5, NET-7.6), for the console.
+    /// `Host_Status_f`'s lines (PHYS-13.10, NET-7.6), for the console.
     pub(crate) fn status_lines(&mut self, progs: &Progs<'_>) -> Vec<Vec<u8>> {
         SimCall::frame(&mut self.machine, progs, &mut self.builtins).status_lines()
     }

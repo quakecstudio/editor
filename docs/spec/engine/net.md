@@ -37,7 +37,7 @@ compares with ours. `sv.time` is a `double`; every edict field is a `float`.
   `NET_MAX_MSGLEN` bytes, which may overflow (BUILTIN-13.3, BUILTIN-13.4). A server frame
   (`Host_ServerFrame`) sets the `frametime` global, clears `sv.datagram`, admits new
   clients, runs each client's move (PHYS-9), runs the physics (PHYS-1) unless the server is
-  paused, and then sends the clients' messages (NET-1.3).
+  paused, and then sends the clients' messages (NET-1.6).
 - **NET-1.3** **Withdrawn** 2026-11-27: it kept "the preview host['s] one client" when a
   message overflowed; the server has several client slots now (NET-7). Replaced by NET-1.6.
 - **NET-1.4** `SV_UpdateToReliableMessages`: for each client slot `i` whose edict's `frags`

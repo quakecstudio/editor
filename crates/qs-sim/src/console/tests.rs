@@ -265,7 +265,7 @@ fn status_and_version_print_the_host() {
             "begin is not valid from the console"
         ]
     );
-    assert!(console(&mut run, "kick player; stuffcmds\n").is_empty());
+    assert!(console(&mut run, "stuffcmds\n").is_empty());
     assert_eq!(
         console(&mut run, "stuffcmds now\n"),
         ["stuffcmds : execute command line parameters"]
@@ -416,8 +416,8 @@ fn path_prints_the_search_path() {
     );
 }
 
-// spec PHYS-13.9: where the preview host's console differs from id's on purpose: the Exe line,
-// a negative edict, map with no name, kick, and the remote-server commands
+// spec PHYS-13.11: where the preview host's console differs from id's on purpose: the Exe line,
+// a negative edict, map with no name, and the remote-server commands
 #[test]
 fn the_deliberate_differences_from_ids_host() {
     let mut run = connected();
@@ -426,7 +426,7 @@ fn the_deliberate_differences_from_ids_host() {
         format!("Exe: QuakeC Studio {}", env!("CARGO_PKG_VERSION"))
     );
     assert_eq!(console(&mut run, "edict -1\n"), ["Bad edict number"]);
-    assert!(console(&mut run, "map; kick player\n").is_empty());
+    assert!(console(&mut run, "map\n").is_empty());
     assert_eq!(run.world.take_host_command(), None);
     for name in [
         "connect",

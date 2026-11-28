@@ -28,7 +28,7 @@ use qs_bsp::Bsp;
 
 use crate::builtins::{FL_ONGROUND, SimCall};
 use crate::builtins::{PARM0, PARM1, PARM2, PARM3, PARM4};
-use crate::clients::{ClientId, Clients, MaxPlayers, SlotKind};
+use crate::clients::{ClientId, ClientSlot, Clients, MaxPlayers, SlotKind};
 use crate::collision::{CONTENTS_SOLID, MoveKind};
 use crate::physics::MoveType;
 use crate::protocol::{
@@ -114,7 +114,7 @@ const PROBE_FIRST: i32 = 3;
 const PROBE_DEPTH: f32 = 160.0;
 /// `DEFAULT_VIEWHEIGHT` (NET-4.4).
 pub const DEFAULT_VIEWHEIGHT: f32 = 22.0;
-/// `EF_MUZZLEFLASH` (NET-1.3).
+/// `EF_MUZZLEFLASH` (NET-1.6).
 const EF_MUZZLEFLASH: i32 = 2;
 
 const STAT_TOTALSECRETS: i32 = 11;
@@ -1258,7 +1258,7 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// A signon stage's message sent, as `SV_SendClientMessages` sends it at the end of the
-    /// stage's frame when `sendsignon` is set (NET-1.3).
+    /// stage's frame when `sendsignon` is set (NET-1.6).
     pub(crate) fn flush_signon(&mut self, client: ClientId) {
         let Some(slot) = self.sim.messages.clients.get_mut(client) else {
             return;
@@ -1365,7 +1365,7 @@ impl SimCall<'_, '_, '_> {
 
     // ---- each frame (NET-1, NET-3, NET-4) ----
 
-    /// `SV_SendClientMessages` (NET-1.3): the reliable updates, then for each active client
+    /// `SV_SendClientMessages` (NET-1.6): the reliable updates, then for each active client
     /// its datagram when it is spawned, and its message when it holds anything, then the
     /// muzzle flashes cleared.
     pub(crate) fn send_client_messages(&mut self) -> Result<(), RunError> {
@@ -1392,7 +1392,7 @@ impl SimCall<'_, '_, '_> {
             if slot.spawned || slot.sendsignon {
                 if slot.message.overflowed() {
                     // `SV_DropClient` and `overflowed = false`: a local client stays, its
-                    // message starts over (NET-1.3).
+                    // message starts over (NET-1.6).
                     slot.message.clear();
                     slot.message.reset_overflow();
                 } else if !slot.message.is_empty() {
@@ -1420,9 +1420,17 @@ impl SimCall<'_, '_, '_> {
     /// active client and is cleared.
     pub(crate) fn update_to_reliable_messages(&mut self) {
         for id in self.sim.messages.clients.max().ids() {
-            let frags = float_to_int(self.float(id.edict(), "frags"));
+            let value = self.float(id.edict(), "frags");
+            let frags = float_to_int(value);
             let clients = &mut self.sim.messages.clients;
-            if !clients.get(id).is_some_and(|slot| slot.old_frags != frags) {
+            // `host_client->old_frags != host_client->edict->v.frags`: the int compared as a
+            // float, so a fractional count is sent again each frame.
+            #[expect(
+                clippy::float_cmp,
+                reason = "spec NET-1.4: id compares old_frags exactly"
+            )]
+            let changed = |slot: &ClientSlot| int_to_float(slot.old_frags) != value;
+            if !clients.get(id).is_some_and(changed) {
                 continue;
             }
             for client in clients.iter_mut() {
@@ -1984,7 +1992,7 @@ pub(crate) const LERP_FINISH_STEPS: f32 = 255.0;
 /// The intervals "close enough to 0.1 to not send", `i != 25 && i != 26` (NET-6.9).
 pub(crate) const TENTH_STEPS: [i32; 2] = [25, 26];
 
-/// A world's messages to its client, in sending order (NET-1.3).
+/// A world's messages to its client, in sending order (NET-1.6).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ClientMessages {
     /// Each packet: a reliable message or a datagram, oldest first.

@@ -276,7 +276,7 @@ impl World {
         if let Some(slot) = self.builtins.messages.clients.get_mut(ClientId::FIRST) {
             slot.spawn_parms = save.parms.map(Slot::from_f32);
         }
-        self.loaded = true;
+        self.builtins.loaded = true;
         Ok(())
     }
 

@@ -5,6 +5,8 @@
 
 use qc_builtins::mock::EngineProfile;
 use qc_progs::Progs;
+use qc_types::Slot;
+use qc_vm::convert::float_to_int;
 
 use super::{Running, ledge, player_progs, running_from};
 use crate::{ClientId, LoadOptions, MaxPlayers, QcValue, SaveError, SlotKind, UserCmd};
@@ -527,4 +529,102 @@ fn slot_kind(run: &Running, id: ClientId) -> Option<SlotKind> {
         .get(id)
         .filter(|slot| slot.active)
         .map(|slot| slot.kind)
+}
+
+// spec NET-7.4: SV_ConnectClient makes no baselines, so a bot spawnclient makes while the world
+// settles leaves the signon with the one set the settling writes
+#[test]
+fn a_bot_made_while_settling_writes_no_baselines() {
+    let signon = |more: &str| {
+        let mut run = server(2, "", more, EngineProfile::VkQuake);
+        let progs = Progs::read(&run.progs).unwrap();
+        run.world.settle(&progs).unwrap();
+        run.world.builtins.messages.signon.bytes().to_vec()
+    };
+    let with_bot = format!(
+        "{BOT_BUILTINS}entity bot;\nvoid() StartFrame = {{ if (!bot) bot = spawnclient(); }};\n"
+    );
+    assert_eq!(signon(&with_bot), signon(""));
+}
+
+// spec NET-7.7: a client its own command drops reads no more commands and does not move or
+// think that frame, and what it left unread is not run by the next client in its slot
+#[test]
+fn a_client_its_command_drops_stops() {
+    let more = format!("{BOT_BUILTINS}void() ClientKill = {{ dropclient(self); }};\n");
+    let mut run = server(3, "", &more, EngineProfile::VkQuake);
+    for _ in 0..2 {
+        connect(&mut run);
+    }
+    let walk = UserCmd {
+        forward: 200.0,
+        ..UserCmd::default()
+    };
+    run.world.set_command(id(1), walk);
+    run.world.client_command(id(1), "kill");
+    run.frames(1, FRAME).unwrap();
+    assert!(!run.world.is_spawned(id(1)));
+    assert_eq!(
+        run.world.vector(2, "velocity"),
+        [0.0; 3],
+        "no think after the drop"
+    );
+    assert_eq!(connect(&mut run), Some(id(1)));
+    run.world.client_command(id(1), "kill");
+    run.world.client_command(id(1), "god");
+    run.frames(1, FRAME).unwrap();
+    assert!(!run.world.is_spawned(id(1)), "dropped again, god unread");
+    // Slot 0 kicks slot 1 before slot 1's queued `god` is read.
+    assert_eq!(connect(&mut run), Some(id(1)));
+    run.world.client_command(id(1), "god");
+    run.world.client_command(ClientId::FIRST, "kick # 2");
+    run.frames(1, FRAME).unwrap();
+    assert!(!run.world.is_spawned(id(1)));
+    assert_eq!(connect(&mut run), Some(id(1)));
+    run.frames(1, FRAME).unwrap();
+    let godmode = 64;
+    let flags = float_to_int(run.world.float(2, "flags"));
+    assert_eq!(flags & godmode, 0, "the kicked client's god was not read");
+    assert!(!holds(&sent(&mut run, id(1)), b"godmode"));
+}
+
+// spec NET-1.4: old_frags is compared with the edict's frags as a float, so a fractional count
+// is sent again every frame
+#[test]
+fn fractional_frags_are_sent_every_frame() {
+    let mut run = players(2, 1, "", "");
+    run.world.set_float_field(1, "frags", 0.5);
+    for _ in 0..2 {
+        run.frames(1, FRAME).unwrap();
+        assert!(holds(
+            &sent(&mut run, ClientId::FIRST),
+            &[SVC_UPDATEFRAGS, 0, 0, 0]
+        ));
+    }
+}
+
+// spec BUILTIN-18.45: in a loaded game a bot takes the slot's saved parms, as SV_ConnectClient
+// does under sv.loadgame, and SetNewParms does not run
+#[test]
+fn a_bot_in_a_loaded_game_keeps_the_saved_parms() {
+    let more = format!(
+        "{BOT_BUILTINS}entity bot; float fresh;\n\
+         void() SetNewParms = {{ fresh = fresh + 1; }};\n\
+         void() StartFrame = {{ if (!bot) bot = spawnclient(); }};\n"
+    );
+    let mut run = server(2, "", &more, EngineProfile::VkQuake);
+    run.world.builtins.loaded = true;
+    let saved = Slot::from_f32(9.0);
+    run.world
+        .builtins
+        .messages
+        .clients
+        .get_mut(id(1))
+        .unwrap()
+        .spawn_parms[0] = saved;
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(global_entity(&run, "bot"), 2);
+    assert_eq!(global_float(&run, "fresh"), 0.0);
+    let slot = run.world.builtins.messages.clients.get(id(1)).unwrap();
+    assert_eq!(slot.spawn_parms[0], saved);
 }

@@ -14,7 +14,7 @@
 use qc_edict::EdictNumber;
 use qc_types::Slot;
 use qc_vm::RunError;
-use qc_vm::convert::{float_to_int, int_to_float};
+use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 
 use crate::builtins::{PARM0, SimCall};
 use crate::client::UserCmd;
@@ -139,7 +139,7 @@ pub enum SlotKind {
     Bot,
 }
 
-/// A client slot, `client_t` (NET-1.3, NET-2, NET-7).
+/// A client slot, `client_t` (NET-1.6, NET-2, NET-7).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ClientSlot {
     pub(crate) active: bool,
@@ -203,7 +203,7 @@ impl Default for ClientSlot {
 }
 
 impl ClientSlot {
-    /// `SV_SendClientMessages` sending its message (NET-1.3): a local client's becomes a
+    /// `SV_SendClientMessages` sending its message (NET-1.6): a local client's becomes a
     /// packet, and a bot's is dropped, as it has no one to send it to (NET-7.3).
     pub(crate) fn send_message(&mut self) {
         let packet = self.message.take();
@@ -213,10 +213,11 @@ impl ClientSlot {
     }
 
     /// `SV_ReadClientMove`'s ping (NET-7.6): `sv.time` now less the time its move carries
-    /// back, into `ping_times[num_pings % 16]`.
-    pub(crate) fn record_ping(&mut self, now: f32) {
+    /// back, `sv.time - MSG_ReadFloat ()` in double and stored as a float, into
+    /// `ping_times[num_pings % 16]`.
+    pub(crate) fn record_ping(&mut self, now: f64) {
         if let Some(ping) = self.ping_times.get_mut(self.num_pings % NUM_PING_TIMES) {
-            *ping = now - self.last_time;
+            *ping = double_to_float(now - f64::from(self.last_time));
         }
         self.num_pings = self.num_pings.wrapping_add(1);
     }
@@ -355,22 +356,17 @@ impl SimCall<'_, '_, '_> {
             return Ok(());
         };
         // `memset (client, 0, sizeof(*client))` and `strcpy (client->name, "unconnected")`:
-        // what the host has not taken and the commands the connection brought stay.
-        let outbox = core::mem::take(&mut slot.outbox);
+        // the commands the new connection brought stay.
         let commands = core::mem::take(&mut slot.commands);
         let saved = slot.spawn_parms;
         *slot = ClientSlot {
             active: true,
             kind,
-            outbox,
             commands,
             message,
             name: UNCONNECTED.to_vec(),
             ..ClientSlot::default()
         };
-        if self.sim.messages.baselines.is_empty() {
-            self.create_baselines()?;
-        }
         // NET-2.2: the serverinfo, sent at the end of the frame the stage ran in.
         self.send_serverinfo(id);
         self.flush_signon(id);
@@ -397,7 +393,13 @@ impl SimCall<'_, '_, '_> {
         let Some(id) = self.sim.messages.clients.free_from_last() else {
             return self.set_return_entity(0);
         };
-        self.connect_client(id, SlotKind::Bot, ConnectParms::New)?;
+        // `SV_ConnectClient`'s `if (sv.loadgame)`.
+        let parms = if self.sim.loaded {
+            ConnectParms::Saved
+        } else {
+            ConnectParms::New
+        };
+        self.connect_client(id, SlotKind::Bot, parms)?;
         let Some(slot) = self.sim.messages.clients.get_mut(id) else {
             return self.set_return_entity(0);
         };
@@ -472,6 +474,8 @@ impl SimCall<'_, '_, '_> {
             slot.active = false;
             slot.name.clear();
             slot.old_frags = DROPPED_FRAGS;
+            // `NET_Close`: what the connection sent and the server has not read goes with it.
+            slot.commands.clear();
         }
         if let Some(active) = self.sim.mock.engine_mut().clients_active.get_mut(id.slot()) {
             *active = false;
