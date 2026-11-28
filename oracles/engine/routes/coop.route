@@ -1,0 +1,28 @@
+# Coop with two players on LibreQuake's start map (L-85, DIFF-16.7): `-listen 2` gives two slots
+# and `+coop 1` coop, as id's Host_FindMaxClients and stuffcmds read them; both players connect
+# in frame 1 and enter in frame 4, the first at the info_player_start and the second at the
+# coop start after it. They walk, turn, jump, fire and change weapon apart, one talks to the
+# other, and the second goes god, so the frames run both players' physics and think functions.
+# In CI (`cargo xtask sim-diff oracles/engine/routes/coop.route -- -basedir
+# "$QS_TEST_ASSETS/librequake-lite"`).
+engine -listen
+engine 2
+engine +coop
+engine 1
+map start
+players 2
+frames 72
+move 0 0 0 200 0 0 0 0
+move #2 0 180 0 200 0 0 0 0
+frames 72
+move 0 90 0 200 0 0 0 0
+move #2 0 270 0 0 350 0 2 0
+frames 72
+move 10 180 0 200 0 0 1 2
+move #2 -10 90 0 200 0 0 1 0
+frames 36
+cmd say hello
+cmd #2 god
+move 0 270 0 -200 0 0 0 1
+move #2 0 45 0 200 -350 0 0 2
+frames 144

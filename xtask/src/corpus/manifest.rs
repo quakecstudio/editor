@@ -104,6 +104,9 @@ pub(crate) struct Entry {
     pub(crate) strip: String,
     #[serde(default)]
     pub(crate) game_dir: String,
+    /// Another asset whose game directory this one's members are extracted into, beside its
+    /// paks, such as a map the other's release leaves out; such an asset has no paks of its own.
+    pub(crate) into: Option<String>,
     /// Archive members to extract, each with its SHA-256.
     #[serde(default)]
     pub(crate) members: BTreeMap<String, String>,

@@ -54,6 +54,10 @@ pub(crate) fn cmd_fetch(m: &Manifest, dest: &Path, net: &dyn Net) -> Vec<String>
         let fetched = fetch_archive(e, dest, net)
             .and_then(|archive| extract(e, &archive, dest))
             .and_then(|out| {
+                // Its members join another asset's files, which that asset's checks cover.
+                if e.into.is_some() {
+                    return Ok(out);
+                }
                 let game_dir = out.join(&e.game_dir);
                 let files = pak_files(&game_dir)?;
                 let names: BTreeSet<&str> = files.keys().map(String::as_str).collect();
@@ -104,9 +108,13 @@ fn fetch_archive(e: &Entry, dest: &Path, net: &dyn Net) -> Result<PathBuf, Strin
     Ok(archive)
 }
 
-/// Extracts the pinned members, checking each SHA-256; returns the asset's directory.
+/// Extracts the pinned members, checking each SHA-256; returns the asset's directory. An asset
+/// `into` another is extracted into that one's game directory.
 fn extract(e: &Entry, archive: &Path, dest: &Path) -> Result<PathBuf, String> {
-    let out = dest.join(&e.id);
+    let out = match &e.into {
+        Some(into) => dest.join(into).join(&e.game_dir),
+        None => dest.join(&e.id),
+    };
     // Opened only when a member is not already extracted.
     let mut zip: Option<Zip<File>> = None;
     for (name, want) in &e.members {

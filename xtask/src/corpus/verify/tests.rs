@@ -792,3 +792,16 @@ fn a_project_file_is_a_tracked_relative_path_on_a_codebase() {
         "map map0: project \"p.toml\" must be a relative path, on a codebase",
     );
 }
+
+#[test]
+fn an_asset_into_names_another_asset() {
+    let mut m = base();
+    asset(&mut m, "lq").into = Some("lq".to_owned());
+    assert_has(&errs(&m), "into must name another asset");
+    let mut m = base();
+    asset(&mut m, "lq").into = Some("../lq".to_owned());
+    assert_has(&errs(&m), "into must name another asset");
+    let mut m = base();
+    asset(&mut m, "lq").into = Some("other".to_owned());
+    assert!(!errs(&m).contains("into"));
+}

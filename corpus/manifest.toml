@@ -752,6 +752,25 @@ notes = "README-IMPORTANT-LICENCE-INFO: every model, texture and sound is BSD-3-
 "sound/player/slimbrn2.wav" = "sound/player/slmbrn2.wav"
 
 [[asset]]
+id = "librequake-deathmatch"
+name = "LibreQuake v0.09-beta, server build: the deathmatch map lqdm11"
+source = "librequake"
+url = "https://github.com/lavenderdotpet/LibreQuake/releases/download/v0.09-beta/server.zip"
+sha256 = "ccb593f7ff5e87e04f03dbf298960f91ffd7bfdac85d06d9ad1f9874dbc8d0f1"
+license = "BSD-3-Clause"
+use = "fetch-at-test"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO", "docs/misc-docs/COPYING"]
+strip = "server/"
+game_dir = "id1"
+into = "librequake-lite"
+notes = "The lite build has no deathmatch map; the server build's lqdm11, the smallest of its 13, joins the lite build's id1/maps for the multiplayer simulation differential (L-85, DIFF-16.7). Its license files are byte-identical to the lite build's and the pinned commit's."
+[asset.members]
+"server/maps/lqdm11.bsp" = "fefeee9549a780734467d187fe75e7290ad597d55043a4478562f2da971a6f8b"
+"server/docs/COPYING" = "c3426ae10fd52ab1a3c3d4de4f2fae60543403e3cfd09ae5dc2ec16ae4717d28"
+"server/docs/README-IMPORTANT-LICENCE-INFO" = "121e4f2bbae888f442be76795c7e1b431bbfce9c7dd968407b4da969ccb50eae"
+"server/docs/misc-docs/COPYING" = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
+
+[[asset]]
 id = "id1-paks"
 name = "id Software Quake game data (pak0.pak, pak1.pak)"
 license = "LicenseRef-id-Quake-EULA"

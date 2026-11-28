@@ -495,3 +495,50 @@ fn each_kind_names_its_precache_builtin() {
     assert_eq!(Kind::Model.name(), "model");
     assert_eq!(Kind::Sound.name(), "sound");
 }
+
+// An asset `into` another is extracted into that one's game directory, beside its paks, and has
+// no paks of its own to check (L-85, docs/test-assets.md).
+#[test]
+fn an_asset_into_another_joins_its_game_directory() {
+    let tmp = TempDir::new();
+    const SERVER: &str = "https://github.com/o/r/releases/download/v1/server.zip";
+    let map = b"lqdm11";
+    let archive = zip(
+        &[
+            ("server/maps/lqdm11.bsp", map),
+            ("server/maps/lqdm1.bsp", b"not pinned"),
+        ],
+        false,
+    );
+    let extra = Entry {
+        id: "lq-dm".to_owned(),
+        use_: "fetch-at-test".to_owned(),
+        url: SERVER.to_owned(),
+        sha256: hex_digest(&archive),
+        strip: "server/".to_owned(),
+        game_dir: "id1".to_owned(),
+        into: Some("lq".to_owned()),
+        members: [("server/maps/lqdm11.bsp".to_owned(), hex_digest(map))].into(),
+        ..Entry::default()
+    };
+    let fetched = fetch_archive(&extra, &tmp.0, &FakeNet::serving(SERVER, &archive)).unwrap();
+    let out = extract(&extra, &fetched, &tmp.0).unwrap();
+    assert_eq!(out, tmp.0.join("lq/id1"));
+    assert_eq!(fs::read(out.join("maps/lqdm11.bsp")).unwrap(), map);
+    assert!(
+        !out.join("maps/lqdm1.bsp").exists(),
+        "only the pinned member"
+    );
+    assert!(!tmp.0.join("lq-dm").exists());
+    let mut m = asset_manifest(entry());
+    m.asset.insert(1, extra);
+    let mut net = FakeNet::serving(RELEASE, &release());
+    net.bodies.insert(SERVER.to_owned(), archive);
+    assert_eq!(
+        cmd_fetch(&m, &tmp.0, &net),
+        Vec::<String>::new(),
+        "no paks of its own"
+    );
+    assert!(tmp.0.join("lq/id1/pak0.pak").is_file());
+    assert!(tmp.0.join("lq/id1/maps/lqdm11.bsp").is_file());
+}

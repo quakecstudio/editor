@@ -14,7 +14,7 @@ use qc_progs::Progs;
 use qc_trace::{Record, Trace};
 use qc_types::Slot;
 use qs_bsp::{Bsp, BspLoader};
-use qs_sim::scenario::{Moment, NoDriver, Scenario};
+use qs_sim::scenario::{HostWords, Moment, NoDriver, Scenario};
 use qs_sim::{
     EdictNumber, FieldOffset, GlobalOffset, LoadOptions, NamedValue, QcValue, RawState, State,
     World, read_state,
@@ -179,9 +179,14 @@ impl Game {
                 .flatten()
                 .map(LoadedFile::into_bytes)
         });
-        // DIFF-16.1: id's server runs the progs as it is, with id's builtin table.
+        // DIFF-16.1: id's server runs the progs as it is, with id's builtin table; DIFF-16.8:
+        // with the slots `-listen` gives and the settings of `+<name> <value>`, as id's
+        // `Host_FindMaxClients` and `stuffcmds` read the same words.
+        let host = HostWords::of(&self.engine);
         let options = LoadOptions {
             registration: self.vfs.registration(),
+            maxplayers: host.maxplayers,
+            settings: host.settings,
             ..LoadOptions::default()
         };
         let mut world =

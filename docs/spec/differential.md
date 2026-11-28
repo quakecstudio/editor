@@ -1293,3 +1293,19 @@ oracle is the engine oracle (P3-23, TRACE-4.11, TRACE-4.12): id's server from th
   (PHYS-13.6) is left to the preview host; `oracles/engine/routes/console.route` plays the
   console's settings, aliases, `wait`, `exec` and debug prints through both. CI's Test Assets
   jobs play it on LibreQuake's start map.
+- **DIFF-16.7** A route's `players <n>`, 1 to 16 and before the frames, gives it n local
+  clients, 1 without it. Each connects in frame 1, in order, each to the first free slot (the
+  oracle's `NET_CheckNewConnections` offers every one, and `SV_CheckForNewClients` takes them
+  all), and each answers its signon as DIFF-16.1's client does, its name `player` for the first
+  and `player<k>` for client k after it (NET-7.13). `#<k>` before a `move` or `cmd` line's rest
+  names client k, from 1; without it the line is the first client's. Each client sends its own
+  move each frame from frame 5, its impulse once. A `#<k>` past the route's players is refused.
+  `oracles/engine/routes/coop.route` plays two players in coop on LibreQuake's start map, and
+  `deathmatch.route` four on its `lqdm11`, who move, fire and frag; CI's Test Assets jobs play
+  both.
+- **DIFF-16.8** The engine words, the route's `engine` lines and those after `--`, choose the
+  slots and the settings on both sides: the oracle runs id's `Host_FindMaxClients`, so `-listen
+  [n]` gives n slots (8 with no number or one below 1, at most 16) and `deathmatch` 1 for more
+  than one, and quake.rc's `stuffcmds` before the map, which runs each `+<name> <value>` such as
+  `+coop 1`; `qs-sim` loads the map with the same slots and settings (BOT-9.2's reading), and
+  both make `deathmatch` 0 under coop (`SV_SpawnServer`, DIFF-3.2).

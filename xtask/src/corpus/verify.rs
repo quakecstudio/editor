@@ -282,6 +282,13 @@ fn check_asset(e: &Entry, at: &str, sources: &BTreeMap<&str, &Source>, errs: &mu
             Some(_) => {}
         }
     }
+    if let Some(into) = &e.into
+        && (!safe_member(into) || *into == e.id)
+    {
+        errs.push(format!(
+            "{at}: into must name another asset whose game directory it joins"
+        ));
+    }
     for (name, stand_in) in &e.stand_ins {
         if !(safe_member(name) && safe_member(stand_in)) {
             errs.push(format!(

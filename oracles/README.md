@@ -216,12 +216,14 @@ id's server as id's dedicated server runs it, from the `quake-engine` files whol
 `pr_cmds.c`, `common.c`, `cvar.c`, `cmd.c`, `zone.c`, `mathlib.c`, `crc.c` and `host_cmd.c`,
 with the functions of `host.c` and `view.c` the server calls copied unchanged
 (`[[extract]]` with `oracle = "engine"`). [`engine/engine.c`](engine/engine.c) is the host,
-ours: `Host_Init` for a dedicated server with one client slot, `Host_ServerFrame` as the build
-without `FPS_20` has it, the console, files and a clock that only the frames move. The network
-is one local client: it connects in the first frame (`NET_CheckNewConnections`), sends
-`prespawn`, `spawn` and `begin` as id's client does, and from then on a `clc_move` each frame,
-written with id's `MSG_Write*` as `CL_SendMove` writes it, so id's `SV_ReadClientMove` reads
-the angles, the moves, the buttons and the impulse. What the server sends back is not read: the
+ours: `Host_Init` for a dedicated server with the slots id's `Host_FindMaxClients` gives
+(`-listen [n]`, one without it, copied unchanged), quake.rc's `stuffcmds` before the map so a
+`+<command>` word runs, `Host_ServerFrame` as the build without `FPS_20` has it, the console,
+files and a clock that only the frames move. The network is the script's local clients, one by
+default: each connects in the first frame (`NET_CheckNewConnections`), sends `prespawn`,
+`spawn` and `begin` as id's client does, and from then on a `clc_move` each frame, written with
+id's `MSG_Write*` as `CL_SendMove` writes it, so id's `SV_ReadClientMove` reads the angles, the
+moves, the buttons and the impulse. What the server sends back is not read: the
 trace is of the server's state. The client's, renderer's and menu's functions the server names
 are empty, and [`engine/extracted.h`](engine/extracted.h) declares what the copied functions
 read at their files' scope.
@@ -237,13 +239,16 @@ The script, one command a line, `#` a comment:
 engine <word>        # a word of the engine's command line, after those given after <trace>
 map <name>           # the map to start (Host_Map_f)
 frametime <seconds>  # each server frame's host_frametime, 1/72 by default
-move <pitch> <yaw> <roll> <forward> <side> <up> <buttons> <impulse>
-cmd <text>           # a console command the client sends (clc_stringcmd), in the next frame
+players <n>          # the local clients, 1 to 16, each connecting in the first frame; 1 by default
+move [#<k>] <pitch> <yaw> <roll> <forward> <side> <up> <buttons> <impulse>
+cmd [#<k>] <text>    # a console command client k sends (clc_stringcmd), in the next frame
 console <text>       # a line typed at the server's console (Cbuf_AddText), run in the next frame
 frames <n>           # run n server frames with the current move; the impulse goes once
 ```
 
-`engine`, `map` and `frametime` come before the frames. The trace is the header, then for each
+`engine`, `map`, `frametime` and `players` come before the frames. `#<k>` names local client k,
+from 1, on a `move` or `cmd` line; without it the line is the first client's. Client k after the
+first sends the name `player<k>` (DIFF-16.7). The trace is the header, then for each
 frame a frame record holding what the frame changed, after frame 0, the state the map loaded to
 (TRACE-4.12), with a string record before it for each
 engine string that is new or whose text changed (TRACE-4.10). A QuakeC run error ends the trace
@@ -264,7 +269,10 @@ OS, and each frame runs `_Host_Frame`'s steps for a local server: `rand`, the ti
 the client's move, `Host_ServerFrame` and `host_time`. [`engine/routes/start.route`](engine/routes/start.route)
 walks, turns, jumps, fires and changes weapon through LibreQuake's start map, and
 `start.expected.jsonl` beside it is its recording; CI's Test Assets jobs play it on Linux, macOS
-and Windows against that recording (`docs/ci.md`).
+and Windows against that recording (`docs/ci.md`). [`engine/routes/coop.route`](engine/routes/coop.route)
+plays two players in coop on the start map and [`deathmatch.route`](engine/routes/deathmatch.route)
+four in deathmatch on LibreQuake's `lqdm11`, which the `librequake-deathmatch` asset puts beside
+the lite paks; `sim-diff` plays both in the same jobs.
 
 `cargo xtask sim-diff <route> [--map <name>]... [-- <engine word>...]` plays a route through
 the engine oracle and through `qs-sim` and compares the two states after the map loads and

@@ -577,6 +577,15 @@ jobs:
         run: |
           cargo xtask sim-diff oracles/engine/routes/console.route \
             -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # L-85 (DIFF-16.7): two players in coop on the start map, and four in deathmatch who move,
+      # fire and frag on LibreQuake's lqdm11, the same in qs-sim as in id's server.
+      - name: Compare coop and deathmatch with id's server
+        if: env.CI_PATH == 'full' && github.event_name != 'push'
+        run: |
+          cargo xtask sim-diff oracles/engine/routes/coop.route \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+          cargo xtask sim-diff oracles/engine/routes/deathmatch.route \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       # The source is the same on every OS, so one runner checks it.
       - name: Write id 1.01 to the asset cache
         if: env.CI_PATH == 'full' && runner.os == 'Linux'

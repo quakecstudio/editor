@@ -16,6 +16,7 @@ The headless preview host runs scripted engine scenarios in CI on all three OSes
 | Asset | Release | License | Use |
 | --- | --- | --- | --- |
 | `librequake-lite` | [LibreQuake v0.09-beta](https://github.com/lavenderdotpet/LibreQuake/releases/tag/v0.09-beta), `lite.zip` (56 MB, SHA-256 `428e736b...da83`) | BSD-3-Clause; GPL-2.0-or-later for its progs and `pop.lmp` | `fetch-at-test` |
+| `librequake-deathmatch` | The same release's `server.zip` (71 MB, SHA-256 `ccb593f7...d0f1`): only `maps/lqdm11.bsp` and the license files | BSD-3-Clause | `fetch-at-test`, into `librequake-lite`'s `id1` |
 
 [LibreQuake](https://github.com/lavenderdotpet/LibreQuake) is a free replacement for Quake's `id1` game data. It uses id's file names, so QuakeC written for Quake, including the rerelease, finds its models and sounds under the names it expects. It is already in the conformance corpus (its QuakeC and 20 of its map sources), so its license evidence is pinned there.
 
@@ -28,6 +29,8 @@ Only the two pak files and the license documents are extracted. `pak0.pak` holds
 - LibreQuake's own `progs.dat` and `qwprogs.dat`, which our scenarios replace with progs we compile.
 
 The `lite` build was chosen over `full` (116 MB) because it already covers what the rerelease precaches (below) at half the download. `server.zip` has more maps but no models or sounds. The archive's music tracks are not extracted.
+
+The lite build has no deathmatch map, so `librequake-deathmatch` takes one, `lqdm11` (376 KB, the smallest of the server build's 13, with 8 deathmatch starts), from `server.zip` for the multiplayer simulation differential (L-85, [DIFF-16.7](spec/differential.md)). An asset with `into` is extracted into another asset's game directory, here `librequake-lite/id1/maps/lqdm11.bsp`, beside that asset's paks, and has no paks of its own to check. Its license files are pinned members too, byte-identical to the lite build's, so the same evidence ties it to the pinned commit.
 
 ### License review
 
@@ -49,7 +52,7 @@ Both licenses are compatible with GPL-3.0-or-later (ADR-0002). We still never co
 ```
 <cache>/downloads/<sha256>.zip      the release archive, kept so later runs work offline
 <cache>/downloads/<source>-<commit>.tar.gz   a repository archive cargo xtask corpus fetch keeps
-<cache>/librequake-lite/id1/        pak0.pak, pak1.pak, docs/, and the stand-ins below
+<cache>/librequake-lite/id1/        pak0.pak, pak1.pak, docs/, the stand-ins below and maps/lqdm11.bsp
 ```
 
 so an engine starts with `-basedir <cache>/librequake-lite`. After extracting, `fetch` fails unless the paks contain `gfx/palette.lmp`, `gfx/colormap.lmp`, `gfx.wad` and `maps/start.bsp`, plus at least one map (`maps/*.bsp`), model (`progs/*.mdl`) and sound (`sound/*.wav`).
