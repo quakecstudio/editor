@@ -3657,6 +3657,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-bots"
+version = "2026.11.5"
+dependencies = [
+ "qc-progs",
+ "qc-vm",
+ "qs-bsp",
+ "qs-map",
+ "qs-map-bsp",
+ "qs-map-gen",
+ "qs-sim",
+]
+
+[[package]]
 name = "qs-bridge"
 version = "2026.11.5"
 dependencies = [
@@ -3780,6 +3793,7 @@ dependencies = [
  "qc-sema",
  "qc-types",
  "qc-vm",
+ "qs-bots",
  "qs-bridge",
  "qs-bsp",
  "qs-client",
@@ -4049,6 +4063,7 @@ dependencies = [
  "qc-syntax",
  "qc-types",
  "qc-vm",
+ "qs-bots",
  "qs-bsp",
  "qs-commands",
  "qs-map",
@@ -4126,6 +4141,7 @@ dependencies = [
  "qc-syntax",
  "qc-types",
  "qc-vm",
+ "qs-bots",
  "qs-bridge",
  "qs-bsp",
  "qs-checkpoint",

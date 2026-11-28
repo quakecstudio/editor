@@ -14,6 +14,11 @@ use qs_sim::{
     EdictChange, EditError, HostCommand, HostState, MapPlace, SpawnParms, World, WorldError,
 };
 use serde_json::{Map, Value, json};
+use std::sync::mpsc::{Receiver, TryRecvError};
+
+use qs_bots::{BotError, Bots, Graph};
+use qs_sim::spawn::Deathmatch;
+use qs_sim::{BotSkill, ClientId};
 
 use crate::AXES;
 use crate::Error;
@@ -294,6 +299,11 @@ pub(crate) struct Game {
     progs_path: String,
     /// The `map/swap` waiting for the host to draw its BSP (BRIDGE-4.17).
     swap: Option<swap::PendingSwap>,
+    /// The bots' minds (BOT-9.1), and the graph being made for them beside the game.
+    bots: Bots,
+    bot_graph: Option<Receiver<Result<Graph, BotError>>>,
+    /// The last level's bots, waiting for this level's held load to end (WORLD-9.7).
+    bots_waiting: Vec<(ClientId, Vec<u8>, BotSkill)>,
 }
 
 impl Game {
@@ -328,7 +338,42 @@ impl Game {
             files: None,
             progs_path: "progs.dat".to_owned(),
             swap: None,
+            bots: Bots::default(),
+            bot_graph: None,
+            bots_waiting: Vec::new(),
         }
+    }
+
+    /// Makes the bots' graph of the compiled map `bsp` on a thread of its own, which can take
+    /// seconds on a large map; until it is made, the bots stand where they are (BOT-7.2).
+    pub(crate) fn make_bot_graph(&mut self, bsp: Vec<u8>) {
+        let deathmatch = Deathmatch::from_setting(self.world.setting("deathmatch").unwrap_or(0.0));
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            // The game may have gone on to another level, which no longer waits for it.
+            drop(send.send(Bots::graph_of(&bsp, deathmatch)));
+        });
+        self.bot_graph = Some(receive);
+    }
+
+    /// Before a server frame (BOT-9.1): the bots' graph once it is made, then each bot's move
+    /// from its mind.
+    fn drive_bots(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
+        if let Some(receive) = &self.bot_graph {
+            match receive.try_recv() {
+                Ok(Ok(graph)) => {
+                    self.bots.set_graph(graph);
+                    self.bot_graph = None;
+                }
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, "the bots have no graph and stand where they are");
+                    self.bot_graph = None;
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => self.bot_graph = None,
+            }
+        }
+        self.bots.drive(&mut self.world, progs, frametime)
     }
 
     /// The reader of the game's search path, which `reload` reads the progs and its `.lno`
@@ -346,6 +391,7 @@ impl Game {
     /// its events, before this level's own, the responses it made later and the screenshots
     /// waiting for a frame, so a command whose frame changed the level is still answered.
     pub(crate) fn carry_from(&mut self, mut old: Self) {
+        let playing = old.bots_playing();
         let mine = core::mem::take(&mut self.events);
         self.events = core::mem::take(&mut old.events);
         self.events.extend(mine);
@@ -363,9 +409,47 @@ impl Game {
                 .set_breakpoint(breakpoint.statement, BreakpointEdit::Set);
             self.breakpoints.push(breakpoint);
         }
+        // BOT-9.1: the bots play on, each in its slot, so it carries what it carried. A load a
+        // spawn function stopped brings them in only once it is loaded again to its end.
+        if self.loading.holds() {
+            self.bots_waiting = playing;
+        } else {
+            self.rejoin_bots(playing);
+        }
         // WORLD-9.7: a load a spawn function stopped says so now that it has the breakpoints.
         if let Err(error) = self.with_progs(Self::report_held_stop) {
             tracing::warn!(error = %error.message, "the stop in the load was not reported");
+        }
+    }
+
+    /// Each bot playing, or waiting for a held load to end, by slot: its slot, name and skill;
+    /// a bot brought in since the last frame among them.
+    fn bots_playing(&mut self) -> Vec<(ClientId, Vec<u8>, BotSkill)> {
+        self.bots.take_changes(&mut self.world);
+        let mut playing: Vec<(ClientId, Vec<u8>, BotSkill)> = self
+            .world
+            .host_bots()
+            .into_iter()
+            .filter_map(|id| Some((id, self.world.client_name(id)?, self.bots.skill(id)?)))
+            .collect();
+        playing.extend(core::mem::take(&mut self.bots_waiting));
+        playing
+    }
+
+    /// Brings each of `bots` into this level in its own slot (BOT-1.7).
+    fn rejoin_bots(&mut self, bots: Vec<(ClientId, Vec<u8>, BotSkill)>) {
+        let rejoined = self.with_progs(|game, progs| {
+            for (id, name, skill) in bots {
+                if !game.world.rejoin_bot(progs, id, skill, &name)? {
+                    tracing::warn!(slot = id.slot(), "a bot's slot was taken on the next level");
+                }
+            }
+            Ok::<(), WorldError>(())
+        });
+        match rejoined {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => tracing::warn!(%error, "a bot did not join the next level"),
+            Err(error) => tracing::warn!(error = %error.message, "the bots did not join"),
         }
     }
 

@@ -93,6 +93,7 @@ README says more.
 | L3 | `qc-ide` | The editor features of QuakeC Studio over the semantic model: navigation, rename, hover, completion, highlighting, inlay hints and diagnostics, with no protocol |
 | L3 | `qc-sema` | The incremental QuakeC semantic model: name resolution, types, and per-module symbol tables on salsa-style queries |
 | L4 | `qc-codegen` | The QuakeC compiler's code generator: lowers the semantic model to a version 6 progs.dat |
+| L4 | `qs-bots` | Bots for the preview host: a client's moves each server frame from what it sees, played by the mod's own player QuakeC |
 | L4 | `qs-bridge` | The IDE bridge protocol: framing, JSON-RPC messages, the session and its schemas, shared by the preview host and the IDE's client |
 | L4 | `qs-client` | The preview host's client: the server's messages read into entities, lights, particles, the view and the status bar, as id's cl_*.c, r_part.c, view.c and sbar.c keep them |
 | L4 | `qs-engine` | The IDE's client for the preview host: run roots, launching the host and the bridge protocol |

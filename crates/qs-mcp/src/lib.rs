@@ -542,7 +542,7 @@ const INSTRUCTIONS: &str = "Every command of QuakeC Studio over the project this
     entities, textures, layers, compile and review hunks); project.* compiles, checks, \
     tests and searches the QuakeC; file.*, edit.*, symbol.* and code.* read, change, \
     navigate and fix source files; preview.* and engine.* run the game, debug it and take \
-    screenshots; vm.* and scenario.* run QuakeC without the game; texture.* imports an \
+    screenshots, and game.* brings bots into it and drops them; vm.* and scenario.* run QuakeC without the game; texture.* imports an \
     image as a texture; checkpoint.* and git.* keep and restore work; terminal.* and \
     task.* run shell commands; paths.* and files.* are the app's own, for what it is asked \
     to open and what changed on disk. A server connected to the running app (--connect) \

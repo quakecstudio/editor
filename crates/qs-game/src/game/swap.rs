@@ -113,6 +113,10 @@ impl Game {
             .swap_bsp(progs, bsp.bsp(), models)
             .map_err(|error| refusal(&error))?;
         self.report_changes(progs);
+        // BOT-9.1: the bots route along the new map's ground.
+        if self.world.maxplayers().is_multiplayer() {
+            self.make_bot_graph(bsp.bytes().to_vec());
+        }
         Ok(json!({ "swapped": swapped }))
     }
 }

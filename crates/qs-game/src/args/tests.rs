@@ -111,3 +111,18 @@ fn paused_needs_a_bridge_to_resume_by() {
     let running = parse(&["-bridge", "/tmp/qs.sock", "start"]).unwrap();
     assert!(!running.starts_paused());
 }
+
+// spec NET-7.1: -listen takes an optional count of slots, 8 when it has none, after a map name
+// as well as before it
+#[test]
+fn listen_takes_an_optional_count() {
+    let parse = |words: &[&str]| parse(words).unwrap();
+    assert_eq!(parse(&["-listen", "4", "e1m1"]).listen, Some(4));
+    assert_eq!(parse(&["e1m1", "-listen"]).listen, Some(8));
+    assert_eq!(
+        parse(&["--listen", "0"]).listen,
+        Some(0),
+        "the load takes 0 as 8"
+    );
+    assert_eq!(parse(&[]).listen, None);
+}

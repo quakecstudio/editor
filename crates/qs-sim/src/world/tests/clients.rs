@@ -628,3 +628,268 @@ fn a_bot_in_a_loaded_game_keeps_the_saved_parms() {
     let slot = run.world.builtins.messages.clients.get(id(1)).unwrap();
     assert_eq!(slot.spawn_parms[0], saved);
 }
+
+/// What the console printed for `text`, run at once, a line each.
+fn typed(run: &mut Running, text: &str) -> Vec<String> {
+    run.world.console(text);
+    run.world.execute_console(&Progs::read(&run.progs).unwrap());
+    run.world
+        .take_console_output()
+        .iter()
+        .map(|line| String::from_utf8_lossy(line).into_owned())
+        .collect()
+}
+
+/// Slot `id`'s name.
+fn slot_name(run: &Running, id: ClientId) -> Vec<u8> {
+    run.world
+        .builtins
+        .messages
+        .clients
+        .get(id)
+        .unwrap()
+        .name
+        .clone()
+}
+
+// spec BOT-1.2: addbot brings a bot the host drives into the first free slot through the mod's
+// own ClientConnect and PutClientInServer, spawned; with every slot taken it says so
+#[test]
+fn addbot_brings_a_bot_in_through_the_mods_player_code() {
+    let more = "float connected;\nvoid() ClientConnect = { connected = connected + 1; };\n";
+    let mut run = players(3, 1, "", more);
+    assert_eq!(typed(&mut run, "addbot\n"), Vec::<String>::new());
+    assert_eq!(slot_kind(&run, id(1)), Some(SlotKind::HostBot));
+    assert!(run.world.is_spawned(id(1)));
+    assert_eq!(
+        global_float(&run, "connected"),
+        2.0,
+        "the player's and the bot's"
+    );
+    assert_eq!(run.world.float(2, "health"), 100.0, "PutClientInServer ran");
+    assert!(sent(&mut run, id(1)).is_empty(), "nothing goes to a bot");
+    typed(&mut run, "addbot\n");
+    assert_eq!(
+        typed(&mut run, "addbot\n"),
+        vec!["addbot: every client slot is taken (3 max)"]
+    );
+    assert_eq!(run.world.host_bots(), vec![id(1), id(2)]);
+    let progs = Progs::read(&run.progs).unwrap();
+    assert!(
+        run.world
+            .status_lines(&progs)
+            .contains(&b"   BOT\n".to_vec())
+    );
+}
+
+// spec BOT-1.3: an unnamed bot takes the first listed name no slot has, a named one its name
+// without quotes cut to 15 bytes, and each slot's bot its slot's colours
+#[test]
+fn bots_are_named_from_the_list_and_coloured_by_slot() {
+    let mut run = players(5, 1, "", "");
+    typed(
+        &mut run,
+        "addbot\naddbot 2 Birch\naddbot 1 a\"verylongbotname1\"\n",
+    );
+    assert_eq!(slot_name(&run, id(1)), b"Ash");
+    assert_eq!(slot_name(&run, id(2)), b"Birch");
+    assert_eq!(slot_name(&run, id(3)), b"averylongbotnam");
+    typed(&mut run, "addbot\n");
+    assert_eq!(slot_name(&run, id(4)), b"Cedar", "Ash and Birch are taken");
+    let colors = |run: &Running, n| {
+        run.world
+            .builtins
+            .messages
+            .clients
+            .get(id(n))
+            .unwrap()
+            .colors
+    };
+    assert_eq!(colors(&run, 1), 13 * 16 + 13);
+    assert_eq!(colors(&run, 2), 12 * 16 + 12);
+    assert_eq!(run.world.float(2, "team"), 14.0, "the pants colour + 1");
+}
+
+// spec BOT-1.4, BOT-1.5: a bot's skill is the number given, rounded and kept to 0 to 3, else
+// the skill setting's; each bot brought in or dropped is told once, in order
+#[test]
+fn a_bots_skill_is_given_or_the_settings() {
+    use crate::{BotChange, BotSkill};
+    assert_eq!(BotSkill::from_setting(-1.0), BotSkill::Easy);
+    assert_eq!(BotSkill::from_setting(0.4), BotSkill::Easy);
+    assert_eq!(BotSkill::from_setting(0.5), BotSkill::Normal);
+    assert_eq!(BotSkill::from_setting(2.0), BotSkill::Hard);
+    assert_eq!(BotSkill::from_setting(9.0), BotSkill::Nightmare);
+    assert_eq!(BotSkill::ALL.map(BotSkill::level), [0, 1, 2, 3]);
+    let mut run = players(4, 1, "", "");
+    typed(&mut run, "skill 2\naddbot\naddbot 7\naddbot Moss\n");
+    let joined: Vec<BotSkill> = run
+        .world
+        .take_bot_changes()
+        .into_iter()
+        .map(|change| match change {
+            BotChange::Joined { skill, .. } => skill,
+            BotChange::Left(_) => panic!("none left"),
+        })
+        .collect();
+    assert_eq!(
+        joined,
+        [BotSkill::Hard, BotSkill::Nightmare, BotSkill::Hard]
+    );
+    assert_eq!(slot_name(&run, id(3)), b"Moss");
+    assert!(run.world.take_bot_changes().is_empty(), "taken once");
+}
+
+// spec BOT-1.2: removebot drops the bot named, case apart, or the one in the highest slot, and
+// says when there is none; it never drops a local client
+#[test]
+fn removebot_drops_a_bot_by_name_or_the_last() {
+    use crate::BotChange;
+    let mut run = players(4, 1, "", "");
+    typed(&mut run, "addbot\naddbot\n");
+    drop(run.world.take_bot_changes());
+    assert_eq!(typed(&mut run, "removebot ASH\n"), Vec::<String>::new());
+    assert_eq!(run.world.take_bot_changes(), vec![BotChange::Left(id(1))]);
+    assert_eq!(
+        typed(&mut run, "removebot player\n"),
+        vec!["removebot: no bot named player"]
+    );
+    typed(&mut run, "removebot\n");
+    assert_eq!(run.world.take_bot_changes(), vec![BotChange::Left(id(2))]);
+    assert_eq!(typed(&mut run, "removebot\n"), vec!["removebot: no bots"]);
+    assert!(run.world.is_spawned(ClientId::FIRST));
+}
+
+// spec BOT-1.1, BOT-1.6: a bot the host drives moves by the host's command, read as a local
+// client's; its mind reads every edict in use, the world first
+#[test]
+fn a_host_bot_moves_by_the_hosts_command() {
+    let mut run = players(
+        2,
+        1,
+        "self.origin = '0 0 24'; self.origin_x = self.colormap * 40 - 200; \
+         setorigin (self, self.origin);",
+        "",
+    );
+    let bytes = run.progs.clone();
+    let progs = Progs::read(&bytes).unwrap();
+    let bot = run
+        .world
+        .add_bot(&progs, crate::BotSkill::Normal, None)
+        .unwrap()
+        .unwrap();
+    run.frames(10, FRAME).unwrap();
+    let before = run.world.vector(bot.edict(), "origin");
+    run.world.set_command(
+        bot,
+        UserCmd {
+            angles: [0.0, 0.0, 0.0],
+            forward: 200.0,
+            ..UserCmd::default()
+        },
+    );
+    run.frames(10, FRAME).unwrap();
+    let after = run.world.vector(bot.edict(), "origin");
+    assert!(after[0] > before[0] + 10.0, "{before:?} to {after:?}");
+    let bodies = run.world.bodies(&progs);
+    let body = bodies.iter().find(|b| b.number == bot.edict()).unwrap();
+    assert_eq!(body.origin, after);
+    assert_eq!(body.health, 100.0);
+    assert_eq!(bodies.first().unwrap().number, 0, "the world first");
+}
+
+// spec BOT-1.2, BOT-1.3: a slot's kind and name are read while it is active, and none after
+#[test]
+fn a_bots_slot_tells_its_kind_and_name() {
+    let mut run = players(3, 1, "", "");
+    typed(&mut run, "addbot 1 Moss\n");
+    assert_eq!(run.world.slot_kind(ClientId::FIRST), Some(SlotKind::Local));
+    assert_eq!(run.world.slot_kind(id(1)), Some(SlotKind::HostBot));
+    assert_eq!(run.world.client_name(id(1)), Some(b"Moss".to_vec()));
+    assert_eq!(run.world.slot_kind(id(2)), None);
+    assert_eq!(run.world.client_name(id(2)), None);
+    typed(&mut run, "removebot\n");
+    assert_eq!(run.world.slot_kind(id(1)), None);
+}
+
+// spec BOT-1.4: only a first argument of digits alone is the skill; one that starts with a
+// digit is the name
+#[test]
+fn a_name_that_starts_with_a_digit_is_a_name() {
+    let mut run = players(3, 1, "", "");
+    typed(&mut run, "skill 3\naddbot 2Fast\n");
+    assert_eq!(slot_name(&run, id(1)), b"2Fast");
+    let skills: Vec<crate::BotChange> = run.world.take_bot_changes();
+    assert_eq!(
+        skills,
+        [crate::BotChange::Joined {
+            id: id(1),
+            skill: crate::BotSkill::Nightmare
+        }]
+    );
+}
+
+// spec BOT-1.7: a bot comes into the next level in the slot it had, with that slot's carried
+// parms, and not when the slot is taken
+#[test]
+fn a_bot_rejoins_in_its_own_slot() {
+    let mut run = players(4, 1, "", "");
+    let bytes = run.progs.clone();
+    let progs = Progs::read(&bytes).unwrap();
+    assert!(
+        run.world
+            .rejoin_bot(&progs, id(3), crate::BotSkill::Hard, b"Cedar")
+            .unwrap()
+    );
+    assert_eq!(slot_kind(&run, id(3)), Some(SlotKind::HostBot));
+    assert_eq!(slot_name(&run, id(3)), b"Cedar");
+    assert_eq!(
+        slot_kind(&run, id(1)),
+        None,
+        "the slots before it stay free"
+    );
+    assert!(
+        !run.world
+            .rejoin_bot(&progs, ClientId::FIRST, crate::BotSkill::Hard, b"Ash")
+            .unwrap(),
+        "the player's slot"
+    );
+    assert_eq!(
+        run.world.take_bot_changes(),
+        [crate::BotChange::Joined {
+            id: id(3),
+            skill: crate::BotSkill::Hard
+        }]
+    );
+}
+
+// spec BOT-1.1: clienttype answers CLIENTTYPE_BOT for a bot the host drives
+#[test]
+fn clienttype_answers_bot_for_a_host_bot() {
+    let more = format!(
+        "{BOT_BUILTINS}float kind;\n\
+         void() StartFrame = {{ kind = clienttype(nextent(world)); }};\n"
+    );
+    let more = more.replace(
+        "float kind;",
+        "entity(entity e) nextent = #47;\nfloat kind;",
+    );
+    let mut run = server(2, "", &more, EngineProfile::VkQuake);
+    connect(&mut run);
+    typed(&mut run, "addbot\n");
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(
+        global_float(&run, "kind"),
+        1.0,
+        "the player, edict 1, is real"
+    );
+    let bot_kind = format!(
+        "{BOT_BUILTINS}entity(entity e) nextent = #47;\nfloat kind;\n\
+         void() StartFrame = {{ kind = clienttype(nextent(nextent(world))); }};\n"
+    );
+    let mut run = server(2, "", &bot_kind, EngineProfile::VkQuake);
+    connect(&mut run);
+    typed(&mut run, "addbot\n");
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(global_float(&run, "kind"), 2.0, "the bot, edict 2");
+}

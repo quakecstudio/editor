@@ -447,6 +447,32 @@ fn parse_value(text: &str) -> Option<Expected> {
     text.parse().ok().map(Expected::Float)
 }
 
+/// What runs before each of a scenario's server frames, as a host's bots set their moves
+/// (BOT-9.1).
+pub trait Driver {
+    /// Runs before a server frame of `frametime` seconds.
+    ///
+    /// # Errors
+    ///
+    /// Why it could not run, which stops the play as the frame's error.
+    fn before_frame(
+        &mut self,
+        world: &mut World,
+        progs: &Progs<'_>,
+        frametime: f64,
+    ) -> Result<(), WorldError>;
+}
+
+/// Nothing before each frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoDriver;
+
+impl Driver for NoDriver {
+    fn before_frame(&mut self, _: &mut World, _: &Progs<'_>, _: f64) -> Result<(), WorldError> {
+        Ok(())
+    }
+}
+
 /// Where a run is when it shows the world to its visitor.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Moment<'s> {
@@ -487,7 +513,8 @@ impl<E: fmt::Display> fmt::Display for PlayError<E> {
 impl Scenario {
     /// Plays the scenario in `world`, settled on its map (SCN-2.1): the client connects in frame 1
     /// and answers each signon stage in the next frame, `start` puts the player after frame 4, and
-    /// each step runs in order. `visit` sees the world after the map settled and after each frame
+    /// each step runs in order, `driver` before each frame. `visit` sees the world after the map
+    /// settled and after each frame
     /// (with the frame's number), and at each assertion and screenshot; it stops the play by
     /// answering `false`. Returns the frames run.
     ///
@@ -499,6 +526,7 @@ impl Scenario {
         &self,
         world: &mut World,
         progs: &Progs<'_>,
+        driver: &mut dyn Driver,
         mut visit: impl FnMut(Moment<'_>, usize, &World) -> Result<bool, E>,
     ) -> Result<usize, PlayError<E>> {
         let mut frame = 0_usize;
@@ -543,6 +571,9 @@ impl Scenario {
                             _ => {}
                         }
                         world.set_command(ClientId::FIRST, cmd);
+                        driver
+                            .before_frame(world, progs, self.frametime.get())
+                            .map_err(|error| PlayError::Frame { frame, error })?;
                         world
                             .frame(progs, self.frametime.get())
                             .map_err(|error| PlayError::Frame { frame, error })?;
@@ -567,12 +598,13 @@ impl Scenario {
         Ok(frame)
     }
 
-    /// Plays the scenario in `world` and checks its assertions (SCN-2).
+    /// Plays the scenario in `world`, `driver` before each frame, and checks its assertions
+    /// (SCN-2).
     #[must_use]
-    pub fn run(&self, world: &mut World, progs: &Progs<'_>) -> Report {
+    pub fn run(&self, world: &mut World, progs: &Progs<'_>, driver: &mut dyn Driver) -> Report {
         let mut checks = Vec::new();
         let mut screenshots = Vec::new();
-        let played = self.play(world, progs, |moment, frame, world| {
+        let played = self.play(world, progs, driver, |moment, frame, world| {
             match moment {
                 Moment::Frame => {}
                 Moment::Expect(expectation) => checks.push(expectation.check(world, progs)),
@@ -649,7 +681,7 @@ impl Expectation {
         let state = world.state(progs);
         let found = self.target.read(world, &state);
         let (passed, found) = match found {
-            Ok(value) => match self.value.compare(value) {
+            Ok(value) => match self.value.compare(&value) {
                 Some(ordering) => (self.op.holds(ordering), value.shown()),
                 None => (
                     false,
@@ -693,17 +725,17 @@ impl fmt::Display for ReadError {
 
 impl Target {
     /// The value the target names in `state`, or why there is none.
-    fn read<'s>(&self, world: &World, state: &'s State) -> Result<&'s QcValue, ReadError> {
-        let named = |values: &'s [NamedValue], name: &str| {
+    fn read(&self, world: &World, state: &State) -> Result<QcValue, ReadError> {
+        fn named<'a>(values: &'a [NamedValue], name: &str) -> Option<&'a QcValue> {
             values
                 .iter()
                 .find(|value| value.name == name)
                 .map(|value| &value.value)
-        };
+        }
         match self {
-            Target::Global(name) => {
-                named(&state.globals, name).ok_or_else(|| ReadError::NoGlobal(name.clone()))
-            }
+            Target::Global(name) => named(&state.globals, name)
+                .cloned()
+                .ok_or_else(|| ReadError::NoGlobal(name.clone())),
             Target::Field(edict, name) => {
                 let number = match edict {
                     Edict::Number(n) => *n,
@@ -725,7 +757,20 @@ impl Target {
                     .edicts
                     .get(number)
                     .ok_or(ReadError::NotInUse(number))?;
-                named(fields, name).ok_or_else(|| ReadError::NoField(name.clone()))
+                if let Some(value) = named(fields, name) {
+                    return Ok(value.clone());
+                }
+                // SCN-1.7: `<vector>_x`, `_y` or `_z` reads that component.
+                let component = name.rsplit_once('_').and_then(|(stem, axis)| {
+                    let index = ["x", "y", "z"].iter().position(|&a| a == axis)?;
+                    match named(fields, stem)? {
+                        QcValue::Vector(vector) => vector.get(index).copied(),
+                        _ => None,
+                    }
+                });
+                component
+                    .map(QcValue::Float)
+                    .ok_or_else(|| ReadError::NoField(name.clone()))
             }
         }
     }

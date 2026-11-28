@@ -3,7 +3,10 @@
 Makes a random playable level from a seed (L-48, L-74): `Request::generate` gives a `.map`
 on several floors with a start, an exit, loops, locks and what opens them, a secret, lights,
 monsters and weapons, and no trap a player cannot leave. One seed gives one level. Its
-playability check (`playable`, L-77) tells whether any compiled map can be finished.
+playability check (`playable`, L-77) tells whether any compiled map can be finished, and its
+graph (`playable::Graph`, `Ground::graph` and `Ground::path`, BOT-2 of
+[`bots.md`](../../docs/spec/bots.md)) is the places a player reaches and the moves between
+them, which the bots of `qs-bots` route along.
 
 - **The plan** (`layout`): rooms on a grid of columns, each on a storey 128 apart, joined into
   a path from the start to the exit. The path hooks back onto an atrium's balcony, a place

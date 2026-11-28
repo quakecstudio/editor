@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use qs_commands::{Command, Outcome, RegisterError, Registry};
 use qs_engine::{BridgeEvent, Client, ClientError, InspectWhat, base64_decode};
+use qs_sim::BotSkill;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,6 +28,12 @@ pub const ENGINE_CONSOLE: &str = "engine.console";
 
 /// The id of the command that writes the running game's frame as a PNG.
 pub const ENGINE_SCREENSHOT: &str = "engine.screenshot";
+
+/// The id of the command that brings a bot into the running game.
+pub const GAME_ADD_BOT: &str = "game.add_bot";
+
+/// The id of the command that drops a bot from the running game.
+pub const GAME_REMOVE_BOT: &str = "game.remove_bot";
 
 /// How long `engine.console` waits for the first line a command prints.
 pub const CONSOLE_WAIT: Duration = Duration::from_secs(2);
@@ -65,6 +72,100 @@ pub struct EngineInspectParams {
 pub struct EngineConsoleParams {
     /// The console command, such as `give all`.
     pub command: String,
+}
+
+/// How well a bot plays (BOT-1.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BotSkillParam {
+    /// Skill 0.
+    Easy,
+    /// Skill 1.
+    Normal,
+    /// Skill 2.
+    Hard,
+    /// Skill 3.
+    Nightmare,
+}
+
+impl BotSkillParam {
+    /// The skill's number, as `addbot` takes it.
+    const fn level(self) -> u8 {
+        let skill = match self {
+            Self::Easy => BotSkill::Easy,
+            Self::Normal => BotSkill::Normal,
+            Self::Hard => BotSkill::Hard,
+            Self::Nightmare => BotSkill::Nightmare,
+        };
+        skill.level()
+    }
+}
+
+/// The parameters of `game.add_bot`.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GameAddBotParams {
+    /// How well it plays; the game's `skill` setting when absent.
+    #[serde(default)]
+    pub skill: Option<BotSkillParam>,
+    /// Its name; the first free name of the list when absent.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// A bot's name as a console line takes it (BOT-9.3): quoted, its own quotes and control
+/// characters, a line's end among them, left out.
+fn quoted_name(name: &str) -> String {
+    let kept: String = name
+        .chars()
+        .filter(|&c| c != '"' && !c.is_control())
+        .collect();
+    format!(" \"{kept}\"")
+}
+
+impl GameAddBotParams {
+    /// The console line: `addbot [skill] ["name"]` (BOT-9.3).
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::BadValue`] for a name of digits alone with no skill, which `addbot`
+    /// would take for the skill (BOT-1.4).
+    pub fn console_line(&self) -> Result<String, PreviewError> {
+        let digits = |name: &String| !name.is_empty() && name.bytes().all(|b| b.is_ascii_digit());
+        if self.skill.is_none() && self.name.as_ref().is_some_and(digits) {
+            return Err(PreviewError::BadValue {
+                field: "name".to_owned(),
+                kind: "skill beside a name of digits alone".to_owned(),
+            });
+        }
+        let skill = self.skill.map(|skill| format!(" {}", skill.level()));
+        let name = self.name.as_deref().map(quoted_name);
+        Ok(format!(
+            "addbot{}{}",
+            skill.unwrap_or_default(),
+            name.unwrap_or_default()
+        ))
+    }
+}
+
+/// The parameters of `game.remove_bot`.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GameRemoveBotParams {
+    /// The bot's name; the bot in the highest slot when absent.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+impl GameRemoveBotParams {
+    /// The console line: `removebot ["name"]` (BOT-9.3).
+    #[must_use]
+    pub fn console_line(&self) -> String {
+        format!(
+            "removebot{}",
+            self.name.as_deref().map_or_default(quoted_name)
+        )
+    }
 }
 
 /// A size to draw a screenshot at.
@@ -317,7 +418,52 @@ impl<C: HasPreview + 'static> Command<C> for EngineScreenshot {
     }
 }
 
-/// Registers `engine.inspect`, `engine.console` and `engine.screenshot`.
+/// `game.add_bot`: brings a bot into the running game (BOT-9.3).
+struct GameAddBot;
+
+impl<C: HasPreview + 'static> Command<C> for GameAddBot {
+    const ID: &'static str = GAME_ADD_BOT;
+    const SUMMARY: &'static str = "Brings a bot into the running game, which needs room for \
+        another player (the host started with -listen), and answers what the console printed.";
+    type Params = GameAddBotParams;
+    type Output = Vec<String>;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: GameAddBotParams,
+    ) -> Result<Outcome<Vec<String>, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        let lines = preview.console_lines(&params.console_line()?)?;
+        Ok(Outcome::outside_history(lines))
+    }
+}
+
+/// `game.remove_bot`: drops a bot from the running game (BOT-9.3).
+struct GameRemoveBot;
+
+impl<C: HasPreview + 'static> Command<C> for GameRemoveBot {
+    const ID: &'static str = GAME_REMOVE_BOT;
+    const SUMMARY: &'static str = "Drops a bot from the running game, the one named or the \
+        last brought in, and answers what the console printed.";
+    type Params = GameRemoveBotParams;
+    type Output = Vec<String>;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: GameRemoveBotParams,
+    ) -> Result<Outcome<Vec<String>, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        let lines = preview.console_lines(&params.console_line())?;
+        Ok(Outcome::outside_history(lines))
+    }
+}
+
+/// Registers `engine.inspect`, `engine.console`, `engine.screenshot`, `game.add_bot` and
+/// `game.remove_bot`.
 ///
 /// # Errors
 ///
@@ -327,7 +473,9 @@ pub fn register_engine<C: HasPreview + 'static>(
 ) -> Result<(), RegisterError> {
     registry.register(EngineInspect)?;
     registry.register(EngineConsole)?;
-    registry.register(EngineScreenshot)
+    registry.register(EngineScreenshot)?;
+    registry.register(GameAddBot)?;
+    registry.register(GameRemoveBot)
 }
 
 #[cfg(test)]

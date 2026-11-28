@@ -26,6 +26,7 @@ qc-lno = { workspace = true }
 qc-progs = { workspace = true }
 qc-vm = { workspace = true }
 qs-bridge = { workspace = true }
+qs-bots = { workspace = true }
 qs-bsp = { workspace = true }
 qs-client = { workspace = true }
 qs-paths = { workspace = true }

@@ -137,6 +137,9 @@ pub enum SlotKind {
     /// A bot `spawnclient` made, with no connection (BUILTIN-18.45): nothing is sent to it,
     /// and its view angles are its edict's `v_angle`.
     Bot,
+    /// A bot the host drives, `addbot` made (BOT-1.1): no connection, as a [`SlotKind::Bot`],
+    /// but its moves are the host's, each read as a local client's is.
+    HostBot,
 }
 
 /// A client slot, `client_t` (NET-1.6, NET-2, NET-7).
@@ -421,13 +424,13 @@ impl SimCall<'_, '_, '_> {
     }
 
     /// `clienttype(e)`'s answer for a bot, once the mock has answered (BUILTIN-18.20): 2,
-    /// `CLIENTTYPE_BOT`, for an active slot with no connection, where the mock's every
-    /// client is a real one.
+    /// `CLIENTTYPE_BOT`, for an active slot with no connection, a bot `spawnclient` or the host
+    /// made (BOT-1.1), where the mock's every client is a real one.
     pub(crate) fn mark_bot_type(&mut self) -> Result<(), RunError> {
         let n = self.edict_of(self.context.parm_raw(PARM0));
         let bot = ClientId::of_edict(n)
             .and_then(|id| self.sim.messages.clients.get(id))
-            .is_some_and(|slot| slot.active && slot.kind == SlotKind::Bot);
+            .is_some_and(|slot| slot.active && slot.kind != SlotKind::Local);
         if bot {
             return self.set_return(CLIENTTYPE_BOT);
         }

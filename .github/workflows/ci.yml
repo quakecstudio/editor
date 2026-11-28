@@ -927,6 +927,16 @@ jobs:
         run: |
           cargo xtask scenario xtask/fixtures/scenarios/start.scenario --repeat 10 -- \
             -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # L-87 (BOT-9.2, SCN-2.5): four bots score frags in deathmatch on LibreQuake's start map,
+      # and a bot in coop follows the player on lq_e0m4 and kills a monster, each twice with the
+      # same result. One runner plays them: the bots' graph takes a minute to make unoptimized.
+      - name: Play the bot scenarios twice
+        if: env.CI_PATH == 'full' && github.event_name != 'push' && runner.os == 'Linux'
+        run: |
+          for scenario in bots-deathmatch bots-coop; do
+            cargo xtask scenario "xtask/fixtures/scenarios/$scenario.scenario" --repeat 2 -- \
+              -basedir "$QS_TEST_ASSETS/librequake-lite"
+          done
       - uses: actions/cache/save@v6.1.0
         if: env.CI_PATH == 'full' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
         with:

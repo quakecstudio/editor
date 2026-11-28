@@ -9,9 +9,10 @@ use std::path::{Path, PathBuf};
 
 use qc_project::MemoryLoader;
 
-use super::{ScenarioRunError, image_path};
+use super::{HostWords, ScenarioRunError, image_path};
 use crate::preview::{Preview, PreviewConfig, PreviewError};
 use crate::{Config, Workbench};
+use qs_sim::MaxPlayers;
 
 /// A fresh directory for the test `name`.
 fn dir(name: &str) -> PathBuf {
@@ -132,4 +133,38 @@ fn a_scenario_plays_a_map_the_project_compiled() {
         let played = placed.with_file_name(format!("{name}.bsp"));
         assert_eq!(played.is_file(), there, "{name}");
     }
+}
+
+// spec BOT-9.2: -listen gives n slots, 8 with no number or one below 1, at most 16, and
+// deathmatch 1 for more than one; each +name value pair after it is a setting
+#[test]
+fn the_engine_words_choose_the_slots_and_settings() {
+    let words = |text: &str| -> Vec<String> { text.split(' ').map(str::to_owned).collect() };
+    let pairs = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(n, v)| ((*n).to_owned(), (*v).to_owned()))
+            .collect()
+    };
+    let single = HostWords::of(&words("-basedir /q"));
+    assert_eq!(single.maxplayers, MaxPlayers::SINGLE);
+    assert!(single.settings.is_empty());
+    let four = HostWords::of(&words("-listen 4 +deathmatch 0 +coop 1"));
+    assert_eq!(four.maxplayers.get(), 4);
+    assert_eq!(
+        four.settings,
+        pairs(&[("deathmatch", "1"), ("deathmatch", "0"), ("coop", "1")])
+    );
+    assert_eq!(HostWords::of(&words("-listen")).maxplayers.get(), 8);
+    assert_eq!(HostWords::of(&words("-listen 0")).maxplayers.get(), 8);
+    assert_eq!(HostWords::of(&words("-listen 99")).maxplayers.get(), 16);
+    assert_eq!(
+        HostWords::of(&words("-listen 1 +skill")).settings,
+        Vec::new(),
+        "one slot, and a pair with no value"
+    );
+    assert_eq!(
+        HostWords::of(&words("+skill -listen")).settings,
+        pairs(&[("deathmatch", "1")])
+    );
 }

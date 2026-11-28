@@ -2045,3 +2045,136 @@ fn a_run_error_pause_answers_its_stack() {
         assert_eq!(stack["stack"], json!([]));
     }
 }
+
+/// The game of the test progs on the floor with three client slots, its player in the game.
+fn game_with_room_for_bots() -> Game {
+    let (bytes, _) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = "{\n\"classname\" \"worldspawn\"\n}\n".to_owned();
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let options = LoadOptions {
+        maxplayers: qs_sim::MaxPlayers::new(3),
+        ..LoadOptions::default()
+    };
+    let mut world = World::load(&progs, "test", &map, Rc::new(|_| None), options).unwrap();
+    world.connect(&progs).unwrap();
+    Game::new(world, bytes, Reporting::Off)
+}
+
+// spec BOT-9.1, BOT-1.7: before each frame the game gives each bot addbot brought in a mind
+// and takes the mind of each removebot dropped; a bot plays on into the next level in its own
+// slot at its own skill, one brought in the frame before the change among them
+#[test]
+fn the_game_drives_its_bots_and_carries_them_to_the_next_level() {
+    let mut game = game_with_room_for_bots();
+    game.world_mut().console("addbot 2 Moss\naddbot 0 Ash\n");
+    for _ in 0..3 {
+        game.frame(1.0 / 72.0);
+    }
+    assert_eq!(game.bots.len(), 2);
+    let [first, second] = [1, 2].map(|n| qs_sim::ClientId::new(n).unwrap());
+    assert_eq!(game.bots.skill(first), Some(qs_sim::BotSkill::Hard));
+    game.world_mut().console("removebot Moss\n");
+    for _ in 0..2 {
+        game.frame(1.0 / 72.0);
+    }
+    assert_eq!(game.bots.len(), 1, "the dropped bot's mind is gone");
+    // Brought in in the last frame, before its mind is made.
+    game.world_mut().console("addbot 3 Birch\n");
+    game.frame(1.0 / 72.0);
+    let mut next = game_with_room_for_bots();
+    next.carry_from(game);
+    assert_eq!(next.world().host_bots(), vec![first, second]);
+    assert_eq!(
+        next.world().client_name(second),
+        Some(b"Ash".to_vec()),
+        "its own slot"
+    );
+    assert_eq!(next.world().client_name(first), Some(b"Birch".to_vec()));
+    next.frame(1.0 / 72.0);
+    assert_eq!(
+        next.bots.skill(second),
+        Some(qs_sim::BotSkill::Easy),
+        "at its skill"
+    );
+    assert_eq!(next.bots.skill(first), Some(qs_sim::BotSkill::Nightmare));
+}
+
+// spec BOT-9.4: a level whose load a breakpoint stopped brings the last level's bots in only once
+// it is loaded again to its end
+#[test]
+fn bots_wait_for_a_held_load() {
+    let dog = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
+    let (mut stopping, mut session) = game_with(dog);
+    let line = source_line("void() monster_dog = {");
+    call(
+        &mut stopping,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": line }),
+    )
+    .unwrap();
+    let debugger = stopping.level_debugger().unwrap();
+    let mut game = game_with_room_for_bots();
+    game.world_mut().console("addbot 1 Moss\n");
+    game.frame(1.0 / 72.0);
+    let (bytes, _) = progs_with_lines();
+    let progs = Progs::read(&bytes).unwrap();
+    let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{dog}");
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let options = LoadOptions {
+        maxplayers: qs_sim::MaxPlayers::new(3),
+        ..LoadOptions::default()
+    };
+    let mut world = World::prepare(&progs, "test", &map, Rc::new(|_| None), options).unwrap();
+    let held = HeldSpawn::spawn(&mut world, &progs, debugger)
+        .unwrap()
+        .unwrap();
+    let level = NextLevel {
+        map: "test".to_owned(),
+        carried: None,
+        host: world.host_state(),
+        connection: Connection::New,
+    };
+    let mut next = Game::new(world, bytes.clone(), Reporting::Off);
+    next.hold_load(held, level);
+    next.carry_from(game);
+    assert!(
+        next.world().host_bots().is_empty(),
+        "not in the half-spawned world"
+    );
+    let mut loaded = game_with_room_for_bots();
+    loaded.carry_from(next);
+    let first = qs_sim::ClientId::new(1).unwrap();
+    assert_eq!(loaded.world().client_name(first), Some(b"Moss".to_vec()));
+}
+
+// spec BOT-9.5: after a map swap a game with room for bots makes their graph again
+#[test]
+fn a_swap_makes_the_bots_graph_again() {
+    let mut game = game_with_room_for_bots();
+    let bytes = floor_file(-30.0);
+    game.set_files(Rc::new(move |name: &str| {
+        (name == "maps/new.bsp").then(|| bytes.clone())
+    }));
+    game.set_screen(Screen::Headless);
+    assert!(game.bot_graph.is_none());
+    let mut session = Session::new();
+    let init = request(
+        0,
+        "initialize",
+        &json!({ "protocolVersion": "1.0", "client": { "name": "test" } }),
+    );
+    session.handle(&mut game, init);
+    call(
+        &mut game,
+        &mut session,
+        "map/swap",
+        &json!({ "bsp": "maps/new.bsp", "models": [] }),
+    )
+    .unwrap();
+    assert!(
+        game.bot_graph.is_some(),
+        "the new map's graph is being made"
+    );
+}

@@ -89,7 +89,12 @@ pub(crate) fn system_defs() -> String {
 
 /// The progs of [`PLAYER`] after id's system definitions.
 pub(crate) fn progs() -> Vec<u8> {
-    let files = [("defs.qc", system_defs()), ("player.qc", PLAYER.to_owned())];
+    progs_of(PLAYER)
+}
+
+/// The progs of `player` after id's system definitions.
+pub(crate) fn progs_of(player: &str) -> Vec<u8> {
+    let files = [("defs.qc", system_defs()), ("player.qc", player.to_owned())];
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (i, (name, text)) in files.iter().enumerate() {

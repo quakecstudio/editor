@@ -179,6 +179,8 @@ A command that answers a question is read by a panel, the agent or MCP. A comman
 | `file.save` | needs a value | Writes a file's current text, as the editor has it, to disk. |
 | `file.update` | needs a value | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
 | `files.changed` | needs a value | Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve_disk_change; changed QuakeC is read again with the entity definitions derived from it. |
+| `game.add_bot` | run from a menu | Brings a bot into the running game, which needs room for another player (the host started with -listen), and answers what the console printed. |
+| `game.remove_bot` | run from a menu | Drops a bot from the running game, the one named or the last brought in, and answers what the console printed. |
 | `git.blame` | needs a value | Says who last changed each line of a file, and in which commit. |
 | `git.branches` | answers a question | Lists the repository's local branches, the checked-out one marked. |
 | `git.commit` | needs a value | Commits what is staged with a message; the new commit's id. |

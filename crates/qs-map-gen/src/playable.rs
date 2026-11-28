@@ -59,6 +59,9 @@ use qs_sim::spawn::{Deathmatch, inhibited};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod graph;
+pub use graph::{Graph, Place, Route};
+
 /// The skill a map is played at, the `skill` setting (DIFF-3.2), which decides the entities the
 /// game keeps (EDICT-8.4).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -861,6 +864,9 @@ pub struct Ground<'a> {
     bounds: Volume,
     /// The player start, if the map has one.
     start: Option<[f32; 3]>,
+    /// Where a player spawns: every `info_player_start`, `info_player_coop` and
+    /// `info_player_deathmatch`, in the lump's order.
+    spawns: Vec<[f32; 3]>,
     /// Each `trigger_changelevel`'s volume and its entity.
     exits: Vec<(usize, Volume)>,
     wanted: Vec<Wanted>,
@@ -876,14 +882,29 @@ impl<'a> Ground<'a> {
     ///
     /// [`PlayError::Lump`] when the lump does not parse and [`PlayError::NoWorld`] for a BSP
     /// with no models.
+    pub fn new(bsp: &'a Bsp<'a>, moves: Moves, skill: Skill) -> Result<Self, PlayError> {
+        Self::in_game(bsp, moves, skill, Deathmatch::Off)
+    }
+
+    /// The ground of `bsp` as a game at `skill` with `deathmatch` spawns it, for a player with
+    /// `moves`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Ground::new`].
     #[expect(
         clippy::too_many_lines,
         reason = "one pass over the lump reads every class the check follows"
     )]
-    pub fn new(bsp: &'a Bsp<'a>, moves: Moves, skill: Skill) -> Result<Self, PlayError> {
+    pub fn in_game(
+        bsp: &'a Bsp<'a>,
+        moves: Moves,
+        skill: Skill,
+        deathmatch: Deathmatch,
+    ) -> Result<Self, PlayError> {
         let lump = MapFile::parse(bsp.entity_lump).map_err(PlayError::Lump)?;
         let world = Volume::of_model(bsp, 0).ok_or(PlayError::NoWorld)?;
-        // The entities the engine keeps in a single player game at `skill`: it frees the rest
+        // The entities the engine keeps in a game at `skill` and `deathmatch`: it frees the rest
         // before their spawn functions run (EDICT-8.4); never the world.
         let read: Vec<Read<'_>> = lump
             .entities
@@ -894,7 +915,7 @@ impl<'a> Ground<'a> {
                     .value(b"spawnflags")
                     .and_then(|text| std::str::from_utf8(text).ok()?.trim().parse::<f32>().ok())
                     .unwrap_or(0.0);
-                place == 0 || !inhibited(flags, Deathmatch::Off, skill.level())
+                place == 0 || !inhibited(flags, deathmatch, skill.level())
             })
             .map(|(place, entity)| Read {
                 place,
@@ -920,6 +941,7 @@ impl<'a> Ground<'a> {
             teleports: Vec::new(),
             bounds: world,
             start: None,
+            spawns: Vec::new(),
             exits: Vec::new(),
             wanted: Vec::new(),
             unjudged: Vec::new(),
@@ -1240,6 +1262,10 @@ impl<'a> Ground<'a> {
             match (class, volume) {
                 ("info_player_start", _) => {
                     ground.start = ground.start.or_else(|| Some(r.origin()));
+                    ground.spawns.push(r.origin());
+                }
+                ("info_player_coop" | "info_player_deathmatch", _) => {
+                    ground.spawns.push(r.origin());
                 }
                 ("trigger_changelevel", Some(volume)) => ground.exits.push((place, volume)),
                 ("func_wall" | "func_bossgate", Some(_)) => {

@@ -51,9 +51,10 @@ pub use qc_builtins::localization;
 pub use qc_builtins::mock::EngineProfile;
 pub use qc_edict::EdictNumber;
 pub use world::{
-    CLIENT_EDICT, Callback, Change, ChangeKind, ClientCommand, EdictChange, EditError, Entity,
-    EvalError, FIRE_MAX_SECONDS, FIRE_SECONDS, FireBy, FireError, FireOptions, FireTrace,
-    HostCommand, HostState, KeyFocus, LineHit, LoadOptions, MapPlace, Migration, NamedValue,
-    QcValue, RawState, Reason, Room, SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms,
-    State, SwapError, TraceEnd, TraceEvent, Tracking, World, WorldError, command_words, read_state,
+    BOT_NAMES, Body, BotChange, BotSkill, CLIENT_EDICT, Callback, Change, ChangeKind,
+    ClientCommand, EdictChange, EditError, Entity, EvalError, FIRE_MAX_SECONDS, FIRE_SECONDS,
+    FireBy, FireError, FireOptions, FireTrace, HostCommand, HostState, KeyFocus, LineHit,
+    LoadOptions, MapPlace, Migration, NamedValue, QcValue, RawState, Reason, Room,
+    SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms, State, SwapError, TraceEnd,
+    TraceEvent, Tracking, World, WorldError, command_words, read_state,
 };

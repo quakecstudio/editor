@@ -43,6 +43,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
 | [`files.changed`](#fileschanged) | Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve_disk_change; changed QuakeC is read again with the entity definitions derived from it. |
+| [`game.add_bot`](#gameadd_bot) | Brings a bot into the running game, which needs room for another player (the host started with -listen), and answers what the console printed. |
+| [`game.remove_bot`](#gameremove_bot) | Drops a bot from the running game, the one named or the last brought in, and answers what the console printed. |
 | [`git.blame`](#gitblame) | Says who last changed each line of a file, and in which commit. |
 | [`git.branches`](#gitbranches) | Lists the repository's local branches, the checked-out one marked. |
 | [`git.commit`](#gitcommit) | Commits what is staged with a message; the new commit's id. |
@@ -1332,6 +1334,97 @@ Parameters:
     "paths"
   ],
   "title": "FilesChangedParams",
+  "type": "object"
+}
+```
+
+## `game.add_bot`
+
+Brings a bot into the running game, which needs room for another player (the host started with -listen), and answers what the console printed.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BotSkillParam": {
+      "description": "How well a bot plays (BOT-1.4).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "Skill 0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "Skill 1.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "Skill 2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "Skill 3.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `game.add_bot`.",
+  "properties": {
+    "name": {
+      "default": null,
+      "description": "Its name; the first free name of the list when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "skill": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BotSkillParam"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "How well it plays; the game's `skill` setting when absent."
+    }
+  },
+  "title": "GameAddBotParams",
+  "type": "object"
+}
+```
+
+## `game.remove_bot`
+
+Drops a bot from the running game, the one named or the last brought in, and answers what the console printed.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `game.remove_bot`.",
+  "properties": {
+    "name": {
+      "default": null,
+      "description": "The bot's name; the bot in the highest slot when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "GameRemoveBotParams",
   "type": "object"
 }
 ```

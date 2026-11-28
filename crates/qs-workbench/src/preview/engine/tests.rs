@@ -21,7 +21,8 @@ use qs_engine::Client;
 use serde_json::{Value, json};
 
 use super::{
-    ENGINE_CONSOLE, ENGINE_INSPECT, ENGINE_SCREENSHOT, EngineInspectParams, Inspected, ShotSize,
+    BotSkillParam, ENGINE_CONSOLE, ENGINE_INSPECT, ENGINE_SCREENSHOT, EngineInspectParams,
+    GAME_ADD_BOT, GAME_REMOVE_BOT, GameAddBotParams, GameRemoveBotParams, Inspected, ShotSize,
     console_output, inspect, next_screenshot_path, register_engine, screenshot_to,
 };
 use crate::ids::Edict;
@@ -257,6 +258,8 @@ fn the_engine_commands_need_a_running_game() {
         (ENGINE_INSPECT, json!({ "what": "entities" })),
         (ENGINE_CONSOLE, json!({ "command": "god" })),
         (ENGINE_SCREENSHOT, json!({ "path": "/tmp/x.png" })),
+        (GAME_ADD_BOT, json!({ "skill": "hard", "name": "Moss" })),
+        (GAME_REMOVE_BOT, json!({})),
     ] {
         let error = session.execute(id, params).unwrap_err();
         assert!(error.to_string().contains("not running"), "{id}: {error}");
@@ -340,4 +343,48 @@ fn a_breakpoint_on_a_line_with_no_statement_is_refused() {
         .unwrap();
     assert_eq!(session.context().preview.debugger().breakpoints().len(), 1);
     assert!(!dir.join("build").exists());
+}
+
+// spec BOT-9.3: game.add_bot and game.remove_bot type addbot and removebot, the skill as its
+// number and the name quoted without its own quotes or control characters; a name of digits
+// alone needs a skill
+#[test]
+fn the_bot_commands_type_addbot_and_removebot() {
+    assert_eq!(
+        GameAddBotParams::default().console_line().unwrap(),
+        "addbot"
+    );
+    let named = GameAddBotParams {
+        skill: Some(BotSkillParam::Nightmare),
+        name: Some("Mo\"ss".to_owned()),
+    };
+    assert_eq!(named.console_line().unwrap(), "addbot 3 \"Moss\"");
+    let easy = GameAddBotParams {
+        skill: Some(BotSkillParam::Easy),
+        name: None,
+    };
+    assert_eq!(easy.console_line().unwrap(), "addbot 0");
+    let line_end = GameAddBotParams {
+        skill: None,
+        name: Some("Moss\nmap e1m2".to_owned()),
+    };
+    assert_eq!(line_end.console_line().unwrap(), "addbot \"Mossmap e1m2\"");
+    let digits = GameAddBotParams {
+        skill: None,
+        name: Some("2".to_owned()),
+    };
+    assert!(
+        digits.console_line().is_err(),
+        "addbot would take it for the skill"
+    );
+    let fast = GameAddBotParams {
+        skill: None,
+        name: Some("2Fast".to_owned()),
+    };
+    assert_eq!(fast.console_line().unwrap(), "addbot \"2Fast\"");
+    assert_eq!(GameRemoveBotParams::default().console_line(), "removebot");
+    let gone = GameRemoveBotParams {
+        name: Some("Ash".to_owned()),
+    };
+    assert_eq!(gone.console_line(), "removebot \"Ash\"");
 }

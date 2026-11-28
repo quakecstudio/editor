@@ -3574,15 +3574,18 @@ groups:
     deliverable:
     - 'crates/qs-bots (new, L4 in layers.toml, docs/layers.md rewritten): a bot''s `UserCmd` each server frame from what a client in its place could see; goals weighted by need (weapons, armour, health, ammunition) and distance along the graph, the enemies seen in deathmatch, the nearest player and the monsters seen in coop; aim with an error and a reaction delay its skill sets; the weapon chosen by id1''s weapon impulses from a table a mod may replace; fire pressed to respawn; each bot''s own seeded random numbers'
     - 'crates/qs-map-gen: `Ground` answers a path between two points, which the bots follow'
-    - 'crates/qs-sim and crates/qs-commands: the console''s `addbot [skill] [name]` and `removebot [name]`, and the commands `game.add_bot` and `game.remove_bot`; names and colours from a list'
+    - 'crates/qs-sim and crates/qs-workbench: the console''s `addbot [skill] [name]` and `removebot [name]`, and the commands `game.add_bot` and `game.remove_bot`, beside `engine.console` in qs-workbench where the running game''s commands are; names and colours from a list'
     - 'crates/qs-game: a bot slot per bot, its brain given the world each frame'
     - 'docs/spec/bots.md: BOT-1 onwards, this project''s design, cited by the tests'
     acceptance:
     - 'qs-bots tests citing each statement: a path through a room with a lift and a door; the goal chosen for each kind of need; the aim error at each skill; a dead bot respawning'
-    - 'A qs-tests scenario: four bots on a LibreQuake deathmatch map for a fixed number of frames score frags, and the same frags over repeated runs (SCN-2.5)'
-    - 'A qs-tests scenario: in coop one bot follows the player and damages a monster'
+    - 'A qs-tests test: a bot the host drives in qs-sim reaches a weapon on a compiled map and respawns after it is killed'
+    - 'A scenario in xtask/fixtures/scenarios, played twice by `cargo xtask scenario` in the Test Assets job, where LibreQuake''s files are: four bots on a LibreQuake map in deathmatch for a fixed number of frames score frags, and the same frags over repeated runs (SCN-2.5)'
+    - 'A scenario played the same way: in coop one bot follows the player and kills a monster'
     verify:
-    - cargo nextest run -p qs-bots -p qs-map-gen -p qs-tests
+    - cargo nextest run -p qs-bots -p qs-map-gen -p qs-sim -p qs-tests
+    - cargo xtask scenario xtask/fixtures/scenarios/bots-deathmatch.scenario --repeat 2 -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+    - cargo xtask scenario xtask/fixtures/scenarios/bots-coop.scenario --repeat 2 -- -basedir "$QS_TEST_ASSETS/librequake-lite"
   - key: L-88
     title: Check and play deathmatch and coop maps from the map editor
     labels:

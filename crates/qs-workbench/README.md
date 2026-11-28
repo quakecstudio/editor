@@ -118,6 +118,9 @@ an edit, so both commands run outside the edit history
   `engine.console` (a command and the lines it printed) and `engine.screenshot` (the frame
   as a PNG, in `build/screenshots` by default). The engine tools are functions over the
   bridge's client, which `cargo xtask bridge-client` runs against the headless host in CI.
+  `game.add_bot` and `game.remove_bot` type `addbot` and `removebot` at the running game's
+  console (BOT-9.3), and a scenario on a game with room for bots plays them with `qs-bots`
+  (BOT-9.2).
 - Checkpoints (`checkpoints`, P4-05, AGT-4): `checkpoint.create` records every file of the
   project as git objects on a private ref (`qs-checkpoint`), `checkpoint.list` lists them, and
   `checkpoint.restore` puts every file back, deletions included, dropping the editor's

@@ -172,6 +172,8 @@ pub struct World {
     /// QuakeSpasm's `sv_protocol`, which the console's `sv_protocol` sets and the next map
     /// is written in (NET-6.11).
     pub(crate) protocol: ProtocolVersion,
+    /// The bots that came and went, waiting for the host (BOT-1.5).
+    bot_changes: Vec<bots::BotChange>,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -487,6 +489,7 @@ impl World {
             ),
             focus: KeyFocus::Game,
             pending_host: None,
+            bot_changes: Vec::new(),
             client_commands: Vec::new(),
             aliases,
             search_path: options.search_path,
@@ -809,6 +812,8 @@ impl World {
                 }
                 call.read_move(ent, &cmd)
             }
+            // BOT-1.1: the host's move, read as it would come over the connection.
+            SlotKind::HostBot => call.read_move(ent, &cmd),
             SlotKind::Bot => UserCmd {
                 angles: call.vector(ent, "v_angle"),
                 ..UserCmd::default()
@@ -943,7 +948,7 @@ impl World {
         stage: Signon,
     ) -> Result<(), WorldError> {
         match stage {
-            Signon::Connect => self.signon_connect(progs, id),
+            Signon::Connect => self.signon_connect(progs, id, SlotKind::Local),
             Signon::Prespawn => {
                 let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
                 call.prespawn(id);
@@ -958,9 +963,14 @@ impl World {
         }
     }
 
-    /// `SV_ConnectClient` for a local client (PHYS-10.7, NET-7.4), its parms what it
-    /// carries from the last level, the saved ones in a loaded game, else `SetNewParms`'.
-    fn signon_connect(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
+    /// `SV_ConnectClient` for a client of `kind` (PHYS-10.7, NET-7.4, BOT-1.2), its parms what
+    /// it carries from the last level, the saved ones in a loaded game, else `SetNewParms`'.
+    fn signon_connect(
+        &mut self,
+        progs: &Progs<'_>,
+        id: ClientId,
+        kind: SlotKind,
+    ) -> Result<(), WorldError> {
         // PHYS-10.5: a saved game's world keeps the parms it saved.
         let parms = if self.builtins.loaded {
             ConnectParms::Saved
@@ -975,7 +985,7 @@ impl World {
         if call.sim.messages.baselines.is_empty() {
             call.create_baselines().map_err(WorldError::Frame)?;
         }
-        call.connect_client(id, SlotKind::Local, parms)
+        call.connect_client(id, kind, parms)
             .map_err(WorldError::Frame)
     }
 
@@ -1505,6 +1515,8 @@ pub fn command_words(text: &[u8]) -> Vec<Vec<Vec<u8>>> {
         .collect()
 }
 
+mod bots;
+pub use bots::{BOT_NAMES, Body, BotChange, BotSkill};
 mod changes;
 mod edit;
 mod evaluate;
