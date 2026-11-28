@@ -463,12 +463,20 @@ deathmatch with its players on one machine and with bots (ADR-0031).
 - **NET-7.11** `setspawnparms(e)` (BUILTIN-8.7) copies client `e`'s 16 spawn parms, those its
   slot connected with or `SetChangeParms` last kept, to `parm1` to `parm16`.
 - **NET-7.12** In id's engine each local client is its own host with its own console, whose
-  `Cmd_ForwardToServer` sends to that client's connection. The preview host's other local
-  players share the host's console (ADR-0031): a line one of them runs through its keys is run
-  as that client's, so a command it forwards goes to that player's slot, and "`Can't
-  \"<name>\", not connected`" is printed when that slot is not active. Every other line,
-  typed or from the progs, the bridge or the menus, is the first client's. This is the
-  preview host's own rule; id's source has no second local client.
+  `Cbuf` and `Cmd_ForwardToServer` are that client's. The preview host's other local players
+  each have a console of their own in the same way (ADR-0031): the lines a player's keys run go
+  to its buffer and run there, what a `wait` leaves runs on it in the next frame, a command it
+  forwards goes to that player's slot ("`Can't \"<name>\", not connected`" when the slot is not
+  active), and the client's commands it meets, its buttons and impulses among them, are that
+  player's. Its `name` and `color` go to its slot as typed, and leave the host's `_cl_name` and
+  `_cl_color`, the first player's, as they are. A player leaving takes its console with it.
+  Every other line, typed or from the progs, the bridge or the menus, is the first client's.
+  This is the preview host's own rule; id's source has no second local client.
+- **NET-7.13** The preview host has 1 to 4 local players. The first enters as a map loads;
+  each other one joins after it, in the first free slot on the first map, and on each later
+  level in the slot it had, before the bots come back to theirs, so each takes the parms its
+  own slot carried (NET-7.8). Each sends its name, `player<n>`, as it joins. A level whose load
+  a spawn function holds (WORLD-9.7) brings them in once it is loaded to its end.
 
 ### Constants
 

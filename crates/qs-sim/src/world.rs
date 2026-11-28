@@ -30,6 +30,7 @@ use qc_vm::convert::{double_to_float, float_to_int};
 use qc_vm::{Machine, NoObserver, Observer, RunError, ServerState};
 use qs_bsp::Bsp;
 use qs_vfs::Registration;
+use std::collections::BTreeMap;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
@@ -175,8 +176,21 @@ pub struct World {
     /// The bots that came and went, waiting for the host (BOT-1.5).
     bot_changes: Vec<bots::BotChange>,
     /// The local client whose console runs the buffer, the one `Cmd_ForwardToServer` sends
-    /// to: the first, but for a line another local player's keys run (NET-7.12).
+    /// to: the first, but while another local player's console runs (NET-7.12).
     pub(crate) console_client: ClientId,
+    /// Each other local player's console: its buffer, which a `wait` leaves to the next frame,
+    /// and the client's commands it met, waiting for the host (NET-7.12).
+    pub(crate) local_consoles: BTreeMap<ClientId, LocalConsole>,
+}
+
+/// Another local player's console (NET-7.12), as each local client of id's engine is a host
+/// with its own `Cbuf`.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LocalConsole {
+    /// The text waiting to run, `Cbuf`'s.
+    pub(crate) buffer: Vec<u8>,
+    /// The client's commands its lines met, oldest first.
+    pub(crate) commands: Vec<ClientCommand>,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -494,6 +508,7 @@ impl World {
             pending_host: None,
             bot_changes: Vec::new(),
             console_client: ClientId::FIRST,
+            local_consoles: BTreeMap::new(),
             client_commands: Vec::new(),
             aliases,
             search_path: options.search_path,
@@ -695,6 +710,8 @@ impl World {
         // command and then the server frame in one host frame with one `rand ()`, so the draw
         // is given back for the frame the host runs after it has acted.
         self.execute_console(progs);
+        // NET-7.12: so does each other local player's, what a `wait` left in it.
+        self.execute_local_consoles(progs);
         if self.pending_host.is_some() {
             self.builtins.mock.engine_mut().rng = before;
             return Ok(());
@@ -895,6 +912,33 @@ impl World {
         let Some(id) = self.builtins.messages.clients.free() else {
             return Ok(None);
         };
+        self.connect_stages(progs, id)?;
+        Ok(Some(id))
+    }
+
+    /// A local client enters the game in slot `id`, as [`World::connect`] brings one into the
+    /// first free slot: the preview host's other local players come back to their own slots
+    /// on the next level, so each takes the parms its slot carried (NET-7.13). Returns false,
+    /// and does nothing, when the slot is active or past the last.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when a function fails.
+    pub fn connect_in(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<bool, WorldError> {
+        let free = self
+            .builtins
+            .messages
+            .clients
+            .get(id)
+            .is_some_and(|slot| !slot.active);
+        if free {
+            self.connect_stages(progs, id)?;
+        }
+        Ok(free)
+    }
+
+    /// Every stage of [`Signon`] for a local client in slot `id`, at once.
+    fn connect_stages(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
         for stage in [
             Signon::Connect,
             Signon::Prespawn,
@@ -912,7 +956,7 @@ impl World {
                     .update_to_reliable_messages();
             }
         }
-        Ok(Some(id))
+        Ok(())
     }
 
     /// `CL_SignonReply`'s answer before `spawn` (PHYS-10.8): the first client's `name` and
@@ -1048,6 +1092,8 @@ impl World {
     ///
     /// [`WorldError::Frame`] when `ClientDisconnect` fails.
     pub fn disconnect(&mut self, progs: &Progs<'_>, id: ClientId) -> Result<(), WorldError> {
+        // NET-7.12: a local player leaving takes its console with it.
+        drop(self.local_consoles.remove(&id));
         SimCall::frame(&mut self.machine, progs, &mut self.builtins)
             .drop_client(id)
             .map_err(WorldError::Frame)

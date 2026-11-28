@@ -921,6 +921,20 @@ fn a_local_players_line_forwards_to_its_own_slot() {
         .get(ClientId::FIRST)
         .unwrap();
     assert_eq!(first.commands, vec![b"say again".to_vec()]);
+    run.world
+        .execute_console_as(&progs, ClientId::FIRST, "say third");
+    let first = run
+        .world
+        .builtins
+        .messages
+        .clients
+        .get(ClientId::FIRST)
+        .unwrap();
+    assert_eq!(
+        first.commands.len(),
+        2,
+        "the first player's own console is the host's"
+    );
 }
 
 // spec NET-7.12: a line run as a slot that is not active is refused as not connected
@@ -935,14 +949,98 @@ fn a_local_players_line_needs_its_slot_active() {
         lines.contains(&b"Can't \"say\", not connected".to_vec()),
         "{lines:?}"
     );
+    let slot = run.world.builtins.messages.clients.get(id(2)).unwrap();
+    assert!(slot.commands.is_empty());
+}
+
+// spec NET-7.12: each local player's console has its own buffer: what a wait leaves runs as
+// that player in the next frame, and the host's waiting text never runs as it
+#[test]
+fn a_wait_keeps_each_players_console_apart() {
+    let mut run = players(4, 2, "", "");
+    let progs = Progs::read(&run.progs).unwrap();
+    run.world.console("wait\n+attack\n");
+    run.world.execute_console(&progs);
+    run.world
+        .execute_console_as(&progs, id(1), "+jump; wait; impulse 7");
+    use crate::input::Button;
+    assert_eq!(
+        run.world.take_client_commands_of(id(1)),
+        vec![crate::ClientCommand::Press(Button::Jump, None)],
+        "the host's +attack waits on the host's console"
+    );
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(
+        run.world.take_client_commands_of(id(1)),
+        vec![crate::ClientCommand::Impulse(7)],
+        "the rest of the line ran as player 2 in the next frame"
+    );
+    assert_eq!(
+        run.world.take_client_commands(),
+        vec![crate::ClientCommand::Press(Button::Attack, None)],
+        "the host's rest ran as the host's"
+    );
+    let progs = Progs::read(&run.progs).unwrap();
+    run.world.disconnect(&progs, id(1)).unwrap();
     assert!(
+        run.world.local_consoles.is_empty(),
+        "it left with its player"
+    );
+}
+
+// spec NET-7.12: another local player's name and colours go to its own slot and leave the
+// host's _cl_name and _cl_color as they are
+#[test]
+fn a_local_players_name_is_its_own() {
+    let mut run = players(4, 2, "", "");
+    let progs = Progs::read(&run.progs).unwrap();
+    let name = |run: &Running| {
         run.world
             .builtins
-            .messages
-            .clients
-            .get(id(2))
+            .mock
+            .engine()
+            .cvars
+            .text("_cl_name")
             .unwrap()
-            .commands
-            .is_empty()
+            .to_owned()
+    };
+    let before = name(&run);
+    run.world.execute_console_as(&progs, id(1), "name Bob");
+    run.world.execute_console_as(&progs, id(1), "color 4 5");
+    run.world.execute_console_as(&progs, id(1), "name");
+    assert_eq!(name(&run), before);
+    let second = run.world.builtins.messages.clients.get(id(1)).unwrap();
+    assert_eq!(
+        second.commands,
+        vec![b"name Bob".to_vec(), b"color 4 5".to_vec()]
+    );
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(run.world.client_name(id(1)), Some(b"Bob".to_vec()));
+}
+
+// spec NET-7.13: a local player comes back to the slot it had; a slot active or past the last
+// is refused and nothing changes
+#[test]
+fn a_local_player_rejoins_its_own_slot() {
+    let mut run = players(4, 1, "", "");
+    let progs = Progs::read(&run.progs).unwrap();
+    assert!(run.world.connect_in(&progs, id(2)).unwrap());
+    assert!(run.world.is_spawned(id(2)));
+    assert!(
+        !run.world.is_spawned(id(1)),
+        "the slot before it stays free"
+    );
+    assert!(
+        !run.world.connect_in(&progs, id(2)).unwrap(),
+        "already active"
+    );
+    assert!(
+        !run.world.connect_in(&progs, id(15)).unwrap(),
+        "past the last"
+    );
+    assert_eq!(
+        connect(&mut run),
+        Some(id(1)),
+        "the first free slot is still free"
     );
 }
