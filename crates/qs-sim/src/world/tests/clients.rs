@@ -893,3 +893,56 @@ fn clienttype_answers_bot_for_a_host_bot() {
     run.frames(1, FRAME).unwrap();
     assert_eq!(global_float(&run, "kind"), 2.0, "the bot, edict 2");
 }
+
+// spec NET-7.12: a line another local player's keys run forwards to that player's slot, and a
+// line typed after it is the first client's again
+#[test]
+fn a_local_players_line_forwards_to_its_own_slot() {
+    let mut run = players(4, 2, "", "");
+    let progs = Progs::read(&run.progs).unwrap();
+    run.world.execute_console_as(&progs, id(1), "say hello");
+    let second = run.world.builtins.messages.clients.get(id(1)).unwrap();
+    assert_eq!(second.commands, vec![b"say hello".to_vec()]);
+    let first = run
+        .world
+        .builtins
+        .messages
+        .clients
+        .get(ClientId::FIRST)
+        .unwrap();
+    assert!(first.commands.is_empty(), "the first client sent nothing");
+    run.world.console("say again\n");
+    run.world.execute_console(&progs);
+    let first = run
+        .world
+        .builtins
+        .messages
+        .clients
+        .get(ClientId::FIRST)
+        .unwrap();
+    assert_eq!(first.commands, vec![b"say again".to_vec()]);
+}
+
+// spec NET-7.12: a line run as a slot that is not active is refused as not connected
+#[test]
+fn a_local_players_line_needs_its_slot_active() {
+    let mut run = players(4, 1, "", "");
+    let progs = Progs::read(&run.progs).unwrap();
+    drop(run.world.take_console_output());
+    run.world.execute_console_as(&progs, id(2), "say hello");
+    let lines = run.world.take_console_output();
+    assert!(
+        lines.contains(&b"Can't \"say\", not connected".to_vec()),
+        "{lines:?}"
+    );
+    assert!(
+        run.world
+            .builtins
+            .messages
+            .clients
+            .get(id(2))
+            .unwrap()
+            .commands
+            .is_empty()
+    );
+}

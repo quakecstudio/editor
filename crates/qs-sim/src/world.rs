@@ -174,6 +174,9 @@ pub struct World {
     pub(crate) protocol: ProtocolVersion,
     /// The bots that came and went, waiting for the host (BOT-1.5).
     bot_changes: Vec<bots::BotChange>,
+    /// The local client whose console runs the buffer, the one `Cmd_ForwardToServer` sends
+    /// to: the first, but for a line another local player's keys run (NET-7.12).
+    pub(crate) console_client: ClientId,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -490,6 +493,7 @@ impl World {
             focus: KeyFocus::Game,
             pending_host: None,
             bot_changes: Vec::new(),
+            console_client: ClientId::FIRST,
             client_commands: Vec::new(),
             aliases,
             search_path: options.search_path,

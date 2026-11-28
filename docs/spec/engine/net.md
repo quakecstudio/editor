@@ -462,6 +462,13 @@ deathmatch with its players on one machine and with bots (ADR-0031).
   with any active client's health 0 or less, "Can't savegame with a dead player".
 - **NET-7.11** `setspawnparms(e)` (BUILTIN-8.7) copies client `e`'s 16 spawn parms, those its
   slot connected with or `SetChangeParms` last kept, to `parm1` to `parm16`.
+- **NET-7.12** In id's engine each local client is its own host with its own console, whose
+  `Cmd_ForwardToServer` sends to that client's connection. The preview host's other local
+  players share the host's console (ADR-0031): a line one of them runs through its keys is run
+  as that client's, so a command it forwards goes to that player's slot, and "`Can't
+  \"<name>\", not connected`" is printed when that slot is not active. Every other line,
+  typed or from the progs, the bridge or the menus, is the first client's. This is the
+  preview host's own rule; id's source has no second local client.
 
 ### Constants
 

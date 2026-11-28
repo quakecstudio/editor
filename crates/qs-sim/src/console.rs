@@ -306,6 +306,17 @@ impl World {
             .collect()
     }
 
+    /// `line` run at once as local client `id`'s console runs it (NET-7.12): a command it
+    /// forwards goes to `id`'s slot, and the client's commands it meets wait for the host as
+    /// [`World::take_client_commands`]. What the buffer held before it runs first.
+    pub fn execute_console_as(&mut self, progs: &Progs<'_>, id: ClientId, line: &str) {
+        self.console(line);
+        self.console("\n");
+        self.console_client = id;
+        self.execute_console(progs);
+        self.console_client = ClientId::FIRST;
+    }
+
     /// `Cbuf_Execute` (PHYS-13.1): runs the buffer's lines in order until it is empty, a `wait`
     /// leaves the rest for the next frame, or a host command waits for the host (PHYS-13.6).
     pub fn execute_console(&mut self, progs: &Progs<'_>) {
@@ -578,7 +589,8 @@ impl World {
     /// [`World::forward`] with `args` as `Cmd_Args`, `None` for a command alone.
     fn forward_args(&mut self, words: &Words, form: Forward, args: Option<&[u8]>) {
         let name = words.argv.first().cloned().unwrap_or_default();
-        if !self.builtins.messages.clients.is_active(ClientId::FIRST) {
+        let client = self.console_client;
+        if !self.builtins.messages.clients.is_active(client) {
             self.print(format!(
                 "Can't \"{}\", not connected\n",
                 String::from_utf8_lossy(&name)
@@ -594,7 +606,7 @@ impl World {
             Some(args) => text.extend_from_slice(args),
             None => text.push(b'\n'),
         }
-        if let Some(slot) = self.builtins.messages.clients.get_mut(ClientId::FIRST) {
+        if let Some(slot) = self.builtins.messages.clients.get_mut(client) {
             slot.commands.push(text);
         }
     }
