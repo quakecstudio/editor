@@ -403,6 +403,23 @@ fn the_engine_words_choose_the_slots_and_settings() {
     );
     assert_eq!(super::HostWords::of(&words("-listen")).maxplayers.get(), 8);
     assert_eq!(
+        super::HostWords::of(&words("-dedicated 4"))
+            .maxplayers
+            .get(),
+        4
+    );
+    assert_eq!(
+        super::HostWords::of(&words("-dedicated")).maxplayers.get(),
+        8
+    );
+    assert_eq!(
+        super::HostWords::of(&words("-dedicated 4 -listen 3"))
+            .maxplayers
+            .get(),
+        3,
+        "-listen read after -dedicated"
+    );
+    assert_eq!(
         super::HostWords::of(&words("-listen 0")).maxplayers.get(),
         8
     );

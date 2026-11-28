@@ -541,4 +541,9 @@ fn an_asset_into_another_joins_its_game_directory() {
     );
     assert!(tmp.0.join("lq/id1/pak0.pak").is_file());
     assert!(tmp.0.join("lq/id1/maps/lqdm11.bsp").is_file());
+    let errs = cmd_precache(&m, &tmp.0, &FakeNet::default());
+    assert!(
+        !errs.iter().any(|e| e.contains("lq-dm")),
+        "an asset into another has no game directory of its own: {errs:?}"
+    );
 }

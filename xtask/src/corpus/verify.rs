@@ -73,6 +73,7 @@ pub(crate) fn check(m: &Manifest) -> Vec<String> {
             ));
         }
     }
+    check_into(m, &mut errs);
     for t in &m.tree {
         if !seen.insert(t.id.as_str()) {
             errs.push(format!("tree {}: duplicate id", t.id));
@@ -282,17 +283,34 @@ fn check_asset(e: &Entry, at: &str, sources: &BTreeMap<&str, &Source>, errs: &mu
             Some(_) => {}
         }
     }
-    if let Some(into) = &e.into
-        && (!safe_member(into) || *into == e.id)
-    {
-        errs.push(format!(
-            "{at}: into must name another asset whose game directory it joins"
-        ));
-    }
+
     for (name, stand_in) in &e.stand_ins {
         if !(safe_member(name) && safe_member(stand_in)) {
             errs.push(format!(
                 "{at}: stand-in {name:?} = {stand_in:?} must be relative paths"
+            ));
+        }
+    }
+}
+
+/// An asset `into` another names a usable asset of the manifest with the same game directory,
+/// one that is itself into none, whose game directory its members join.
+fn check_into(m: &Manifest, errs: &mut Vec<String>) {
+    for e in m.asset.iter().filter(|e| e.usable()) {
+        let Some(into) = &e.into else {
+            continue;
+        };
+        let joined = m.asset.iter().any(|other| {
+            other.id == *into
+                && other.id != e.id
+                && other.usable()
+                && other.into.is_none()
+                && other.game_dir == e.game_dir
+        });
+        if !joined {
+            errs.push(format!(
+                "asset {}: into must name another usable asset with game_dir {:?}, not {into:?}",
+                e.id, e.game_dir
             ));
         }
     }

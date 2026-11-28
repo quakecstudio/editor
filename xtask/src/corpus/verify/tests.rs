@@ -795,13 +795,29 @@ fn a_project_file_is_a_tracked_relative_path_on_a_codebase() {
 
 #[test]
 fn an_asset_into_names_another_asset() {
-    let mut m = base();
-    asset(&mut m, "lq").into = Some("lq".to_owned());
-    assert_has(&errs(&m), "into must name another asset");
-    let mut m = base();
-    asset(&mut m, "lq").into = Some("../lq".to_owned());
-    assert_has(&errs(&m), "into must name another asset");
-    let mut m = base();
-    asset(&mut m, "lq").into = Some("other".to_owned());
-    assert!(!errs(&m).contains("into"));
+    let joining = |into: &str, game_dir: &str| {
+        let mut m = base();
+        let mut extra = asset(&mut m, "lq").clone();
+        extra.id = "lq-dm".to_owned();
+        extra.into = Some(into.to_owned());
+        extra.game_dir = game_dir.to_owned();
+        m.asset.push(extra);
+        errs(&m)
+    };
+    assert!(
+        !joining("lq", "id1").contains("into"),
+        "{}",
+        joining("lq", "id1")
+    );
+    for (into, game_dir) in [
+        ("lq-dm", "id1"),
+        ("lq-lit", "id1"),
+        ("lq", "other"),
+        ("id1-paks", "id1"),
+    ] {
+        assert_has(
+            &joining(into, game_dir),
+            "into must name another usable asset",
+        );
+    }
 }

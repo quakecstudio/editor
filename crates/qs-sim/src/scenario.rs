@@ -11,6 +11,7 @@ use std::fmt;
 use qc_progs::Progs;
 use serde::Serialize;
 
+use crate::console::ConsoleName;
 use crate::{
     CLIENT_EDICT, ClientId, EditError, LISTEN_SLOTS, MAX_SCOREBOARD, MaxPlayers, NamedValue,
     QcValue, State, UserCmd, World, WorldError, atoi,
@@ -267,6 +268,9 @@ impl Scenario {
                         .ok_or_else(|| error("frametime is above 0, at most 1"))?;
                 }
                 "players" => {
+                    if !scenario.steps.is_empty() {
+                        return Err(error("players comes before the frames"));
+                    }
                     scenario.players = rest
                         .parse()
                         .ok()
@@ -275,11 +279,17 @@ impl Scenario {
                 }
                 "cmd" => {
                     let (client, rest) = client_of(rest).ok_or_else(|| error(CLIENT))?;
+                    if client.slot() >= scenario.players {
+                        return Err(error(&client.past_players(scenario.players)));
+                    }
                     scenario.steps.push(Step::Command(client, rest.to_owned()));
                 }
                 "console" => scenario.steps.push(Step::Console(rest.to_owned())),
                 "move" => {
                     let (client, rest) = client_of(rest).ok_or_else(|| error(CLIENT))?;
+                    if client.slot() >= scenario.players {
+                        return Err(error(&client.past_players(scenario.players)));
+                    }
                     let cmd = parse_move(rest).ok_or_else(|| {
                         error("move is pitch yaw roll forward side up buttons impulse")
                     })?;
@@ -335,30 +345,6 @@ impl Scenario {
                 message: "no map line".to_owned(),
             });
         }
-        // DIFF-16.7: a client named is one of the players.
-        let named = scenario.steps.iter().find_map(|step| match step {
-            Step::Command(client, _) | Step::Move(client, _)
-                if client.slot() >= scenario.players =>
-            {
-                Some(client.slot())
-            }
-            Step::Command(..)
-            | Step::Move(..)
-            | Step::Console(_)
-            | Step::Frames(_)
-            | Step::Expect(_)
-            | Step::Screenshot(_) => None,
-        });
-        if let Some(slot) = named {
-            return Err(ScenarioError {
-                line: 0,
-                message: format!(
-                    "#{} names a client past the {} players",
-                    slot.saturating_add(1),
-                    scenario.players
-                ),
-            });
-        }
         Ok(scenario)
     }
 }
@@ -372,6 +358,16 @@ impl ClientId {
         } else {
             format!("name \"player{}\"\n", self.slot().saturating_add(1))
         }
+    }
+}
+
+impl ClientId {
+    /// What a scenario line naming this client past its `players` is told (DIFF-16.7).
+    fn past_players(self, players: usize) -> String {
+        format!(
+            "#{} names a client past the {players} players",
+            self.slot().saturating_add(1)
+        )
     }
 }
 
@@ -523,16 +519,37 @@ pub struct HostWords {
 }
 
 impl HostWords {
-    /// The slots `-listen` chooses as `Host_FindMaxClients` reads it, `deathmatch` 1 for more
-    /// than one (NET-7.1), then each `+<name> <value>` pair as a setting.
+    /// The first `+` word that is not a setting's name followed by its value: one naming a
+    /// console command, such as `+exec dm.cfg` or `+god`, or with no value after it, which id's
+    /// `stuffcmds` runs as a command and these words do not read (DIFF-16.8).
+    #[must_use]
+    pub fn unread(words: &[String]) -> Option<&str> {
+        words.iter().enumerate().find_map(|(at, word)| {
+            let name = word.strip_prefix('+')?;
+            let value = words.get(at.saturating_add(1));
+            let command = ConsoleName::all()
+                .iter()
+                .any(|known| matches!(known, ConsoleName::Command(c) if c == name));
+            let setting = !name.is_empty()
+                && !command
+                && value.is_some_and(|value| !value.starts_with(['+', '-']));
+            (!setting).then_some(word.as_str())
+        })
+    }
+
+    /// The slots `-dedicated [n]` and then `-listen [n]` choose as `Host_FindMaxClients` reads
+    /// them, the first of each word, `deathmatch` 1 for more than one (NET-7.1), then each
+    /// `+<name> <value>` pair as a setting.
     #[must_use]
     pub fn of(words: &[String]) -> Self {
         let mut maxplayers = MaxPlayers::SINGLE;
-        if let Some(at) = words.iter().position(|w| w == "-listen") {
-            let count = words
-                .get(at.saturating_add(1))
-                .map_or(LISTEN_SLOTS, |next| atoi(next.as_bytes()));
-            maxplayers = MaxPlayers::new(if count < 1 { LISTEN_SLOTS } else { count });
+        for option in ["-dedicated", "-listen"] {
+            if let Some(at) = words.iter().position(|w| w == option) {
+                let count = words
+                    .get(at.saturating_add(1))
+                    .map_or(LISTEN_SLOTS, |next| atoi(next.as_bytes()));
+                maxplayers = MaxPlayers::new(if count < 1 { LISTEN_SLOTS } else { count });
+            }
         }
         let mut settings = Vec::new();
         if maxplayers.is_multiplayer() {
@@ -605,6 +622,14 @@ pub enum PlayError<E> {
     Start(EditError),
     /// The visitor stopped the play.
     Visit(E),
+    /// The scenario has more players than the world has slots, where id's server stops with
+    /// "Host_CheckForNewClients: no free clients" (DIFF-16.7).
+    Players {
+        /// The scenario's players.
+        players: usize,
+        /// The world's slots.
+        slots: usize,
+    },
 }
 
 impl<E: fmt::Display> fmt::Display for PlayError<E> {
@@ -613,6 +638,10 @@ impl<E: fmt::Display> fmt::Display for PlayError<E> {
             Self::Frame { frame, error } => write!(f, "frame {frame}: {error}"),
             Self::Start(error) => write!(f, "the player's start: {error}"),
             Self::Visit(error) => error.fmt(f),
+            Self::Players { players, slots } => write!(
+                f,
+                "{players} players but {slots} slots: give the server more with -listen"
+            ),
         }
     }
 }
@@ -636,6 +665,13 @@ impl Scenario {
         driver: &mut dyn Driver,
         mut visit: impl FnMut(Moment<'_>, usize, &World) -> Result<bool, E>,
     ) -> Result<usize, PlayError<E>> {
+        let slots = world.maxplayers().get();
+        if self.players > slots {
+            return Err(PlayError::Players {
+                players: self.players,
+                slots,
+            });
+        }
         let mut frame = 0_usize;
         if !visit(Moment::Frame, frame, world).map_err(PlayError::Visit)? {
             return Ok(frame);
@@ -736,6 +772,7 @@ impl Scenario {
                 (frame, Some(format!("frame {frame}: {error}")))
             }
             Err(PlayError::Start(error)) => (ENTERED, Some(format!("the player's start: {error}"))),
+            Err(error @ PlayError::Players { .. }) => (0, Some(error.to_string())),
             Err(PlayError::Visit(never)) => match never {},
         };
         Report {

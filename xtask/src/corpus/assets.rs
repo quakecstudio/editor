@@ -411,7 +411,8 @@ fn coverage<'c>(
 /// Checks every usable asset against the precaches of each codebase it covers.
 pub(crate) fn cmd_precache(m: &Manifest, dest: &Path, net: &dyn Net) -> Vec<String> {
     let mut errs = Vec::new();
-    for e in m.asset.iter().filter(|e| e.usable()) {
+    // An asset into another has no game directory of its own: its files are the other's.
+    for e in m.asset.iter().filter(|e| e.usable() && e.into.is_none()) {
         let game_dir = dest.join(&e.id).join(&e.game_dir);
         if !game_dir.is_dir() {
             errs.push(format!(

@@ -1299,13 +1299,19 @@ oracle is the engine oracle (P3-23, TRACE-4.11, TRACE-4.12): id's server from th
   all), and each answers its signon as DIFF-16.1's client does, its name `player` for the first
   and `player<k>` for client k after it (NET-7.13). `#<k>` before a `move` or `cmd` line's rest
   names client k, from 1; without it the line is the first client's. Each client sends its own
-  move each frame from frame 5, its impulse once. A `#<k>` past the route's players is refused.
+  move each frame from frame 5, its impulse once. A `#<k>` past the route's players is refused
+  on its line, as is a `players` line after a step, and more players than the server has slots
+  stops both before the first frame, where id's `SV_CheckForNewClients` would stop with "no
+  free clients".
   `oracles/engine/routes/coop.route` plays two players in coop on LibreQuake's start map, and
   `deathmatch.route` four on its `lqdm11`, who move, fire and frag; CI's Test Assets jobs play
   both.
 - **DIFF-16.8** The engine words, the route's `engine` lines and those after `--`, choose the
-  slots and the settings on both sides: the oracle runs id's `Host_FindMaxClients`, so `-listen
-  [n]` gives n slots (8 with no number or one below 1, at most 16) and `deathmatch` 1 for more
-  than one, and quake.rc's `stuffcmds` before the map, which runs each `+<name> <value>` such as
-  `+coop 1`; `qs-sim` loads the map with the same slots and settings (BOT-9.2's reading), and
-  both make `deathmatch` 0 under coop (`SV_SpawnServer`, DIFF-3.2).
+  slots and the settings on both sides, read in the oracle's order: the words after `--`, then
+  the route's `engine` lines. The oracle runs id's `Host_FindMaxClients`, so `-dedicated [n]` and
+  then `-listen [n]` give n slots (8 with no number or one below 1, at most 16) and `deathmatch`
+  1 for more than one, and quake.rc's `stuffcmds` before the map, which runs each `+<name>
+  <value>` such as `+coop 1`; `qs-sim` loads the map with the same slots and settings (BOT-9.2's
+  reading), and both make `deathmatch` 0 under coop (`SV_SpawnServer`, DIFF-3.2). A `+` word
+  with no value after it, or naming a console command such as `+exec`, which `stuffcmds` would
+  run as a command, is refused before either side plays.

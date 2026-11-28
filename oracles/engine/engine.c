@@ -684,6 +684,10 @@ int main(int argc, char **argv) {
                 refuse(number, "no map line before the frames");
             start(engine_argc, engine_argv, map, trace_path, number);
             started = true;
+            // More clients than slots would read past svs.clients; id's server stops there with
+            // "Host_CheckForNewClients: no free clients", and the script is refused instead.
+            if (players > svs.maxclients)
+                refuse(number, "players is more than the server's slots (-listen)");
         }
         if (strncmp(line, "cmd ", 4) == 0) {
             char *rest = line + 4;

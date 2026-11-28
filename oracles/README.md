@@ -248,7 +248,8 @@ frames <n>           # run n server frames with the current move; the impulse go
 
 `engine`, `map`, `frametime` and `players` come before the frames. `#<k>` names local client k,
 from 1, on a `move` or `cmd` line; without it the line is the first client's. Client k after the
-first sends the name `player<k>` (DIFF-16.7). The trace is the header, then for each
+first sends the name `player<k>` (DIFF-16.7). A script with more players than the server's slots
+is refused (exit status 2) rather than read past `svs.clients`. The trace is the header, then for each
 frame a frame record holding what the frame changed, after frame 0, the state the map loaded to
 (TRACE-4.12), with a string record before it for each
 engine string that is new or whose text changed (TRACE-4.10). A QuakeC run error ends the trace

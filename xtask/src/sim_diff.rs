@@ -90,12 +90,21 @@ fn compare(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("route");
+    // DIFF-16.8: in the oracle's order, the words after `--` and then the route's `engine`
+    // lines, so the first `-listen` and the last `+<name> <value>` are the same on both sides.
+    let mut engine = engine_words.to_vec();
+    engine.extend(route.engine.iter().cloned());
+    // DIFF-16.8: a `+` word qs-sim cannot read as a setting would run only in the oracle.
+    if let Some(word) = HostWords::unread(&engine) {
+        return Err(format!(
+            "{word}: sim-diff reads a + word as +<setting> <value>; id's stuffcmds would run \
+             it as a command qs-sim does not"
+        ));
+    }
     let trace_path = out.join(format!("{stem}.trace"));
     oracles::engine_trace(built, script, &trace_path, engine_words)?;
     let bytes = fs::read(&trace_path).map_err(|e| format!("{}: {e}", trace_path.display()))?;
     let trace = qc_trace::decode(&bytes).map_err(|e| format!("{}: {e:?}", trace_path.display()))?;
-    let mut engine = route.engine.clone();
-    engine.extend(engine_words.iter().cloned());
     let game = Game::load(&engine, &route.map)?;
     let progs = Progs::read(&game.progs).map_err(|e| format!("progs.dat: {e}"))?;
     let mut oracle = OracleFrames::new(&progs, &trace)?;
@@ -131,7 +140,7 @@ fn compare(
 
 /// The game as `qs-sim` plays it: the progs and the map from the game directory.
 struct Game {
-    /// The engine's command line, the route's `engine` words and the command line's.
+    /// The engine's command line, the command line's words and the route's `engine` words.
     engine: Vec<String>,
     progs: Vec<u8>,
     vfs: Vfs<StdFs>,
