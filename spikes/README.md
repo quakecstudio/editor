@@ -12,9 +12,9 @@ and when the frameworks change.
 
 | Crate | What it is |
 | --- | --- |
-| [`ui-common`](ui-common/src/lib.rs) | Framework-free parts both prototypes share: the document (lines, multi-cursor, IME composition, inline diff), a QuakeC highlighter with simulated semantic classes, the scripted input, the frame statistics, the dark theme from the mockups, the 3D scene and the AccessKit text runs |
-| [`ui-gpui`](ui-gpui/src/main.rs) | gpui prototype: a custom editor element, `uniform_list` project panel, wgpu viewport read back into a gpui image |
-| [`ui-egui`](ui-egui/src/main.rs) | egui prototype: a custom editor widget, `show_rows` project panel, wgpu viewport through an `egui_wgpu` paint callback |
+| [`ui-common`](ui-common/README.md) | Framework-free parts both prototypes share: the document (lines, multi-cursor, IME composition, inline diff), a QuakeC highlighter with simulated semantic classes, the scripted input, the frame statistics, the dark theme from the mockups, the 3D scene and the AccessKit text runs |
+| [`ui-gpui`](ui-gpui/README.md) | gpui prototype: a custom editor element, `uniform_list` project panel, wgpu viewport read back into a gpui image |
+| [`ui-egui`](ui-egui/README.md) | egui prototype: a custom editor widget, `show_rows` project panel, wgpu viewport through an `egui_wgpu` paint callback |
 
 ## Why a separate workspace
 
